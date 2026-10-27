@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Internship Application Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: quiet left rail (bottom tab bar on phones) + one working canvas; state is carried by stage colour (stripe, dot, chip), everything else stays neutral. */
+:root{
+  --bg:#F4F5F7; --surface:#FFFFFF; --sunk:#ECEEF2; --ink:#14171C; --muted:#545B67; --faint:#646B77; --line:#DDE1E6;
+  --accent:#2445C2; --accent-ink:#FFFFFF; --accent-soft:#E6EAFA;
+  --st-saved:#5F6876; --st-applied:#2445C2; --st-oa:#6537C9; --st-interview:#975003; --st-offer:#13713A; --st-rejected:#AE2222; --st-withdrawn:#626873;
+  --good:#13713A; --warn:#975003; --bad:#AE2222;
+  --shadow:0 12px 40px rgba(20,23,28,.16);
+  --f-ui:"Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0E1013; --surface:#161920; --sunk:#1B1F27; --ink:#E6E8EC; --muted:#A8AFBA; --faint:#888F9B; --line:#2A2F38;
+  --accent:#8FA3FF; --accent-ink:#0E1013; --accent-soft:#1D2442;
+  --st-saved:#A3AAB5; --st-applied:#8FA3FF; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
+  --good:#6CCB8E; --warn:#EDB163; --bad:#F08A8A; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0E1013; --surface:#161920; --sunk:#1B1F27; --ink:#E6E8EC; --muted:#A8AFBA; --faint:#888F9B; --line:#2A2F38;
+  --accent:#8FA3FF; --accent-ink:#0E1013; --accent-soft:#1D2442;
+  --st-saved:#A3AAB5; --st-applied:#8FA3FF; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
+  --good:#6CCB8E; --warn:#EDB163; --bad:#F08A8A; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}
+
+[hidden]{display:none!important}
+html,body{height:100%}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+
+.app{display:grid;grid-template-columns:212px minmax(0,1fr);min-height:100%}
+.rail{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;height:100vh;overflow-y:auto;display:flex;flex-direction:column;gap:22px;
+  padding-block:22px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:12px;border-right:1px solid var(--line);background:var(--surface)}
+.brand{display:flex;flex-direction:column;gap:2px;padding-left:8px}
+.brand b{font-size:15px;letter-spacing:-.01em}
+.brand span{font-size:12px;color:var(--muted)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;color:var(--muted);text-decoration:none;font-weight:500}
+.nav a:hover{background:var(--sunk);color:var(--ink)}
+.nav a[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+.nav svg{width:16px;height:16px;flex:none}
+.nav .n{margin-left:auto;font-family:var(--f-mono);font-size:11.5px;color:var(--faint)}
+.nav a[aria-current="page"] .n{color:var(--accent)}
+.nav .lbl-s{display:none}
+.rail-foot{margin-top:auto;font-size:12px;color:var(--faint);padding-left:8px;display:flex;flex-direction:column;gap:6px}
+.savestate{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.savestate::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--good);flex:none}
+.savestate.warn::before{background:var(--warn)}
+.kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--muted)}
+
+main{min-width:0;padding-block:22px 48px;padding-left:max(28px,env(safe-area-inset-left,0px));padding-right:max(28px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:18px}
+.top{display:flex;flex-wrap:wrap;align-items:center;gap:12px 16px}
+.titlebar{display:flex;flex-direction:column;margin-right:auto;min-width:0}
+h1{font-size:22px;letter-spacing:-.02em;margin:0;font-weight:600}
+.sub{margin:0;color:var(--muted);font-size:13px}
+.tools{display:flex;flex-wrap:wrap;gap:8px}
+input[type=search],input[type=text],input[type=url],input[type=date],input[type=number],select,textarea{
+  background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:7px 10px;min-width:0}
+input[type=search]{width:240px;max-width:100%}
+textarea{width:100%;resize:vertical}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--surface);border-radius:6px;padding:7px 12px;font-weight:500;cursor:pointer;text-decoration:none;color:var(--ink);white-space:nowrap}
+.btn:hover{border-color:var(--faint)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--muted)}
+.btn.ghost:hover{background:var(--sunk);color:var(--ink)}
+.btn.danger{color:var(--bad)}
+.btn.sm{padding:4px 9px;font-size:12.5px}
+
+.banner{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:9px 12px;border:1px dashed var(--line);border-radius:var(--r);color:var(--muted);font-size:13px;background:var(--surface)}
+.banner b{color:var(--ink);font-weight:600}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:500;white-space:nowrap;
+  background:color-mix(in srgb,var(--c,var(--faint)) 12%,transparent);color:var(--c,var(--muted))}
+.chip.tag{--c:var(--muted);background:var(--sunk)}
+.chip.st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.s-saved{--c:var(--st-saved)}.s-applied{--c:var(--st-applied)}.s-oa{--c:var(--st-oa)}.s-interview{--c:var(--st-interview)}
+.s-offer{--c:var(--st-offer)}.s-rejected{--c:var(--st-rejected)}.s-withdrawn{--c:var(--st-withdrawn)}.s-closed{--c:var(--st-rejected)}
+.v-yes{--c:var(--good)}.v-no{--c:var(--bad)}.v-unknown{--c:var(--muted)}
+.prio{display:inline-flex;gap:2px;align-items:flex-end}
+.prio i{width:4px;border-radius:1px;background:var(--line)}
+.prio i:nth-child(1){height:6px}.prio i:nth-child(2){height:9px}.prio i:nth-child(3){height:12px}
+.prio i.on{background:var(--accent)}
+
+/* dashboard */
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.kpi{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:2px}
+.kpi .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:500}
+.kpi .v{font-family:var(--f-mono);font-size:26px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.kpi .h{font-size:12px;color:var(--faint)}
+.dash{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);grid-template-areas:"att pipe" "att track" "week week";gap:16px}
+.a-att{grid-area:att}.a-pipe{grid-area:pipe}.a-track{grid-area:track}.a-week{grid-area:week}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.panel h2{font-size:13px;margin:0;font-weight:600;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
+.panel h2 small{font-weight:400;color:var(--faint);font-size:12px}
+.todo{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.todo li{display:grid;grid-template-columns:82px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 6px;border-top:1px solid var(--line);cursor:pointer;border-radius:4px}
+.todo li:first-child{border-top:0}
+.todo li:hover{background:var(--sunk)}
+.todo .what{min-width:0}
+.todo .what b{font-weight:600}
+.todo .what span{color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
+.due{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
+.due.hot{color:var(--bad)}.due.soon{color:var(--warn)}
+.kind{font-size:11.5px;font-weight:500;color:var(--muted)}
+.empty{color:var(--faint);font-size:13px;margin:0}
+.funnel{display:flex;flex-direction:column;gap:9px}
+.frow{display:grid;grid-template-columns:92px minmax(0,1fr) 76px;gap:10px;align-items:center;font-size:13px}
+.fbar{height:18px;background:var(--sunk);border-radius:3px;overflow:hidden}
+.fbar span{display:block;height:100%;background:var(--c);border-radius:3px}
+.frow .num{font-family:var(--f-mono);text-align:right;font-size:12.5px;color:var(--muted)}
+.frow .num b{color:var(--ink);font-weight:500}
+.chart svg{width:100%;height:auto;display:block}
+.chart text{fill:var(--faint);font-family:var(--f-mono);font-size:11px}
+.chart .gl{stroke:var(--line);stroke-width:1}
+.chart .bar{fill:var(--accent);opacity:.38}
+.chart .bar.now{opacity:1}
+.chart .val{fill:var(--ink)}
+.tracks{display:flex;flex-direction:column;gap:8px}
+.trow{display:grid;grid-template-columns:44px minmax(0,1fr) 64px;gap:10px;align-items:center;font-size:13px}
+.trow .seg{display:flex;height:10px;border-radius:3px;overflow:hidden;background:var(--sunk)}
+.trow .seg span{display:block;height:100%}
+.trow .num{font-family:var(--f-mono);font-size:12px;color:var(--muted);text-align:right}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted)}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* board */
+.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(228px,1fr);gap:12px;overflow-x:auto;padding-bottom:8px;align-items:start}
+.col{background:var(--sunk);border-radius:var(--r);padding:0 8px 8px;border-top:3px solid var(--c);min-height:180px;transition:background .15s}
+.col.over{background:var(--accent-soft)}
+.col h2{display:flex;align-items:center;gap:8px;padding:10px 4px 9px;font-weight:600;font-size:13px;margin:0}
+.col h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
+.col h2 .count{margin-left:auto;font-family:var(--f-mono);font-size:12px;color:var(--faint);font-weight:400}
+.cards{display:flex;flex-direction:column;gap:8px;list-style:none;margin:0;padding:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 11px;display:flex;flex-direction:column;gap:6px;cursor:grab}
+.card:hover{border-color:var(--faint)}
+.card.dragging{opacity:.45}
+.card-top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card .role{font-size:13px;color:var(--muted);line-height:1.35}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.meta{display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--faint)}
+.meta .next{color:var(--ink)}
+.card .move{display:none;font-size:12.5px;padding:4px 6px}
+@media (hover:none){.card .move{display:block}}
+.col .empty{padding:14px 6px;text-align:center;border:1px dashed var(--line);border-radius:6px}
+
+/* table */
+.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+table{border-collapse:collapse;width:100%;min-width:920px;font-size:13px}
+th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);padding:0;border-bottom:1px solid var(--line);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
+th button{all:unset;cursor:pointer;display:block;padding:9px 12px}
+th button:hover{color:var(--ink)}
+th button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+th .arr{color:var(--accent)}
+td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:var(--sunk)}
+tbody tr:last-child td{border-bottom:0}
+td.co{font-weight:600;white-space:nowrap}
+td.co button{all:unset;cursor:pointer}
+td.co button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+td.ro{color:var(--muted);max-width:280px}
+td.dt{font-family:var(--f-mono);font-size:12px;white-space:nowrap;color:var(--muted)}
+td select{padding:3px 6px;font-size:12.5px}
+
+/* inbox */
+.inbox-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;color:var(--muted);font-size:13px}
+.inbox-head p{margin:0;margin-right:auto}
+.switch{display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+.list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.listing{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:start;padding:12px 14px;border-top:1px solid var(--line)}
+.listing:first-child{border-top:0}
+.ring{--p:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--accent) calc(var(--p)*1%),var(--line) 0)}
+.ring span{width:36px;height:36px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font-family:var(--f-mono);font-size:13px;font-weight:500}
+.listing .body{min-width:0;display:flex;flex-direction:column;gap:5px}
+.listing .body b{font-weight:600}
+.listing .body .role{color:var(--muted)}
+.listing .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.why summary{cursor:pointer;font-size:12px;color:var(--muted);width:max-content}
+.why .parts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);padding-top:4px}
+.why .parts b{color:var(--ink);font-family:var(--f-mono);font-weight:500}
+
+/* prefs */
+.prefs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field>span{font-size:12px;color:var(--muted);font-weight:500}
+.field .hint{font-size:12px;color:var(--faint);font-weight:400}
+.checks{display:flex;flex-wrap:wrap;gap:8px}
+.checks label{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:6px;padding:5px 10px;cursor:pointer}
+.weights{display:grid;grid-template-columns:minmax(0,1fr) 76px;gap:8px 12px;align-items:center}
+.weights input{text-align:right;font-family:var(--f-mono)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.snaps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px;font-size:13px}
+.snaps li{display:flex;align-items:center;gap:10px}
+.snaps .mono{color:var(--muted);font-size:12px}
+
+/* dialog */
+.scrim{position:fixed;inset:0;background:color-mix(in srgb,var(--ink) 30%,transparent);z-index:20}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(460px,100%);background:var(--surface);box-shadow:var(--shadow);z-index:21;overflow-y:auto;
+  padding-top:max(20px,env(safe-area-inset-top,0px));padding-bottom:max(24px,env(safe-area-inset-bottom,0px));padding-left:22px;padding-right:max(22px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
+.drawer h2{margin:0;font-size:18px;letter-spacing:-.01em}
+.dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dgrid .full{grid-column:1/-1}
+.dgrid input,.dgrid select,.dgrid textarea{width:100%}
+.dhead{display:flex;align-items:flex-start;gap:10px}
+.dhead>div{margin-right:auto;min-width:0}
+.err{font-size:13px;color:var(--bad);display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:8px 10px;border:1px solid color-mix(in srgb,var(--bad) 35%,transparent);border-radius:6px;background:color-mix(in srgb,var(--bad) 7%,transparent)}
+.timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:13px}
+.timeline li{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:10px;align-items:center}
+.timeline input{padding:4px 8px;font-size:12.5px;font-family:var(--f-mono)}
+.dfoot{display:flex;flex-wrap:wrap;gap:8px;align-items:center;border-top:1px solid var(--line);padding-top:14px;margin-top:auto}
+.dfoot .spacer{margin-right:auto}
+
+.toast{position:fixed;left:50%;bottom:max(20px,calc(env(safe-area-inset-bottom,0px) + 12px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:8px 14px;border-radius:6px;font-size:13px;z-index:30;box-shadow:var(--shadow);display:flex;align-items:center;gap:12px;max-width:calc(100% - 32px)}
+.toast .tbtn{all:unset;cursor:pointer;font-weight:600;padding:2px 6px;border-radius:4px;color:var(--bg);text-decoration:underline}
+.toast .tbtn:focus-visible{outline:2px solid var(--bg)}
+
+@media (max-width:1080px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.prefs{grid-template-columns:minmax(0,1fr)}
+  .dash{grid-template-columns:minmax(0,1fr);grid-template-areas:"att" "pipe" "track" "week"}}
+@media (max-width:760px){
+  .app{grid-template-columns:minmax(0,1fr)}
+  .rail{position:fixed;top:auto;left:0;right:0;bottom:0;height:auto;overflow:visible;z-index:15;flex-direction:row;gap:0;
+    padding-block:4px calc(4px + env(safe-area-inset-bottom,0px));padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));border-right:0;border-top:1px solid var(--line)}
+  .brand,.rail-foot{display:none}
+  .nav{flex-direction:row;flex:1;justify-content:space-between;gap:2px}
+  .nav a{flex:1;flex-direction:column;gap:2px;font-size:11px;padding:6px 2px;justify-content:center;text-align:center}
+  .nav .n,.nav .lbl{display:none}
+  .nav .lbl-s{display:inline}
+  main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  input[type=search]{width:100%}
+  .tools{width:100%}
+  .listing{grid-template-columns:44px minmax(0,1fr)}
+  .listing .acts{grid-column:1/-1;justify-content:flex-start}
+  .todo li{grid-template-columns:minmax(0,1fr) auto}
+  .todo .kind{display:none}
+  .dgrid{grid-template-columns:minmax(0,1fr)}
+  .timeline li{grid-template-columns:minmax(0,1fr) auto auto}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="app" id="app">
+  <aside class="rail">
+    <div class="brand"><b>Internship Tracker</b><span>Summer 2027 season</span></div>
+    <nav class="nav" aria-label="Views">
+      <a href="#dashboard" data-nav="dashboard"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Dashboard</span><span class="lbl-s">Home</span></a>
+      <a href="#board" data-nav="board"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2.5" width="3.4" height="11" rx="1"/><rect x="6.3" y="2.5" width="3.4" height="7" rx="1"/><rect x="10.6" y="2.5" width="3.4" height="9" rx="1"/></svg><span class="lbl">Board</span><span class="lbl-s">Board</span><span class="n" id="nBoard"></span></a>
+      <a href="#table" data-nav="table"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h12"/></svg><span class="lbl">Applications</span><span class="lbl-s">List</span><span class="n" id="nTable"></span></a>
+      <a href="#inbox" data-nav="inbox"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 9.5 4 3h8l2 6.5V13H2z"/><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14"/></svg><span class="lbl">New listings</span><span class="lbl-s">Listings</span><span class="n" id="nInbox"></span></a>
+      <a href="#prefs" data-nav="prefs"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.6" fill="var(--surface)"/><circle cx="10.5" cy="8" r="1.6" fill="var(--surface)"/><circle cx="5" cy="12" r="1.6" fill="var(--surface)"/></svg><span class="lbl">Preferences</span><span class="lbl-s">Prefs</span></a>
+    </nav>
+    <div class="rail-foot">
+      <div class="savestate" id="saveState">Loading…</div>
+      <div><span class="kbd">N</span> new application</div>
+      <div><span class="kbd">/</span> search</div>
+      <div><span class="kbd">Shift</span> <span class="kbd">←</span><span class="kbd">→</span> move card</div>
+      <div><span class="kbd">Ctrl</span> <span class="kbd">Z</span> undo</div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="top">
+      <div class="titlebar"><h1 id="viewTitle">Dashboard</h1><p class="sub" id="viewSub"></p></div>
+      <div class="tools" id="tools">
+        <input id="q" type="search" placeholder="Search company, role, notes" aria-label="Search">
+        <select id="fTrack" aria-label="Filter by track"><option value="">All tracks</option></select>
+        <select id="fSponsor" aria-label="Filter by visa sponsorship"><option value="">Any sponsorship</option><option value="yes">Sponsors visa</option><option value="unknown">Unknown</option><option value="no">No sponsorship</option></select>
+      </div>
+      <button class="btn primary" id="addBtn" type="button">+ Add application</button>
+    </header>
+    <div class="banner" id="banner" hidden>
+      <span><b>Example data.</b> Company names come from your recent resumes; every status, date and listing is a placeholder.</span>
+      <button class="btn sm" type="button" data-action="clear-samples">Remove examples</button>
+    </div>
+    <section id="view" aria-labelledby="viewTitle"></section>
+  </main>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<div class="drawer" id="drawer" role="dialog" aria-modal="true" aria-labelledby="dTitle" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function(){
+const $=s=>document.querySelector(s);
+const KEY='iat-v1',SCHEMA=2;
+const uid=()=>(crypto.randomUUID?crypto.randomUUID().replace(/-/g,''):Date.now().toString(36)+Math.random().toString(36).slice(2)).slice(0,12);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ---------- dates ---------- */
+let TODAY=new Date();TODAY.setHours(0,0,0,0);
+const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+const rel=n=>{const d=new Date(TODAY);d.setDate(d.getDate()+n);return iso(d)};
+const parse=s=>{if(!s||!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
+const daysFrom=s=>{const p=parse(s);return p?Math.round((p-TODAY)/864e5):null};
+const fmt=s=>{const p=parse(s);return p?p.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'};
+const ago=s=>{const n=-daysFrom(s);return n<=0?'today':n===1?'yesterday':n+' days ago'};
+const dueText=n=>n<0?`${-n}d overdue`:n===0?'Today':n===1?'Tomorrow':`In ${n} days`;
+const dueCls=n=>n<0?'hot':n<=3?'soon':'';
+
+/* ---------- links ---------- */
+function normUrl(u){u=(u||'').trim();if(!u)return'';if(!/^[a-z][a-z0-9+.-]*:/i.test(u)&&/^[\w-]+(\.[\w-]+)+(\/|$)/.test(u))u='https://'+u;return u}
+const safeUrl=u=>{u=normUrl(u);return /^https?:\/\/[^\s"'<>]+$/i.test(u)?u:''};
+const urlKey=u=>safeUrl(u).toLowerCase().replace(/#.*$/,'').replace(/\/+$/,'');
+
+/* ---------- model ---------- */
+const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn']];
+const LABEL=Object.fromEntries(STAGES);
+const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6};
+const FLOW=['saved','applied','oa','interview','offer'];
+const TRACKS=['SWE','DE','DA','DS','BIE'];
+const TRACK_NAME={SWE:'Software Eng.',DE:'Data Eng.',DA:'Data Analyst',DS:'Data Science',BIE:'BI Engineer'};
+const SPONSOR={yes:'Sponsors visa',no:'No sponsorship',unknown:'Sponsorship ?'};
+const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:35,recency:20,sponsor:20,degree:15,location:10},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false};
+const WEIGHT_LABEL={fit:'Role fit (matches a target track)',recency:'Recency (newer is better, 0 after 30 days)',sponsor:'Visa sponsorship (yes 100%, unknown 50%)',degree:'Degree level (MS-eligible)',location:'Preferred location'};
+const WEIGHT_SHORT={fit:'Role fit',recency:'Recency',sponsor:'Visa',degree:'Degree',location:'Location'};
+
+function hist(...p){return p.map(([s,n])=>({s,d:rel(n)}))}
+function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',history:[]},o)}
+function sampleApps(){const a=o=>blankApp(Object.assign({sample:true},o));return[
+  a({company:'Amazon',role:'Business Intelligence Engineer Intern',track:'BIE',location:'Seattle, WA',status:'saved',priority:3,deadline:rel(9),resume:'Chia-Chun_Chang_Resume_Amazon.docx',nextText:'Submit application',nextDate:rel(1),history:hist(['saved',-1])}),
+  a({company:'Intuit',role:'Business Data Analyst Intern, Strategy & Planning',track:'DA',location:'Mountain View, CA',status:'saved',priority:2,deadline:rel(5),nextText:'Tailor resume',nextDate:rel(0),history:hist(['saved',-3])}),
+  a({company:'Databricks',role:'Software Engineer Intern',track:'SWE',location:'San Francisco, CA',status:'saved',priority:1,history:hist(['saved',-6])}),
+  a({company:'Marvell',role:'AI Data Science Intern (MS)',track:'DS',location:'Santa Clara, CA',status:'applied',priority:3,applied:rel(-12),resume:'Chia-Chun_Chang_Resume_Marvell.docx',history:hist(['saved',-14],['applied',-12])}),
+  a({company:'Pinterest',role:'Data Science Intern',track:'DS',location:'San Francisco, CA',status:'applied',priority:2,applied:rel(-19),resume:'Chia-Chun_Chang_Resume_Pinterest.docx',history:hist(['saved',-22],['applied',-19])}),
+  a({company:'Snowflake',role:'Data Engineer Intern',track:'DE',location:'San Mateo, CA',status:'applied',priority:2,applied:rel(-7),history:hist(['saved',-9],['applied',-7])}),
+  a({company:'C3 AI',role:'Data Science Intern',track:'DS',location:'Redwood City, CA',status:'oa',priority:2,applied:rel(-18),resume:'Chia-Chun_Chang_Resume_C3AI.docx',nextText:'Finish online assessment',nextDate:rel(3),history:hist(['saved',-20],['applied',-18],['oa',-4])}),
+  a({company:'Capital One',role:'Data Analyst Intern',track:'DA',location:'McLean, VA',status:'interview',priority:3,applied:rel(-26),nextText:'Final-round interview',nextDate:rel(6),contact:'Recruiter (add name)',history:hist(['saved',-28],['applied',-26],['oa',-15],['interview',-3])}),
+  a({company:'7-Eleven',role:'Data Science Intern',track:'DS',location:'Irving, TX',status:'rejected',priority:2,applied:rel(-30),history:hist(['saved',-33],['applied',-30],['rejected',-9])}),
+]}
+function sampleListings(){const l=o=>Object.assign({id:uid(),degree:'BS/MS',sponsor:'unknown',sample:true},o,{url:'https://simplify.jobs/?example='+encodeURIComponent(o.company)});return[
+  l({company:'Bayou Grid Energy',role:'Data Analytics Intern – Summer 2027',location:'Houston, TX',posted:rel(-1)}),
+  l({company:'Lattice Freight',role:'Data Engineer Intern',location:'Remote (US)',posted:rel(-2),sponsor:'yes'}),
+  l({company:'Quarry Health',role:'Data Science Intern, MS',location:'Austin, TX',posted:rel(-3),degree:'MS',sponsor:'yes'}),
+  l({company:'Harbor & Pine Retail',role:'Business Intelligence Intern',location:'Seattle, WA',posted:rel(-5)}),
+  l({company:'Northwind Robotics',role:'Software Engineer Intern',location:'Pittsburgh, PA',posted:rel(-8),sponsor:'yes'}),
+  l({company:'Meridian Quant',role:'Quantitative Research Intern',location:'New York, NY',posted:rel(-4),degree:'PhD',sponsor:'yes'}),
+  l({company:'Cobalt Payments',role:'Data Analyst Intern',location:'Dallas, TX',posted:rel(-12),sponsor:'no'}),
+  l({company:'Fieldnote Labs',role:'Machine Learning Intern',location:'San Francisco, CA',posted:rel(-20),degree:'MS'}),
+  l({company:'Amazon',role:'Business Intelligence Engineer Internship – 2027',location:'Seattle, WA',posted:rel(-6)}),
+]}
+const defaultUi=()=>({q:'',track:'',sponsor:'',sort:{key:'deadline',dir:1}});
+function fresh(){return{v:SCHEMA,apps:sampleApps(),listings:sampleListings(),settings:JSON.parse(JSON.stringify(DEFAULTS)),ui:defaultUi()}}
+function migrate(d){d=d||{};
+  const s={v:SCHEMA,apps:Array.isArray(d.apps)?d.apps:[],listings:Array.isArray(d.listings)?d.listings:[],
+    settings:Object.assign({},DEFAULTS,d.settings,{weights:Object.assign({},DEFAULTS.weights,(d.settings||{}).weights)}),ui:Object.assign(defaultUi(),d.ui)};
+  s.apps=s.apps.filter(a=>a&&a.company).map(a=>{const b=blankApp(a);b.url=safeUrl(b.url);if(!LABEL[b.status])b.status='saved';b.priority=Math.min(3,Math.max(1,+b.priority||2));
+    if(!['yes','no','unknown'].includes(b.sponsor))b.sponsor='unknown';
+    b.history=(Array.isArray(b.history)?b.history:[]).filter(h=>h&&LABEL[h.s]&&parse(h.d));if(!b.history.length)b.history=[{s:b.status,d:b.applied||iso(TODAY)}];return b});
+  s.listings=s.listings.filter(l=>l&&l.company).map(l=>Object.assign({id:uid(),degree:'',sponsor:'unknown',location:'',posted:''},l,{url:safeUrl(l.url)}));
+  return s}
+const snapshotData=()=>({v:SCHEMA,apps:S.apps,listings:S.listings,settings:S.settings,ui:S.ui});
+
+/* ---------- storage: local file via server.py, else this browser ---------- */
+const Store={mode:'local',t:null,
+  async init(){
+    try{const ctl=new AbortController();setTimeout(()=>ctl.abort(),1500);
+      const r=await fetch('api/state',{cache:'no-store',signal:ctl.signal});
+      if(r.ok&&(r.headers.get('content-type')||'').includes('application/json')){const d=await r.json();
+        if(d===null||(d&&Array.isArray(d.apps))){this.mode='file';if(d)return d}}}catch(e){}
+    try{const raw=localStorage.getItem(KEY);return raw?JSON.parse(raw):null}catch(e){return null}},
+  save(d){const j=JSON.stringify(d);
+    try{localStorage.setItem(KEY,j)}catch(e){}
+    if(this.mode!=='file'){setSaved('Saved in this browser only',true);return}
+    clearTimeout(this.t);setSaved('Saving…');
+    this.t=setTimeout(()=>fetch('api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:j})
+      .then(r=>{if(!r.ok)throw new Error(r.status);setSaved('Saved to data/tracker.json')})
+      .catch(()=>setSaved('Server not reachable; kept in this browser',true)),350)}};
+function setSaved(t,warn){const el=$('#saveState');el.textContent=t;el.classList.toggle('warn',!!warn)}
+let S;
+function save(){Store.save(snapshotData())}
+function takeDailySnapshot(){try{const k=KEY+'-snap-'+iso(TODAY);if(!localStorage.getItem(k))localStorage.setItem(k,JSON.stringify(snapshotData()));
+  const keys=Object.keys(localStorage).filter(x=>x.startsWith(KEY+'-snap-')).sort();while(keys.length>7)localStorage.removeItem(keys.shift())}catch(e){}}
+function snapshots(){try{return Object.keys(localStorage).filter(x=>x.startsWith(KEY+'-snap-')).sort().reverse()}catch(e){return[]}}
+
+/* ---------- undo ---------- */
+let undoSnap=null;
+function checkpoint(){undoSnap=JSON.stringify({apps:S.apps,listings:S.listings,settings:S.settings})}
+function undo(){if(!undoSnap)return toast('Nothing to undo');const d=JSON.parse(undoSnap);undoSnap=null;Object.assign(S,d);save();render();toast('Undone')}
+
+/* ---------- logic ---------- */
+function setStatus(a,s,d){if(a.status===s)return;a.status=s;d=d||iso(TODAY);a.history.push({s,d});if(s==='applied'&&!a.applied)a.applied=d}
+function moveTo(a,s){const last=a.history[a.history.length-1];
+  const back=FLOW.includes(s)&&FLOW.includes(a.status)&&FLOW.indexOf(s)<FLOW.indexOf(a.status);
+  if(back&&last&&last.s===a.status&&a.history.length>1){a.history.pop();a.status=s;if(a.history[a.history.length-1].s!==s)a.history.push({s,d:iso(TODAY)})}
+  else setStatus(a,s)}
+const reached=(a,s)=>a.history.some(h=>h.s===s)||a.status===s;
+const norm=s=>(s||'').toLowerCase().replace(/\b(summer|fall|winter|spring|internship|intern|co-?op)\b|\b20\d\d\b/g,'').replace(/[^a-z0-9]/g,'');
+function findDup(company,role,url,exceptId){const k=norm(company)+'|'+norm(role),u=urlKey(url);
+  return S.apps.find(a=>a.id!==exceptId&&((norm(a.company)+'|'+norm(a.role))===k||(u&&urlKey(a.url)===u)))}
+function inferTrack(role){const r=role||'';
+  if(/business intelligence|\bBI\b/i.test(r))return'BIE';
+  if(/data engineer/i.test(r))return'DE';
+  if(/analyst|analytics/i.test(r))return'DA';
+  if(/data scien|machine learning|\bML\b|quantitative|\bAI\b/i.test(r))return'DS';
+  if(/software|developer|\bSWE\b|backend|frontend|full.?stack/i.test(r))return'SWE';
+  return''}
+function scoreParts(l){const w=S.settings.weights,t=inferTrack(l.role);
+  const v={fit:S.settings.targets.includes(t)?1:(t?0.3:0),
+    recency:Math.max(0,1-Math.abs(daysFrom(l.posted)||0)/30),
+    sponsor:l.sponsor==='yes'?1:l.sponsor==='unknown'?0.5:0,
+    degree:/phd/i.test(l.degree||'')&&!/ms|bs/i.test(l.degree||'')?0:1,
+    location:S.settings.places.some(p=>p&&(l.location||'').toLowerCase().includes(p.toLowerCase()))?1:0.6};
+  let tot=0;for(const k in DEFAULTS.weights)tot+=Math.max(0,+w[k]||0);
+  const parts=Object.keys(DEFAULTS.weights).map(k=>{const wk=Math.max(0,+w[k]||0);return{k,pts:tot?wk*v[k]/tot*100:0,max:tot?wk/tot*100:0}});
+  return{total:Math.round(parts.reduce((s,p)=>s+p.pts,0)),parts}}
+function filtered(){const{q,track,sponsor}=S.ui;const t=(q||'').toLowerCase().trim();
+  return S.apps.filter(a=>(!t||[a.company,a.role,a.location,a.notes,a.contact].join(' ').toLowerCase().includes(t))&&(!track||a.track===track)&&(!sponsor||a.sponsor===sponsor))}
+function lastDate(a){const l=a.history[a.history.length-1];return l?l.d:a.applied}
+function followUps(){const fu=+S.settings.followUpDays||14;return S.apps.filter(a=>a.status==='applied'&&-daysFrom(lastDate(a))>=fu)}
+
+/* ---------- small renderers ---------- */
+const stChip=s=>`<span class="chip st s-${s}">${LABEL[s]}</span>`;
+const spChip=s=>`<span class="chip v-${s}">${SPONSOR[s]||SPONSOR.unknown}</span>`;
+const prio=p=>`<span class="prio" role="img" aria-label="Priority ${p} of 3">${[1,2,3].map(i=>`<i class="${i<=p?'on':''}"></i>`).join('')}</span>`;
+const opts=(list,val)=>list.map(([v,l])=>`<option value="${esc(v)}"${v===val?' selected':''}>${esc(l)}</option>`).join('');
+const link=(u,txt,cls='btn sm ghost')=>{u=safeUrl(u);return u?`<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${txt}</a>`:''};
+
+/* ---------- views ---------- */
+const VIEWS={dashboard:['Dashboard',()=>TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})],
+  board:['Board',()=>'Drag a card, or focus it and press Shift + arrow keys'],
+  table:['Applications',()=>'Select a company to edit; select a column to sort'],
+  inbox:['New listings',()=>'Ranked by your scoring rules'],
+  prefs:['Preferences',()=>'Scoring, reminders and your data']};
+const R={};
+
+R.dashboard=()=>{
+  const A=S.apps,appliedA=A.filter(a=>reached(a,'applied')),applied=appliedA.length;
+  const replied=appliedA.filter(a=>['oa','interview','offer','rejected'].some(s=>reached(a,s))).length;
+  const intv=A.filter(a=>reached(a,'interview')).length,offers=A.filter(a=>reached(a,'offer')).length;
+  const toApply=A.filter(a=>a.status==='saved').length,active=A.filter(a=>['applied','oa','interview'].includes(a.status)).length;
+  const pct=(n,d)=>d?Math.round(n/d*100)+'%':'—';
+  const kpi=(l,v,h)=>`<div class="kpi"><span class="l">${l}</span><span class="v">${v}</span><span class="h">${h}</span></div>`;
+  const items=[];
+  for(const a of A){if(['rejected','withdrawn'].includes(a.status))continue;
+    if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n!==null&&n<=7)items.push({a,kind:'Deadline',n,text:'Apply by '+fmt(a.deadline)})}
+    if(a.nextText&&a.nextDate){const n=daysFrom(a.nextDate);if(n!==null&&n<=7)items.push({a,kind:'Next step',n,text:a.nextText})}}
+  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${-daysFrom(lastDate(a))} days`,fu:true});
+  items.sort((x,y)=>x.n-y.n);
+  const todo=items.length?`<ul class="todo">${items.map(i=>`<li data-open="${i.a.id}" tabindex="0" role="button" aria-label="${esc(i.kind+': '+i.a.company+', '+i.text)}"><span class="kind">${i.kind}</span><span class="what"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></span><span class="due ${i.fu?'soon':dueCls(i.n)}">${i.fu?'Nudge':dueText(i.n)}</span></li>`).join('')}</ul>`:`<p class="empty">Nothing due in the next 7 days.</p>`;
+  const fst=[['applied','Applied'],['oa','Assessment'],['interview','Interview'],['offer','Offer']];
+  const fc=fst.map(([s])=>A.filter(a=>reached(a,s)).length),base=Math.max(fc[0],1);
+  const funnel=fst.map(([s,l],i)=>`<div class="frow"><span>${l}</span><div class="fbar" aria-hidden="true"><span class="s-${s}" style="width:${Math.max(fc[i]?3:0,fc[i]/base*100)}%"></span></div><span class="num"><b>${fc[i]}</b>${i?` · ${Math.round(fc[i]/base*100)}%`:''}</span></div>`).join('');
+  const start=new Date(TODAY);start.setDate(start.getDate()-((start.getDay()+6)%7)-49);
+  const wk=Array.from({length:8},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+7*i);return{d,c:0}});
+  for(const a of A){const h=a.history.find(h=>h.s==='applied');const d=parse(h?h.d:a.applied);if(!d)continue;const i=Math.floor((d-start)/(7*864e5));if(i>=0&&i<8)wk[i].c++}
+  const mx=Math.max(...wk.map(w=>w.c)),top=mx<=4?4:Math.ceil(mx/2)*2;
+  const W=880,H=190,L=30,B=24,T=16,Rp=6,pw=W-L-Rp,ph=H-B-T,bw=pw/8,y=v=>T+ph-(v/top)*ph;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Applications submitted per week over the last 8 weeks: ${wk.map(w=>w.c).join(', ')}">`;
+  for(const g of [0,top/2,top])svg+=`<line class="gl" x1="${L}" x2="${W-Rp}" y1="${y(g)}" y2="${y(g)}"/><text x="${L-8}" y="${y(g)+4}" text-anchor="end">${g}</text>`;
+  wk.forEach((w,i)=>{const bwid=Math.min(56,bw*.56),x=L+bw*i+(bw-bwid)/2,h=ph*(w.c/top);
+    svg+=`<rect class="bar${i===7?' now':''}" x="${x}" y="${T+ph-h}" width="${bwid}" height="${h}" rx="2"/>`;
+    if(w.c)svg+=`<text class="val" x="${x+bwid/2}" y="${T+ph-h-5}" text-anchor="middle">${w.c}</text>`;
+    svg+=`<text x="${x+bwid/2}" y="${H-6}" text-anchor="middle">${i===7?'This week':w.d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</text>`});
+  svg+='</svg>';
+  const segs=[['saved','Saved'],['active','In progress'],['closed','Closed']];
+  const tcol={saved:'var(--st-saved)',active:'var(--st-applied)',closed:'var(--st-rejected)'};
+  const tmax=Math.max(1,...TRACKS.map(t=>A.filter(a=>a.track===t).length));
+  const trows=TRACKS.map(t=>{const at=A.filter(a=>a.track===t);const c={saved:at.filter(a=>a.status==='saved').length,active:at.filter(a=>['applied','oa','interview','offer'].includes(a.status)).length,closed:at.filter(a=>['rejected','withdrawn'].includes(a.status)).length};
+    return `<div class="trow" role="img" aria-label="${t}: ${c.saved} saved, ${c.active} in progress, ${c.closed} closed"><b>${t}</b><div class="seg" style="width:${Math.max(at.length?8:0,at.length/tmax*100)}%">${segs.map(([k])=>c[k]?`<span style="flex:${c[k]};background:${tcol[k]}"></span>`:'').join('')}</div><span class="num">${at.length}</span></div>`}).join('');
+  return `<div style="display:flex;flex-direction:column;gap:16px">
+  <div class="kpis">${kpi('To apply',toApply,'saved, not submitted')}${kpi('Applied',applied,active+' still active')}${kpi('Response rate',pct(replied,applied),replied+' replies incl. rejections')}${kpi('Interview rate',pct(intv,applied),intv+' reached interview')}${kpi('Offers',offers,pct(offers,applied)+' of applications')}</div>
+  <div class="dash">
+    <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow-ups after ${S.settings.followUpDays} days without reply</small></h2>${todo}</section>
+    <section class="panel a-pipe"><h2>Pipeline <small>applications that reached each stage</small></h2><div class="funnel">${funnel}</div></section>
+    <section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k,l])=>`<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>
+    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks</small></h2>${svg}</section>
+  </div></div>`;
+};
+
+function card(a){
+  let meta='';
+  if(a.status==='saved')meta=a.deadline?`<span class="due ${dueCls(daysFrom(a.deadline))}">Deadline ${fmt(a.deadline)}</span>`:'<span>No deadline</span>';
+  else if(a.applied)meta=`<span>Applied ${ago(a.applied)}</span>`;
+  if(a.nextText)meta+=`<span class="next">→ ${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}</span>`;
+  return `<li class="card" draggable="true" data-id="${a.id}" data-open="${a.id}" tabindex="0" aria-label="${esc(a.company+', '+a.role+', '+LABEL[a.status])}">
+    <div class="card-top"><strong>${esc(a.company)}</strong>${prio(a.priority)}</div>
+    <div class="role">${esc(a.role)}</div>
+    <div class="chips">${a.track?`<span class="chip tag">${a.track}</span>`:''}${a.sponsor!=='unknown'?spChip(a.sponsor):''}${['rejected','withdrawn'].includes(a.status)?stChip(a.status):''}</div>
+    <div class="meta">${meta}</div>
+    <select class="move" data-status-for="${a.id}" aria-label="Move ${esc(a.company)} to stage">${opts(STAGES,a.status)}</select></li>`;
+}
+R.board=()=>{const A=filtered();const cols=['saved','applied','oa','interview','offer','closed'];
+  return `<div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?['rejected','withdrawn'].includes(a.status):a.status===s).sort((x,y)=>y.priority-x.priority||(x.deadline||'9').localeCompare(y.deadline||'9'));
+    const name=s==='closed'?'Closed':LABEL[s];
+    return `<section class="col s-${s}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length?`<ul class="cards">${items.map(card).join('')}</ul>`:'<p class="empty">Drop a card here</p>'}</section>`}).join('')}</div>`};
+
+const COLS=[['company','Company'],['role','Role'],['track','Track'],['status','Status'],['priority','Priority'],['applied','Applied'],['deadline','Deadline'],['nextDate','Next step'],['sponsor','Visa']];
+R.table=()=>{const{key,dir}=S.ui.sort;
+  const val=a=>key==='status'?ORDER[a.status]:key==='priority'?-a.priority:String(a[key]||'').toLowerCase();
+  const A=filtered().sort((x,y)=>{const a=val(x),b=val(y);if(a===''&&b!=='')return 1;if(b===''&&a!=='')return -1;return(a>b?1:a<b?-1:0)*dir});
+  if(!A.length)return `<div class="panel"><p class="empty">No applications match. Clear the search or filters, or press N to add one.</p></div>`;
+  return `<div class="tablewrap"><table><thead><tr>${COLS.map(([k,l])=>`<th scope="col" aria-sort="${key===k?(dir>0?'ascending':'descending'):'none'}"><button type="button" data-sort="${k}">${l} ${key===k?`<span class="arr" aria-hidden="true">${dir>0?'↑':'↓'}</span>`:''}</button></th>`).join('')}</tr></thead><tbody>
+  ${A.map(a=>`<tr data-open="${a.id}"><td class="co"><button type="button" data-open="${a.id}">${esc(a.company)}</button></td><td class="ro">${esc(a.role)}</td><td>${a.track?`<span class="chip tag">${a.track}</span>`:''}</td>
+  <td><select data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES,a.status)}</select></td><td>${prio(a.priority)}</td>
+  <td class="dt">${fmt(a.applied)}</td><td class="dt">${a.deadline?`<span class="due ${a.status==='saved'?dueCls(daysFrom(a.deadline)):''}">${fmt(a.deadline)}</span>`:'—'}</td>
+  <td class="dt">${a.nextText?`${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}`:'—'}</td><td>${spChip(a.sponsor)}</td></tr>`).join('')}
+  </tbody></table></div>`};
+
+R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
+  let L=S.listings.map(l=>Object.assign({},l,scoreParts(l),{t:inferTrack(l.role),dup:findDup(l.company,l.role,l.url)}));
+  const hidden=S.settings.hideNoSponsor?L.filter(l=>l.sponsor==='no').length:0;
+  if(S.settings.hideNoSponsor)L=L.filter(l=>l.sponsor!=='no');
+  if(S.ui.sponsor)L=L.filter(l=>l.sponsor===S.ui.sponsor);
+  if(t)L=L.filter(l=>(l.company+' '+l.role+' '+l.location).toLowerCase().includes(t));
+  L.sort((a,b)=>(!!a.dup-!!b.dup)||b.total-a.total);
+  const head=`<div class="inbox-head"><p>${L.length} listing${L.length===1?'':'s'} from SimplifyJobs (example feed)${hidden?` · ${hidden} hidden without sponsorship`:''}</p>
+    <label class="switch"><input type="checkbox" id="hideNo" ${S.settings.hideNoSponsor?'checked':''}> Hide no-sponsorship</label>
+    <button class="btn sm" type="button" data-action="refresh">Refresh feed</button></div>`;
+  if(!L.length)return head+`<div class="panel" style="margin-top:12px"><p class="empty">No new listings. Refresh the feed or loosen the filters.</p></div>`;
+  return head+`<div class="list" style="margin-top:12px">${L.map(l=>`<article class="listing" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
+    <div class="ring" style="--p:${l.total}" aria-hidden="true"><span>${l.total}</span></div>
+    <div class="body"><div><b>${esc(l.company)}</b> <span class="role">· ${esc(l.role)}</span></div>
+      <div class="chips">${l.dup?`<span class="chip s-applied">Already tracking · ${LABEL[l.dup.status]}</span>`:''}${l.t?`<span class="chip tag">${l.t}</span>`:''}<span class="chip tag">${esc(l.location)}</span>${l.degree?`<span class="chip tag">${esc(l.degree)}</span>`:''}${l.posted?`<span class="chip tag">Posted ${ago(l.posted)}</span>`:''}${spChip(l.sponsor)}</div>
+      <details class="why"><summary>Why ${l.total}?</summary><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}</div></details></div>
+    <div class="acts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open tracked</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button>`}<button class="btn sm ghost" type="button" data-dismiss="${l.id}">Dismiss</button>${link(l.url,'Open ↗')}</div>
+  </article>`).join('')}</div>`};
+
+R.prefs=()=>{const st=S.settings,snaps=snapshots();
+  const where=Store.mode==='file'?'Saved to <b>data/tracker.json</b> on your computer. The local server keeps a daily backup in data/backups (last 30 days).':'Saved in <b>this browser only</b>. Clearing site data erases it, so export a backup regularly, or run the local server to save to a file.';
+  return `<div class="prefs">
+  <section class="panel"><h2>Target tracks</h2><p class="empty">Listings in these tracks get full role-fit points.</p>
+    <div class="checks">${TRACKS.map(t=>`<label><input type="checkbox" data-target="${t}" ${st.targets.includes(t)?'checked':''}> ${t} <span class="sub">${TRACK_NAME[t]}</span></label>`).join('')}</div></section>
+  <section class="panel"><h2>Scoring weights <small>relative, any scale</small></h2>
+    <div class="weights">${Object.keys(DEFAULTS.weights).map(k=>`<label for="w-${k}">${WEIGHT_LABEL[k]}</label><input id="w-${k}" type="number" min="0" max="100" step="5" data-weight="${k}" value="${st.weights[k]}">`).join('')}</div></section>
+  <section class="panel"><h2>Reminders and filters</h2>
+    <label class="field"><span>Preferred locations</span><input id="p-places" type="text" value="${esc(st.places.join(', '))}"><span class="hint">Comma separated, e.g. TX, Remote, Seattle</span></label>
+    <label class="field"><span>Suggest a follow-up after (days without reply)</span><input id="p-fu" type="number" min="3" max="60" value="${st.followUpDays}"></label>
+    <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor?'checked':''}> Hide listings that do not sponsor visas</label></section>
+  <section class="panel"><h2>Your data <small>${S.apps.length} applications · ${S.listings.length} listings</small></h2>
+    <p class="empty">${where}</p>
+    <label class="field"><span>Import or restore</span><textarea id="io" rows="6" placeholder="Paste a JSON export, or a CSV with columns like Company, Role, Status, Location, Link, Deadline"></textarea>
+    <span class="hint">Import adds new rows and skips duplicates (same company and role, or same link). Restore replaces everything with a JSON export.</span></label>
+    <div class="row"><button class="btn" type="button" data-action="export">Export JSON</button><button class="btn" type="button" data-action="import">Import</button><button class="btn" type="button" data-action="restore">Restore</button>
+      <span style="margin-left:auto"></span><button class="btn ghost danger" type="button" data-action="reset">Reset everything</button></div>
+    ${snaps.length?`<div class="field"><span>Daily snapshots in this browser</span><ul class="snaps">${snaps.map(k=>`<li><span class="mono">${k.slice(-10)}</span><button class="btn sm ghost" type="button" data-snap="${esc(k)}">Restore</button></li>`).join('')}</ul></div>`:''}
+  </section></div>`};
+
+/* ---------- render ---------- */
+function route(){const h=location.hash.slice(1);return VIEWS[h]?h:'dashboard'}
+function render(){const v=route();
+  document.querySelectorAll('[data-nav]').forEach(a=>a.dataset.nav===v?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current'));
+  $('#viewTitle').textContent=VIEWS[v][0];$('#viewSub').textContent=VIEWS[v][1]();
+  $('#tools').hidden=!['board','table','inbox'].includes(v);$('#fTrack').hidden=v==='inbox';
+  $('#nBoard').textContent=S.apps.filter(a=>!['rejected','withdrawn'].includes(a.status)).length;
+  $('#nTable').textContent=S.apps.length;$('#nInbox').textContent=S.listings.length||'';
+  $('#banner').hidden=!(S.apps.some(a=>a.sample)||S.listings.some(l=>l.sample));
+  $('#view').innerHTML=R[v]();
+}
+function focusCard(id){const el=document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);if(el)el.focus()}
+function toast(msg,undoable){const t=$('#toast');t.innerHTML=`<span>${esc(msg)}</span>${undoable?'<button type="button" class="tbtn" data-action="undo">Undo</button>':''}`;
+  t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,undoable?7000:2600)}
+
+/* ---------- dialog ---------- */
+let editing=null,confirmDel=false,force=false,returnTo=null,origStatus='saved';
+function openDrawer(id){
+  const a=id?S.apps.find(x=>x.id===id):blankApp({});if(!a)return;
+  if($('#drawer').hidden){const ae=document.activeElement;const host=ae&&ae.closest?ae.closest('[data-open]'):null;returnTo=host?host.dataset.open:(ae&&ae.id)||null}
+  editing=id||null;confirmDel=false;force=false;origStatus=a.status;
+  const f=(k,l,type='text',cls='',extra='')=>`<label class="field ${cls}"><span>${l}</span><input id="f-${k}" type="${type}" value="${esc(a[k])}" ${extra}></label>`;
+  $('#drawer').innerHTML=`<form id="appForm" style="display:contents" novalidate>
+    <div class="dhead"><div><h2 id="dTitle">${id?esc(a.company):'New application'}</h2>${id?`<div class="sub">${esc(a.role)}</div>`:''}</div><button class="btn ghost sm" type="button" data-action="close">Close</button></div>
+    <div id="formErr" class="err" hidden role="alert"></div>
+    <div class="dgrid">
+      ${f('company','Company *','text','','required autocomplete="off"')}${f('role','Role *','text','','required autocomplete="off"')}
+      <label class="field"><span>Status</span><select id="f-status">${opts(STAGES,a.status)}</select></label>
+      <label class="field" id="stdateWrap" hidden><span>Date of this change</span><input id="f-stdate" type="date" value="${iso(TODAY)}"></label>
+      <label class="field"><span>Track</span><select id="f-track">${opts([['','—'],...TRACKS.map(t=>[t,t+' · '+TRACK_NAME[t]])],a.track)}</select></label>
+      <label class="field"><span>Priority</span><select id="f-priority">${opts([['3','High'],['2','Medium'],['1','Low']],String(a.priority))}</select></label>
+      <label class="field"><span>Visa sponsorship</span><select id="f-sponsor">${opts([['unknown','Unknown'],['yes','Sponsors'],['no','Does not sponsor']],a.sponsor)}</select></label>
+      ${f('location','Location')}
+      ${f('url','Posting link','url','full','placeholder="https://"')}
+      ${f('deadline','Deadline','date')}${f('applied','Date applied','date')}
+      ${f('nextText','Next step')}${f('nextDate','Next step date','date')}
+      ${f('resume','Resume version','text','full')}
+      ${f('contact','Contact / referral','text','full')}
+      <label class="field full"><span>Notes</span><textarea id="f-notes" rows="4">${esc(a.notes)}</textarea></label>
+    </div>
+    ${id?`<div class="field"><span>History <span class="hint">· edit a date to backfill when something happened</span></span><ul class="timeline" id="hist">${a.history.map(h=>`<li data-s="${h.s}"><input type="date" value="${h.d}" aria-label="Date for ${LABEL[h.s]}">${stChip(h.s)}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove ${LABEL[h.s]} entry">Remove</button></li>`).join('')}</ul></div>`:''}
+    <div class="dfoot">${id?`<button class="btn ghost danger" type="button" data-action="delete">Delete</button>`:''}${link(a.url,'Open posting ↗','btn ghost')}<span class="spacer"></span>
+      <button class="btn" type="button" data-action="close">Cancel</button><button class="btn primary" type="submit">${id?'Save changes':'Add application'}</button></div>
+  </form>`;
+  $('#drawer').hidden=false;$('#scrim').hidden=false;$('#app').inert=true;
+  setTimeout(()=>$('#f-company').focus(),0);
+}
+function closeDrawer(){if($('#drawer').hidden)return;$('#drawer').hidden=true;$('#scrim').hidden=true;$('#app').inert=false;editing=null;
+  const id=returnTo;returnTo=null;if(!id)return;const el=document.querySelector(`.card[data-open="${CSS.escape(id)}"],td button[data-open="${CSS.escape(id)}"],[data-open="${CSS.escape(id)}"]`)||document.getElementById(id);if(el)el.focus()}
+function formError(html){const e=$('#formErr');e.innerHTML=html;e.hidden=false;e.scrollIntoView({block:'nearest'})}
+function submitForm(e){e.preventDefault();
+  const g=k=>($('#f-'+k).value||'').trim();
+  if(!g('company')||!g('role'))return formError('Add a company and a role to save.');
+  const rawUrl=g('url'),url=safeUrl(rawUrl);
+  if(rawUrl&&!url)return formError('The posting link must start with http:// or https://.');
+  for(const k of['deadline','applied','nextDate'])if(g(k)&&!parse(g(k)))return formError('Use a valid date.');
+  const dup=findDup(g('company'),g('role'),url,editing);
+  if(dup&&!force)return formError(`You already track <b>${esc(dup.company)}</b> · ${esc(dup.role)} (${LABEL[dup.status]}). <button class="btn sm" type="button" data-open="${dup.id}">Open it</button><button class="btn sm ghost" type="button" data-action="force-save">Save anyway</button>`);
+  checkpoint();
+  let a=editing?S.apps.find(x=>x.id===editing):null;const isNew=!a;
+  if(isNew){a=blankApp({});S.apps.push(a)}
+  const oldAppliedHist=(a.history.find(h=>h.s==='applied')||{}).d;
+  for(const k of['company','role','track','sponsor','location','deadline','applied','nextText','nextDate','resume','contact','notes'])a[k]=g(k);
+  a.url=url;a.priority=+g('priority')||2;
+  const st=g('status'),sd=parse(g('stdate'))?g('stdate'):iso(TODAY);
+  if(isNew){a.history=[{s:'saved',d:st==='saved'?sd:iso(TODAY)}];a.status='saved';if(st!=='saved')setStatus(a,st,sd)}
+  else{a.history=[...document.querySelectorAll('#hist li')].filter(li=>!li.hidden).map((li,i)=>{const v=li.querySelector('input').value;return{s:li.dataset.s,d:parse(v)?v:iso(TODAY),i}})
+      .sort((x,y)=>x.d.localeCompare(y.d)||x.i-y.i).map(({s,d})=>({s,d}));
+    if(st!==origStatus){a.status=origStatus;setStatus(a,st,sd)}else a.status=st;
+    if(!a.history.length)a.history=[{s:a.status,d:sd}]}
+  const ha=a.history.find(h=>h.s==='applied');if(ha&&(!a.applied||a.applied===oldAppliedHist))a.applied=ha.d;
+  save();returnTo=a.id;closeDrawer();render();
+  const back=document.querySelector(`.card[data-open="${CSS.escape(a.id)}"],td button[data-open="${CSS.escape(a.id)}"]`);if(back)back.focus();
+  toast(isNew?`${a.company} added`:'Changes saved',true);
+}
+
+/* ---------- import / export ---------- */
+function parseCSV(text){const rows=[];let row=[],cell='',q=false;
+  for(let i=0;i<text.length;i++){const c=text[i];
+    if(q){if(c==='"'){if(text[i+1]==='"'){cell+='"';i++}else q=false}else cell+=c}
+    else if(c==='"')q=true;else if(c===','){row.push(cell);cell=''}
+    else if(c==='\n'||c==='\r'){if(c==='\r'&&text[i+1]==='\n')i++;row.push(cell);rows.push(row);row=[];cell=''}else cell+=c}
+  if(cell||row.length){row.push(cell);rows.push(row)}return rows.filter(r=>r.some(x=>x.trim()))}
+function normStatus(s){s=(s||'').toLowerCase();if(/offer/.test(s))return'offer';if(/reject|declin/.test(s))return'rejected';if(/withdr|ghost/.test(s))return'withdrawn';if(/interview/.test(s))return'interview';if(/assess|\boa\b|test/.test(s))return'oa';if(/appl|submit/.test(s))return'applied';return'saved'}
+function normDate(s){if(!s)return'';if(parse(s))return s;const d=new Date(s);return isNaN(d)?'':iso(d)}
+function addIfNew(a){if(S.apps.some(x=>x.id===a.id)||findDup(a.company,a.role,a.url))return false;S.apps.push(a);return true}
+function importText(txt){txt=txt.trim();if(!txt)return toast('Paste JSON or CSV first.');
+  let added=0,skipped=0;
+  if(/^[\[{]/.test(txt)){const raw=JSON.parse(txt);checkpoint();const d=migrate(Array.isArray(raw)?{apps:raw}:raw);
+    for(const a of d.apps){a.sample=false;addIfNew(a)?added++:skipped++}
+    for(const l of d.listings||[])if(!S.listings.some(x=>x.id===l.id||(urlKey(x.url)&&urlKey(x.url)===urlKey(l.url))))S.listings.push(l);
+  }else{const rows=parseCSV(txt);if(rows.length<2)return toast('The CSV needs a header row and at least one row.');
+    const h=rows.shift().map(x=>x.trim().toLowerCase().replace(/^﻿/,''));const col=(...n)=>h.findIndex(x=>n.includes(x));
+    const ix={company:col('company','company name','name','organization'),role:col('role','position','title','job title','job'),status:col('status','stage'),location:col('location','city'),url:col('url','link','apply link','job link','posting'),deadline:col('deadline','due','due date'),applied:col('applied','date applied','applied date','applied on'),notes:col('notes','note'),track:col('track','category','type'),sponsor:col('sponsor','sponsorship','visa','visa sponsorship')};
+    if(ix.company<0)return toast('The CSV needs a Company column.');
+    checkpoint();
+    for(const r of rows){const v=k=>ix[k]>=0?(r[ix[k]]||'').trim():'';if(!v('company'))continue;
+      const st=normStatus(v('status')),role=v('role'),sp=v('sponsor').toLowerCase(),applied=normDate(v('applied'));
+      const a=blankApp({company:v('company'),role,location:v('location'),url:safeUrl(v('url')),deadline:normDate(v('deadline')),applied,notes:v('notes'),
+        track:TRACKS.includes(v('track').toUpperCase())?v('track').toUpperCase():inferTrack(role),sponsor:/^(y|yes|true)/.test(sp)?'yes':/^(n|no|false)/.test(sp)?'no':'unknown',
+        status:st,history:[{s:'saved',d:applied||iso(TODAY)}]});
+      if(st!=='saved')a.history.push({s:st,d:applied||iso(TODAY)});
+      addIfNew(a)?added++:skipped++}}
+  save();render();toast(`Imported ${added}${skipped?` · skipped ${skipped} duplicate${skipped===1?'':'s'}`:''}`,true)}
+function restoreFrom(d,label){checkpoint();const m=migrate(d);S.apps=m.apps;S.listings=m.listings;S.settings=m.settings;save();render();toast(label,true)}
+
+/* ---------- events ---------- */
+document.addEventListener('click',e=>{
+  const t=e.target;
+  if(t.closest('select,input,textarea,summary,a[href]'))return;
+  const act=t.closest('[data-action]');
+  if(act){const k=act.dataset.action;
+    if(k==='close')return closeDrawer();
+    if(k==='undo')return undo();
+    if(k==='force-save'){force=true;return $('#appForm').requestSubmit()}
+    if(k==='clear-samples'){checkpoint();S.apps=S.apps.filter(a=>!a.sample);S.listings=S.listings.filter(l=>!l.sample);save();render();return toast('Examples removed',true)}
+    if(k==='refresh')return toast(Store.mode==='file'?'The Simplify fetcher is the next build step.':'The local version fetches Simplify here. This prototype uses an example feed.');
+    if(k==='export'){const j=JSON.stringify(snapshotData(),null,2);$('#io').value=j;$('#io').select();
+      const fall=()=>toast('Export is in the box. Copy it and keep it somewhere safe.');
+      try{navigator.clipboard.writeText(j).then(()=>toast('Exported and copied to clipboard'),fall)}catch(_){fall()}return}
+    if(k==='import'){try{importText($('#io').value)}catch(err){toast('Could not read that. Check it is valid JSON or CSV.')}return}
+    if(k==='restore'){try{const d=JSON.parse($('#io').value);if(!d||!Array.isArray(d.apps))throw 0;restoreFrom(d,'Restored from export')}catch(err){toast('Restore needs a JSON export from this tracker.')}return}
+    if(k==='reset'){if(act.dataset.armed){checkpoint();const f=fresh();S.apps=f.apps;S.listings=f.listings;S.settings=f.settings;save();render();return toast('Reset to example data',true)}
+      act.dataset.armed='1';act.textContent='Click again to reset';setTimeout(()=>{if(act.isConnected){delete act.dataset.armed;act.textContent='Reset everything'}},3000);return}
+    if(k==='delete'){if(!confirmDel){confirmDel=true;act.textContent='Click again to delete';return}
+      checkpoint();const a=S.apps.find(x=>x.id===editing);S.apps=S.apps.filter(x=>x.id!==editing);returnTo=null;save();closeDrawer();render();return toast(`${a?a.company:'Application'} deleted`,true)}
+  }
+  const hd=t.closest('[data-hdel]');if(hd){const rest=[...document.querySelectorAll('#hist li')].filter(x=>!x.hidden);if(rest.length<=1)return toast('Keep at least one history entry.');hd.closest('li').hidden=true;return}
+  const sn=t.closest('[data-snap]');if(sn){try{restoreFrom(JSON.parse(localStorage.getItem(sn.dataset.snap)),'Restored snapshot '+sn.dataset.snap.slice(-10))}catch(_){toast('That snapshot could not be read.')}return}
+  const tr=t.closest('[data-trackl]');
+  if(tr){const l=S.listings.find(x=>x.id===tr.dataset.trackl);if(!l)return;checkpoint();
+    S.apps.push(blankApp({company:l.company,role:l.role,track:inferTrack(l.role),location:l.location,url:safeUrl(l.url),posted:l.posted,sponsor:l.sponsor,sample:l.sample,history:[{s:'saved',d:iso(TODAY)}]}));
+    S.listings=S.listings.filter(x=>x!==l);save();render();return toast(`${l.company} added to Saved`,true)}
+  const dm=t.closest('[data-dismiss]');
+  if(dm){checkpoint();const l=S.listings.find(x=>x.id===dm.dataset.dismiss);S.listings=S.listings.filter(x=>x!==l);save();render();return toast(`${l?l.company:'Listing'} dismissed`,true)}
+  const th=t.closest('[data-sort]');
+  if(th){const k=th.dataset.sort;S.ui.sort=S.ui.sort.key===k?{key:k,dir:-S.ui.sort.dir}:{key:k,dir:1};save();render();const b=document.querySelector(`[data-sort="${k}"]`);if(b)b.focus();return}
+  const op=t.closest('[data-open]');if(op)return openDrawer(op.dataset.open);
+  if(t.id==='scrim')return closeDrawer();
+  if(t.closest('#addBtn'))openDrawer(null);
+});
+document.addEventListener('change',e=>{const t=e.target;
+  if(t.id==='f-status'){$('#stdateWrap').hidden=t.value===origStatus;return}
+  if(t.dataset.statusFor){const a=S.apps.find(x=>x.id===t.dataset.statusFor);if(!a)return;checkpoint();moveTo(a,t.value);save();render();if(t.classList.contains('move'))focusCard(a.id);return toast(`${a.company} → ${LABEL[a.status]}`,true)}
+  if(t.id==='hideNo'||t.id==='p-hide'){S.settings.hideNoSponsor=t.checked;save();if(t.id==='hideNo')render();return}
+  if(t.dataset.target){const s=new Set(S.settings.targets);t.checked?s.add(t.dataset.target):s.delete(t.dataset.target);S.settings.targets=[...s];save();return toast('Target tracks saved')}
+  if(t.dataset.weight){S.settings.weights[t.dataset.weight]=Math.max(0,+t.value||0);save();return toast('Weights saved')}
+  if(t.id==='p-places'){S.settings.places=t.value.split(',').map(x=>x.trim()).filter(Boolean);save();return toast('Locations saved')}
+  if(t.id==='p-fu'){S.settings.followUpDays=Math.min(90,Math.max(1,+t.value||14));save();return toast('Reminder saved')}
+  if(t.id==='fTrack'){S.ui.track=t.value;save();return render()}
+  if(t.id==='fSponsor'){S.ui.sponsor=t.value;save();return render()}
+});
+let qT;$('#q').addEventListener('input',e=>{clearTimeout(qT);qT=setTimeout(()=>{S.ui.q=e.target.value;save();render()},150)});
+document.addEventListener('submit',e=>{if(e.target.id==='appForm')submitForm(e)});
+document.addEventListener('keydown',e=>{
+  const open=!$('#drawer').hidden;
+  if(open){if(e.key==='Escape'){e.preventDefault();return closeDrawer()}
+    if(e.key==='Tab'){const f=[...$('#drawer').querySelectorAll('button,input,select,textarea,a[href]')].filter(x=>!x.disabled&&x.offsetParent!==null);if(!f.length)return;
+      const first=f[0],last=f[f.length-1];if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
+    return}
+  if(e.target.closest('input,textarea,select'))return;
+  if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&e.key.toLowerCase()==='z'){e.preventDefault();return undo()}
+  const c=e.target.closest('.card');
+  if(c&&e.shiftKey&&(e.key==='ArrowRight'||e.key==='ArrowLeft')){e.preventDefault();const a=S.apps.find(x=>x.id===c.dataset.id);const i=FLOW.indexOf(a.status);
+    if(i<0)return toast('Open the card to reopen a closed application.');
+    const ni=i+(e.key==='ArrowRight'?1:-1);if(ni<0||ni>=FLOW.length)return;
+    checkpoint();moveTo(a,FLOW[ni]);save();render();focusCard(a.id);return toast(`${a.company} → ${LABEL[a.status]}`,true)}
+  if(e.key==='Enter'||e.key===' '){const o=e.target.closest('li[data-open]');if(o){e.preventDefault();return openDrawer(o.dataset.open)}}
+  if((e.key==='n'||e.key==='N')&&!e.ctrlKey&&!e.metaKey&&!e.altKey){e.preventDefault();return openDrawer(null)}
+  if(e.key==='/'&&!$('#tools').hidden){e.preventDefault();$('#q').focus()}
+});
+/* drag and drop (pointer); keyboard and touch use Shift+arrows or the stage menu */
+document.addEventListener('dragstart',e=>{const c=e.target.closest&&e.target.closest('.card');if(!c)return;e.dataTransfer.setData('text/plain',c.dataset.id);e.dataTransfer.effectAllowed='move';c.classList.add('dragging')});
+document.addEventListener('dragend',e=>{const c=e.target.closest&&e.target.closest('.card');if(c)c.classList.remove('dragging');document.querySelectorAll('.col.over').forEach(x=>x.classList.remove('over'))});
+document.addEventListener('dragover',e=>{const col=e.target.closest&&e.target.closest('[data-drop]');if(!col)return;e.preventDefault();document.querySelectorAll('.col.over').forEach(x=>x!==col&&x.classList.remove('over'));col.classList.add('over')});
+document.addEventListener('drop',e=>{const col=e.target.closest&&e.target.closest('[data-drop]');if(!col)return;e.preventDefault();
+  const a=S.apps.find(x=>x.id===e.dataTransfer.getData('text/plain'));if(!a)return;
+  const st=col.dataset.drop==='closed'?(['rejected','withdrawn'].includes(a.status)?a.status:'rejected'):col.dataset.drop;
+  if(st===a.status)return render();checkpoint();moveTo(a,st);save();render();toast(`${a.company} → ${LABEL[a.status]}`,true)});
+window.addEventListener('hashchange',()=>{closeDrawer();render()});
+function tick(){const n=new Date();n.setHours(0,0,0,0);if(+n!==+TODAY){TODAY=n;takeDailySnapshot();if($('#drawer').hidden)render()}}
+setInterval(tick,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick()});
+
+/* ---------- boot ---------- */
+(async()=>{
+  const d=await Store.init();
+  S=d?migrate(d):fresh();
+  takeDailySnapshot();
+  $('#fTrack').insertAdjacentHTML('beforeend',TRACKS.map(t=>`<option value="${t}">${t} · ${TRACK_NAME[t]}</option>`).join(''));
+  $('#fTrack').value=S.ui.track||'';$('#fSponsor').value=S.ui.sponsor||'';$('#q').value=S.ui.q||'';
+  render();
+  setSaved(Store.mode==='file'?'Saved to data/tracker.json':'Saved in this browser only',Store.mode!=='file');
+  if(Store.mode==='file')save();
+})();
+})();
+</script>

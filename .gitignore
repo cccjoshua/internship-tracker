@@ -1,0 +1,10 @@
+# Personal data and backups: never commit
+data/
+*.log
+
+# OS / editor / Python
+.DS_Store
+__pycache__/
+*.pyc
+.vscode/
+.idea/
