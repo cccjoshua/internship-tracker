@@ -283,7 +283,7 @@ td select{padding:3px 6px;font-size:12.5px}
       <button class="btn primary" id="addBtn" type="button">+ Add application</button>
     </header>
     <div class="banner" id="banner" hidden>
-      <span><b>Example data.</b> Company names come from your recent resumes; every status, date and listing is a placeholder.</span>
+      <span><b>Example data.</b> All companies are fictional, and every status, date and listing is a placeholder.</span>
       <button class="btn sm" type="button" data-action="clear-samples">Remove examples</button>
     </div>
     <section id="view" aria-labelledby="viewTitle"></section>
@@ -332,15 +332,15 @@ const WEIGHT_SHORT={fit:'Role fit',recency:'Recency',sponsor:'Visa',degree:'Degr
 function hist(...p){return p.map(([s,n])=>({s,d:rel(n)}))}
 function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',history:[]},o)}
 function sampleApps(){const a=o=>blankApp(Object.assign({sample:true},o));return[
-  a({company:'Amazon',role:'Business Intelligence Engineer Intern',track:'BIE',location:'Seattle, WA',status:'saved',priority:3,deadline:rel(9),resume:'Chia-Chun_Chang_Resume_Amazon.docx',nextText:'Submit application',nextDate:rel(1),history:hist(['saved',-1])}),
-  a({company:'Intuit',role:'Business Data Analyst Intern, Strategy & Planning',track:'DA',location:'Mountain View, CA',status:'saved',priority:2,deadline:rel(5),nextText:'Tailor resume',nextDate:rel(0),history:hist(['saved',-3])}),
-  a({company:'Databricks',role:'Software Engineer Intern',track:'SWE',location:'San Francisco, CA',status:'saved',priority:1,history:hist(['saved',-6])}),
-  a({company:'Marvell',role:'AI Data Science Intern (MS)',track:'DS',location:'Santa Clara, CA',status:'applied',priority:3,applied:rel(-12),resume:'Chia-Chun_Chang_Resume_Marvell.docx',history:hist(['saved',-14],['applied',-12])}),
-  a({company:'Pinterest',role:'Data Science Intern',track:'DS',location:'San Francisco, CA',status:'applied',priority:2,applied:rel(-19),resume:'Chia-Chun_Chang_Resume_Pinterest.docx',history:hist(['saved',-22],['applied',-19])}),
-  a({company:'Snowflake',role:'Data Engineer Intern',track:'DE',location:'San Mateo, CA',status:'applied',priority:2,applied:rel(-7),history:hist(['saved',-9],['applied',-7])}),
-  a({company:'C3 AI',role:'Data Science Intern',track:'DS',location:'Redwood City, CA',status:'oa',priority:2,applied:rel(-18),resume:'Chia-Chun_Chang_Resume_C3AI.docx',nextText:'Finish online assessment',nextDate:rel(3),history:hist(['saved',-20],['applied',-18],['oa',-4])}),
-  a({company:'Capital One',role:'Data Analyst Intern',track:'DA',location:'McLean, VA',status:'interview',priority:3,applied:rel(-26),nextText:'Final-round interview',nextDate:rel(6),contact:'Recruiter (add name)',history:hist(['saved',-28],['applied',-26],['oa',-15],['interview',-3])}),
-  a({company:'7-Eleven',role:'Data Science Intern',track:'DS',location:'Irving, TX',status:'rejected',priority:2,applied:rel(-30),history:hist(['saved',-33],['applied',-30],['rejected',-9])}),
+  a({company:'Pelican Logistics',role:'Business Intelligence Engineer Intern',track:'BIE',location:'Seattle, WA',status:'saved',priority:3,deadline:rel(9),resume:'Resume_PelicanLogistics.docx',nextText:'Submit application',nextDate:rel(1),history:hist(['saved',-1])}),
+  a({company:'Copperline Software',role:'Business Data Analyst Intern, Strategy & Planning',track:'DA',location:'Mountain View, CA',status:'saved',priority:2,deadline:rel(5),nextText:'Tailor resume',nextDate:rel(0),history:hist(['saved',-3])}),
+  a({company:'Brightwater Cloud',role:'Software Engineer Intern',track:'SWE',location:'San Francisco, CA',status:'saved',priority:1,history:hist(['saved',-6])}),
+  a({company:'Summit Semiconductor',role:'AI Data Science Intern (MS)',track:'DS',location:'Santa Clara, CA',status:'applied',priority:3,applied:rel(-12),resume:'Resume_SummitSemiconductor.docx',history:hist(['saved',-14],['applied',-12])}),
+  a({company:'Mosaic Social',role:'Data Science Intern',track:'DS',location:'San Francisco, CA',status:'applied',priority:2,applied:rel(-19),resume:'Resume_MosaicSocial.docx',history:hist(['saved',-22],['applied',-19])}),
+  a({company:'Glacier Data',role:'Data Engineer Intern',track:'DE',location:'San Mateo, CA',status:'applied',priority:2,applied:rel(-7),history:hist(['saved',-9],['applied',-7])}),
+  a({company:'Vector AI Labs',role:'Data Science Intern',track:'DS',location:'Redwood City, CA',status:'oa',priority:2,applied:rel(-18),resume:'Resume_VectorAILabs.docx',nextText:'Finish online assessment',nextDate:rel(3),history:hist(['saved',-20],['applied',-18],['oa',-4])}),
+  a({company:'Keystone Bank',role:'Data Analyst Intern',track:'DA',location:'McLean, VA',status:'interview',priority:3,applied:rel(-26),nextText:'Final-round interview',nextDate:rel(6),contact:'Recruiter (add name)',history:hist(['saved',-28],['applied',-26],['oa',-15],['interview',-3])}),
+  a({company:'Corner Market Co.',role:'Data Science Intern',track:'DS',location:'Irving, TX',status:'rejected',priority:2,applied:rel(-30),history:hist(['saved',-33],['applied',-30],['rejected',-9])}),
 ]}
 function sampleListings(){const l=o=>Object.assign({id:uid(),degree:'BS/MS',sponsor:'unknown',sample:true},o,{url:'https://simplify.jobs/?example='+encodeURIComponent(o.company)});return[
   l({company:'Bayou Grid Energy',role:'Data Analytics Intern – Summer 2027',location:'Houston, TX',posted:rel(-1)}),
@@ -351,7 +351,7 @@ function sampleListings(){const l=o=>Object.assign({id:uid(),degree:'BS/MS',spon
   l({company:'Meridian Quant',role:'Quantitative Research Intern',location:'New York, NY',posted:rel(-4),degree:'PhD',sponsor:'yes'}),
   l({company:'Cobalt Payments',role:'Data Analyst Intern',location:'Dallas, TX',posted:rel(-12),sponsor:'no'}),
   l({company:'Fieldnote Labs',role:'Machine Learning Intern',location:'San Francisco, CA',posted:rel(-20),degree:'MS'}),
-  l({company:'Amazon',role:'Business Intelligence Engineer Internship – 2027',location:'Seattle, WA',posted:rel(-6)}),
+  l({company:'Pelican Logistics',role:'Business Intelligence Engineer Internship – 2027',location:'Seattle, WA',posted:rel(-6)}),
 ]}
 const defaultUi=()=>({q:'',track:'',sponsor:'',sort:{key:'deadline',dir:1}});
 function fresh(){return{v:SCHEMA,apps:sampleApps(),listings:sampleListings(),settings:JSON.parse(JSON.stringify(DEFAULTS)),ui:defaultUi()}}
