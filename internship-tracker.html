@@ -11,8 +11,8 @@
 /* Layout: quiet left rail (bottom tab bar on phones) + one working canvas; state is carried by stage colour (stripe, dot, chip), everything else stays neutral. */
 :root{
   --bg:#F4F5F7; --surface:#FFFFFF; --sunk:#ECEEF2; --ink:#14171C; --muted:#545B67; --faint:#646B77; --line:#DDE1E6;
-  --accent:#2445C2; --accent-ink:#FFFFFF; --accent-soft:#E6EAFA;
-  --st-saved:#5F6876; --st-applied:#2445C2; --st-oa:#6537C9; --st-interview:#975003; --st-offer:#13713A; --st-rejected:#AE2222; --st-withdrawn:#626873;
+  --accent:#00205B; --accent-ink:#FFFFFF; --accent-soft:#E3E8F2;
+  --st-saved:#5F6876; --st-applied:#0E7490; --st-oa:#6537C9; --st-interview:#975003; --st-offer:#13713A; --st-rejected:#AE2222; --st-withdrawn:#626873;
   --good:#13713A; --warn:#975003; --bad:#AE2222;
   --shadow:0 12px 40px rgba(20,23,28,.16);
   --f-ui:"Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -21,13 +21,13 @@
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#0E1013; --surface:#161920; --sunk:#1B1F27; --ink:#E6E8EC; --muted:#A8AFBA; --faint:#888F9B; --line:#2A2F38;
-  --accent:#8FA3FF; --accent-ink:#0E1013; --accent-soft:#1D2442;
-  --st-saved:#A3AAB5; --st-applied:#8FA3FF; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
+  --accent:#9DB8EA; --accent-ink:#0E1013; --accent-soft:#1C2740;
+  --st-saved:#A3AAB5; --st-applied:#5CC8E0; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
   --good:#6CCB8E; --warn:#EDB163; --bad:#F08A8A; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0E1013; --surface:#161920; --sunk:#1B1F27; --ink:#E6E8EC; --muted:#A8AFBA; --faint:#888F9B; --line:#2A2F38;
-  --accent:#8FA3FF; --accent-ink:#0E1013; --accent-soft:#1D2442;
-  --st-saved:#A3AAB5; --st-applied:#8FA3FF; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
+  --accent:#9DB8EA; --accent-ink:#0E1013; --accent-soft:#1C2740;
+  --st-saved:#A3AAB5; --st-applied:#5CC8E0; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
   --good:#6CCB8E; --warn:#EDB163; --bad:#F08A8A; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}
 
 [hidden]{display:none!important}
