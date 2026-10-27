@@ -109,7 +109,10 @@ textarea{width:100%;resize:vertical}
 .todo li{display:grid;grid-template-columns:82px minmax(0,1fr) auto;gap:10px;align-items:center;padding:8px 6px;border-top:1px solid var(--line);cursor:pointer;border-radius:4px}
 .todo li:first-child{border-top:0}
 .todo li:hover{background:var(--sunk)}
-.todo .what{min-width:0}
+.todo .what{all:unset;cursor:pointer;min-width:0;display:block}
+.todo .what:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.mini{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
+.s-missed{--c:var(--st-withdrawn)}
 .todo .what b{font-weight:600}
 .todo .what span{color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .due{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
@@ -265,6 +268,7 @@ td select{padding:3px 6px;font-size:12.5px}
     </nav>
     <div class="rail-foot">
       <div class="savestate" id="saveState">Loading…</div>
+      <button class="btn sm ghost" id="themeBtn" type="button" data-action="theme" hidden style="align-self:flex-start;margin-left:-9px">Theme: System</button>
       <div><span class="kbd">N</span> new application</div>
       <div><span class="kbd">/</span> search</div>
       <div><span class="kbd">Shift</span> <span class="kbd">←</span><span class="kbd">→</span> move card</div>
@@ -279,6 +283,7 @@ td select{padding:3px 6px;font-size:12.5px}
         <input id="q" type="search" placeholder="Search company, role, notes" aria-label="Search">
         <select id="fTrack" aria-label="Filter by track"><option value="">All tracks</option></select>
         <select id="fSponsor" aria-label="Filter by visa sponsorship"><option value="">Any sponsorship</option><option value="yes">Sponsors visa</option><option value="unknown">Unknown</option><option value="no">No sponsorship</option></select>
+        <button class="btn ghost" id="clearF" type="button" data-action="clear-filters" hidden>Clear filters</button>
       </div>
       <button class="btn primary" id="addBtn" type="button">+ Add application</button>
     </header>
@@ -307,7 +312,8 @@ const iso=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${Str
 const rel=n=>{const d=new Date(TODAY);d.setDate(d.getDate()+n);return iso(d)};
 const parse=s=>{if(!s||!/^\d{4}-\d{2}-\d{2}$/.test(s))return null;const[y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d)};
 const daysFrom=s=>{const p=parse(s);return p?Math.round((p-TODAY)/864e5):null};
-const fmt=s=>{const p=parse(s);return p?p.toLocaleDateString('en-US',{month:'short',day:'numeric'}):'—'};
+const fmt=s=>{const p=parse(s);if(!p)return'—';const o={month:'short',day:'numeric'};if(p.getFullYear()!==TODAY.getFullYear())o.year='numeric';return p.toLocaleDateString('en-US',o)};
+const maxDate=(x,y)=>(!y||(x&&x>y))?x:y;
 const ago=s=>{const n=-daysFrom(s);return n<=0?'today':n===1?'yesterday':n+' days ago'};
 const dueText=n=>n<0?`${-n}d overdue`:n===0?'Today':n===1?'Tomorrow':`In ${n} days`;
 const dueCls=n=>n<0?'hot':n<=3?'soon':'';
@@ -318,9 +324,10 @@ const safeUrl=u=>{u=normUrl(u);return /^https?:\/\/[^\s"'<>]+$/i.test(u)?u:''};
 const urlKey=u=>safeUrl(u).toLowerCase().replace(/#.*$/,'').replace(/\/+$/,'');
 
 /* ---------- model ---------- */
-const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn']];
+const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn'],['missed','Missed deadline']];
 const LABEL=Object.fromEntries(STAGES);
-const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6};
+const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6,missed:7};
+const CLOSED=['rejected','withdrawn','missed'];
 const FLOW=['saved','applied','oa','interview','offer'];
 const TRACKS=['SWE','DE','DA','DS','BIE'];
 const TRACK_NAME={SWE:'Software Eng.',DE:'Data Eng.',DA:'Data Analyst',DS:'Data Science',BIE:'BI Engineer'};
@@ -330,7 +337,7 @@ const WEIGHT_LABEL={fit:'Role fit (matches a target track)',recency:'Recency (ne
 const WEIGHT_SHORT={fit:'Role fit',recency:'Recency',sponsor:'Visa',degree:'Degree',location:'Location'};
 
 function hist(...p){return p.map(([s,n])=>({s,d:rel(n)}))}
-function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',history:[]},o)}
+function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',followedUp:'',snoozeUntil:'',history:[]},o)}
 function sampleApps(){const a=o=>blankApp(Object.assign({sample:true},o));return[
   a({company:'Pelican Logistics',role:'Business Intelligence Engineer Intern',track:'BIE',location:'Seattle, WA',status:'saved',priority:3,deadline:rel(9),resume:'Resume_PelicanLogistics.docx',nextText:'Submit application',nextDate:rel(1),history:hist(['saved',-1])}),
   a({company:'Copperline Software',role:'Business Data Analyst Intern, Strategy & Planning',track:'DA',location:'Mountain View, CA',status:'saved',priority:2,deadline:rel(5),nextText:'Tailor resume',nextDate:rel(0),history:hist(['saved',-3])}),
@@ -354,49 +361,66 @@ function sampleListings(){const l=o=>Object.assign({id:uid(),degree:'BS/MS',spon
   l({company:'Pelican Logistics',role:'Business Intelligence Engineer Internship – 2027',location:'Seattle, WA',posted:rel(-6)}),
 ]}
 const defaultUi=()=>({q:'',track:'',sponsor:'',sort:{key:'deadline',dir:1}});
-function fresh(){return{v:SCHEMA,apps:sampleApps(),listings:sampleListings(),settings:JSON.parse(JSON.stringify(DEFAULTS)),ui:defaultUi()}}
+function fresh(){return{v:SCHEMA,apps:sampleApps(),listings:sampleListings(),dismissed:[],settings:JSON.parse(JSON.stringify(DEFAULTS)),ui:defaultUi()}}
 function migrate(d){d=d||{};
-  const s={v:SCHEMA,apps:Array.isArray(d.apps)?d.apps:[],listings:Array.isArray(d.listings)?d.listings:[],
+  const s={v:SCHEMA,apps:Array.isArray(d.apps)?d.apps:[],listings:Array.isArray(d.listings)?d.listings:[],dismissed:Array.isArray(d.dismissed)?d.dismissed.slice(-3000):[],
     settings:Object.assign({},DEFAULTS,d.settings,{weights:Object.assign({},DEFAULTS.weights,(d.settings||{}).weights)}),ui:Object.assign(defaultUi(),d.ui)};
   s.apps=s.apps.filter(a=>a&&a.company).map(a=>{const b=blankApp(a);b.url=safeUrl(b.url);if(!LABEL[b.status])b.status='saved';b.priority=Math.min(3,Math.max(1,+b.priority||2));
     if(!['yes','no','unknown'].includes(b.sponsor))b.sponsor='unknown';
     b.history=(Array.isArray(b.history)?b.history:[]).filter(h=>h&&LABEL[h.s]&&parse(h.d));if(!b.history.length)b.history=[{s:b.status,d:b.applied||iso(TODAY)}];return b});
   s.listings=s.listings.filter(l=>l&&l.company).map(l=>Object.assign({id:uid(),degree:'',sponsor:'unknown',location:'',posted:''},l,{url:safeUrl(l.url)}));
   return s}
-const snapshotData=()=>({v:SCHEMA,apps:S.apps,listings:S.listings,settings:S.settings,ui:S.ui});
+const snapshotData=()=>({v:SCHEMA,apps:S.apps,listings:S.listings,dismissed:S.dismissed,settings:S.settings,ui:Object.assign({},S.ui,{q:''})});
+const listingKey=l=>urlKey(l.url)||('k:'+norm(l.company)+'|'+norm(l.role));
 
-/* ---------- storage: local file via server.py, else this browser ---------- */
-const Store={mode:'local',t:null,
+/* ---------- storage: local file via server.py (revision-checked), else this browser ---------- */
+const bc=('BroadcastChannel' in window)?new BroadcastChannel('iat-sync'):null;
+const Store={mode:'local',rev:0,t:null,busy:false,queued:null,destructive:false,
   async init(){
     try{const ctl=new AbortController();setTimeout(()=>ctl.abort(),1500);
       const r=await fetch('api/state',{cache:'no-store',signal:ctl.signal});
       if(r.ok&&(r.headers.get('content-type')||'').includes('application/json')){const d=await r.json();
-        if(d===null||(d&&Array.isArray(d.apps))){this.mode='file';if(d)return d}}}catch(e){}
+        if(d===null||(d&&Array.isArray(d.apps))){this.mode='file';if(d){this.rev=+d.rev||0;return d}}}}catch(e){}
     try{const raw=localStorage.getItem(KEY);return raw?JSON.parse(raw):null}catch(e){return null}},
-  save(d){const j=JSON.stringify(d);
-    try{localStorage.setItem(KEY,j)}catch(e){}
+  async latest(){try{const r=await fetch('api/state',{cache:'no-store'});return r.ok?await r.json():null}catch(e){return null}},
+  save(d,destructive){if(destructive)this.destructive=true;
+    try{localStorage.setItem(KEY,JSON.stringify(d))}catch(e){}
     if(this.mode!=='file'){setSaved('Saved in this browser only',true);return}
-    clearTimeout(this.t);setSaved('Saving…');
-    this.t=setTimeout(()=>fetch('api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:j})
-      .then(r=>{if(!r.ok)throw new Error(r.status);setSaved('Saved to data/tracker.json')})
-      .catch(()=>setSaved('Server not reachable; kept in this browser',true)),350)}};
+    this.queued=d;clearTimeout(this.t);setSaved('Saving…');this.t=setTimeout(()=>this.flush(),300)},
+  async flush(){if(this.busy||!this.queued)return;
+    const d=this.queued;this.queued=null;this.busy=true;const backup=this.destructive;this.destructive=false;
+    try{const headers={'Content-Type':'application/json'};if(backup)headers['X-Backup']='1';
+      const r=await fetch('api/state',{method:'PUT',headers,body:JSON.stringify(Object.assign({},d,{baseRev:this.rev}))});
+      if(r.status===409){this.queued=null;const l=await this.latest();applyExternal(l,'This tracker changed in another tab. Showing the latest version, so please redo your last change.');}
+      else if(!r.ok)throw new Error(r.status);
+      else{const res=await r.json();this.rev=+res.rev||this.rev;setSaved('Saved to data/tracker.json');if(bc)bc.postMessage({rev:this.rev})}}
+    catch(e){setSaved('Server not reachable; kept in this browser',true)}
+    finally{this.busy=false;if(this.queued)this.flush()}}};
 function setSaved(t,warn){const el=$('#saveState');el.textContent=t;el.classList.toggle('warn',!!warn)}
-let S;
-function save(){Store.save(snapshotData())}
+let S,pendingExt=null;
+function save(destructive){Store.save(snapshotData(),destructive)}
+function applyExternal(d,msg){if(!d)return;
+  if(!$('#drawer').hidden){pendingExt={d,msg};return}
+  const ui=S.ui;S=migrate(d);S.ui=ui;Store.rev=+d.rev||Store.rev;undoStack.length=0;pendingExt=null;render();if(msg)toast(msg)}
+if(bc)bc.onmessage=async e=>{if(Store.mode!=='file'||!e.data||!(e.data.rev>Store.rev))return;applyExternal(await Store.latest(),'Updated from another tab')};
+window.addEventListener('storage',e=>{if(e.key!==KEY||!e.newValue||Store.mode==='file')return;try{applyExternal(JSON.parse(e.newValue),'Updated from another tab')}catch(_){}});
+async function checkRemote(){if(Store.mode!=='file'||Store.busy||Store.queued)return;const l=await Store.latest();if(l&&(+l.rev||0)>Store.rev)applyExternal(l,'Updated from another tab')}
 function takeDailySnapshot(){try{const k=KEY+'-snap-'+iso(TODAY);if(!localStorage.getItem(k))localStorage.setItem(k,JSON.stringify(snapshotData()));
   const keys=Object.keys(localStorage).filter(x=>x.startsWith(KEY+'-snap-')).sort();while(keys.length>7)localStorage.removeItem(keys.shift())}catch(e){}}
 function snapshots(){try{return Object.keys(localStorage).filter(x=>x.startsWith(KEY+'-snap-')).sort().reverse()}catch(e){return[]}}
 
 /* ---------- undo ---------- */
-let undoSnap=null;
-function checkpoint(){undoSnap=JSON.stringify({apps:S.apps,listings:S.listings,settings:S.settings})}
-function undo(){if(!undoSnap)return toast('Nothing to undo');const d=JSON.parse(undoSnap);undoSnap=null;Object.assign(S,d);save();render();toast('Undone')}
+const undoStack=[];
+function checkpoint(withSettings){undoStack.push(JSON.stringify({apps:S.apps,listings:S.listings,dismissed:S.dismissed,settings:withSettings?S.settings:null}));if(undoStack.length>30)undoStack.shift()}
+function undo(){const j=undoStack.pop();if(!j)return toast('Nothing to undo');const d=JSON.parse(j);S.apps=d.apps;S.listings=d.listings;S.dismissed=d.dismissed||[];if(d.settings)S.settings=d.settings;
+  save(true);render();toast(undoStack.length?`Undone · ${undoStack.length} more step${undoStack.length===1?'':'s'} available`:'Undone')}
 
 /* ---------- logic ---------- */
-function setStatus(a,s,d){if(a.status===s)return;a.status=s;d=d||iso(TODAY);a.history.push({s,d});if(s==='applied'&&!a.applied)a.applied=d}
+function syncApplied(a){const h=a.history.find(x=>x.s==='applied');if(h)a.applied=h.d;else if(a.status==='saved')a.applied=''}
+function setStatus(a,s,d){if(a.status===s)return;a.status=s;a.history.push({s,d:d||iso(TODAY)});syncApplied(a)}
 function moveTo(a,s){const last=a.history[a.history.length-1];
   const back=FLOW.includes(s)&&FLOW.includes(a.status)&&FLOW.indexOf(s)<FLOW.indexOf(a.status);
-  if(back&&last&&last.s===a.status&&a.history.length>1){a.history.pop();a.status=s;if(a.history[a.history.length-1].s!==s)a.history.push({s,d:iso(TODAY)})}
+  if(back&&last&&last.s===a.status&&a.history.length>1){a.history.pop();a.status=s;if(a.history[a.history.length-1].s!==s)a.history.push({s,d:iso(TODAY)});syncApplied(a)}
   else setStatus(a,s)}
 const reached=(a,s)=>a.history.some(h=>h.s===s)||a.status===s;
 const norm=s=>(s||'').toLowerCase().replace(/\b(summer|fall|winter|spring|internship|intern|co-?op)\b|\b20\d\d\b/g,'').replace(/[^a-z0-9]/g,'');
@@ -421,7 +445,9 @@ function scoreParts(l){const w=S.settings.weights,t=inferTrack(l.role);
 function filtered(){const{q,track,sponsor}=S.ui;const t=(q||'').toLowerCase().trim();
   return S.apps.filter(a=>(!t||[a.company,a.role,a.location,a.notes,a.contact].join(' ').toLowerCase().includes(t))&&(!track||a.track===track)&&(!sponsor||a.sponsor===sponsor))}
 function lastDate(a){const l=a.history[a.history.length-1];return l?l.d:a.applied}
-function followUps(){const fu=+S.settings.followUpDays||14;return S.apps.filter(a=>a.status==='applied'&&-daysFrom(lastDate(a))>=fu)}
+function followUps(){const fu=+S.settings.followUpDays||14;
+  return S.apps.filter(a=>a.status==='applied'&&!(a.snoozeUntil&&daysFrom(a.snoozeUntil)>0)&&-daysFrom(maxDate(lastDate(a),a.followedUp))>=fu)}
+const filtersOn=()=>!!(S.ui.q||S.ui.track||S.ui.sponsor);
 
 /* ---------- small renderers ---------- */
 const stChip=s=>`<span class="chip st s-${s}">${LABEL[s]}</span>`;
@@ -446,12 +472,15 @@ R.dashboard=()=>{
   const pct=(n,d)=>d?Math.round(n/d*100)+'%':'—';
   const kpi=(l,v,h)=>`<div class="kpi"><span class="l">${l}</span><span class="v">${v}</span><span class="h">${h}</span></div>`;
   const items=[];
-  for(const a of A){if(['rejected','withdrawn'].includes(a.status))continue;
-    if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n!==null&&n<=7)items.push({a,kind:'Deadline',n,text:'Apply by '+fmt(a.deadline)})}
+  for(const a of A){if(CLOSED.includes(a.status))continue;
+    if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n!==null&&n<=7)items.push({a,kind:n<0?'Missed?':'Deadline',n,text:(n<0?'Deadline passed ':'Apply by ')+fmt(a.deadline),missed:n<0})}
     if(a.nextText&&a.nextDate){const n=daysFrom(a.nextDate);if(n!==null&&n<=7)items.push({a,kind:'Next step',n,text:a.nextText})}}
-  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${-daysFrom(lastDate(a))} days`,fu:true});
+  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${-daysFrom(maxDate(lastDate(a),a.followedUp))} days`,fu:true});
   items.sort((x,y)=>x.n-y.n);
-  const todo=items.length?`<ul class="todo">${items.map(i=>`<li data-open="${i.a.id}" tabindex="0" role="button" aria-label="${esc(i.kind+': '+i.a.company+', '+i.text)}"><span class="kind">${i.kind}</span><span class="what"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></span><span class="due ${i.fu?'soon':dueCls(i.n)}">${i.fu?'Nudge':dueText(i.n)}</span></li>`).join('')}</ul>`:`<p class="empty">Nothing due in the next 7 days.</p>`;
+  const acts=i=>i.fu?`<span class="mini"><button class="btn sm" type="button" data-fu="done" data-id="${i.a.id}">Followed up</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Snooze 7d</button></span>`
+    :i.missed?`<span class="mini"><span class="due hot">${dueText(i.n)}</span><button class="btn sm" type="button" data-missed="${i.a.id}">Mark missed</button></span>`
+    :`<span class="due ${dueCls(i.n)}">${dueText(i.n)}</span>`;
+  const todo=items.length?`<ul class="todo">${items.map(i=>`<li><span class="kind">${i.kind}</span><button class="what" type="button" data-open="${i.a.id}"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></button>${acts(i)}</li>`).join('')}</ul>`:`<p class="empty">Nothing due in the next 7 days.</p>`;
   const fst=[['applied','Applied'],['oa','Assessment'],['interview','Interview'],['offer','Offer']];
   const fc=fst.map(([s])=>A.filter(a=>reached(a,s)).length),base=Math.max(fc[0],1);
   const funnel=fst.map(([s,l],i)=>`<div class="frow"><span>${l}</span><div class="fbar" aria-hidden="true"><span class="s-${s}" style="width:${Math.max(fc[i]?3:0,fc[i]/base*100)}%"></span></div><span class="num"><b>${fc[i]}</b>${i?` · ${Math.round(fc[i]/base*100)}%`:''}</span></div>`).join('');
@@ -470,7 +499,7 @@ R.dashboard=()=>{
   const segs=[['saved','Saved'],['active','In progress'],['closed','Closed']];
   const tcol={saved:'var(--st-saved)',active:'var(--st-applied)',closed:'var(--st-rejected)'};
   const tmax=Math.max(1,...TRACKS.map(t=>A.filter(a=>a.track===t).length));
-  const trows=TRACKS.map(t=>{const at=A.filter(a=>a.track===t);const c={saved:at.filter(a=>a.status==='saved').length,active:at.filter(a=>['applied','oa','interview','offer'].includes(a.status)).length,closed:at.filter(a=>['rejected','withdrawn'].includes(a.status)).length};
+  const trows=TRACKS.map(t=>{const at=A.filter(a=>a.track===t);const c={saved:at.filter(a=>a.status==='saved').length,active:at.filter(a=>['applied','oa','interview','offer'].includes(a.status)).length,closed:at.filter(a=>CLOSED.includes(a.status)).length};
     return `<div class="trow" role="img" aria-label="${t}: ${c.saved} saved, ${c.active} in progress, ${c.closed} closed"><b>${t}</b><div class="seg" style="width:${Math.max(at.length?8:0,at.length/tmax*100)}%">${segs.map(([k])=>c[k]?`<span style="flex:${c[k]};background:${tcol[k]}"></span>`:'').join('')}</div><span class="num">${at.length}</span></div>`}).join('');
   return `<div style="display:flex;flex-direction:column;gap:16px">
   <div class="kpis">${kpi('To apply',toApply,'saved, not submitted')}${kpi('Applied',applied,active+' still active')}${kpi('Response rate',pct(replied,applied),replied+' replies incl. rejections')}${kpi('Interview rate',pct(intv,applied),intv+' reached interview')}${kpi('Offers',offers,pct(offers,applied)+' of applications')}</div>
@@ -490,12 +519,12 @@ function card(a){
   return `<li class="card" draggable="true" data-id="${a.id}" data-open="${a.id}" tabindex="0" aria-label="${esc(a.company+', '+a.role+', '+LABEL[a.status])}">
     <div class="card-top"><strong>${esc(a.company)}</strong>${prio(a.priority)}</div>
     <div class="role">${esc(a.role)}</div>
-    <div class="chips">${a.track?`<span class="chip tag">${a.track}</span>`:''}${a.sponsor!=='unknown'?spChip(a.sponsor):''}${['rejected','withdrawn'].includes(a.status)?stChip(a.status):''}</div>
+    <div class="chips">${a.track?`<span class="chip tag">${a.track}</span>`:''}${a.sponsor!=='unknown'?spChip(a.sponsor):''}${CLOSED.includes(a.status)?stChip(a.status):''}</div>
     <div class="meta">${meta}</div>
     <select class="move" data-status-for="${a.id}" aria-label="Move ${esc(a.company)} to stage">${opts(STAGES,a.status)}</select></li>`;
 }
 R.board=()=>{const A=filtered();const cols=['saved','applied','oa','interview','offer','closed'];
-  return `<div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?['rejected','withdrawn'].includes(a.status):a.status===s).sort((x,y)=>y.priority-x.priority||(x.deadline||'9').localeCompare(y.deadline||'9'));
+  return `<div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?CLOSED.includes(a.status):a.status===s).sort((x,y)=>y.priority-x.priority||(x.deadline||'9').localeCompare(y.deadline||'9'));
     const name=s==='closed'?'Closed':LABEL[s];
     return `<section class="col s-${s}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length?`<ul class="cards">${items.map(card).join('')}</ul>`:'<p class="empty">Drop a card here</p>'}</section>`}).join('')}</div>`};
 
@@ -531,7 +560,7 @@ R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
   </article>`).join('')}</div>`};
 
 R.prefs=()=>{const st=S.settings,snaps=snapshots();
-  const where=Store.mode==='file'?'Saved to <b>data/tracker.json</b> on your computer. The local server keeps a daily backup in data/backups (last 30 days).':'Saved in <b>this browser only</b>. Clearing site data erases it, so export a backup regularly, or run the local server to save to a file.';
+  const where=Store.mode==='file'?'Saved to <b>data/tracker.json</b> on your computer. The server saves a backup at most every 30 minutes and before every delete, import or restore.':'Saved in <b>this browser only</b>. Clearing site data erases it, so export a backup regularly, or run the local server to save to a file.';
   return `<div class="prefs">
   <section class="panel"><h2>Target tracks</h2><p class="empty">Listings in these tracks get full role-fit points.</p>
     <div class="checks">${TRACKS.map(t=>`<label><input type="checkbox" data-target="${t}" ${st.targets.includes(t)?'checked':''}> ${t} <span class="sub">${TRACK_NAME[t]}</span></label>`).join('')}</div></section>
@@ -546,31 +575,40 @@ R.prefs=()=>{const st=S.settings,snaps=snapshots();
     <label class="field"><span>Import or restore</span><textarea id="io" rows="6" placeholder="Paste a JSON export, or a CSV with columns like Company, Role, Status, Location, Link, Deadline"></textarea>
     <span class="hint">Import adds new rows and skips duplicates (same company and role, or same link). Restore replaces everything with a JSON export.</span></label>
     <div class="row"><button class="btn" type="button" data-action="export">Export JSON</button><button class="btn" type="button" data-action="import">Import</button><button class="btn" type="button" data-action="restore">Restore</button>
-      <span style="margin-left:auto"></span><button class="btn ghost danger" type="button" data-action="reset">Reset everything</button></div>
-    ${snaps.length?`<div class="field"><span>Daily snapshots in this browser</span><ul class="snaps">${snaps.map(k=>`<li><span class="mono">${k.slice(-10)}</span><button class="btn sm ghost" type="button" data-snap="${esc(k)}">Restore</button></li>`).join('')}</ul></div>`:''}
+      <span style="margin-left:auto"></span><button class="btn ghost" type="button" data-action="load-samples">Load example data</button><button class="btn ghost danger" type="button" data-action="clear-all">Clear all data</button></div>
+    ${S.dismissed.length?`<div class="row"><span class="empty">${S.dismissed.length} dismissed listing${S.dismissed.length===1?'':'s'} stay hidden when the feed refreshes.</span><button class="btn sm ghost" type="button" data-action="undismiss">Show them again</button></div>`:''}
+    ${Store.mode==='file'?`<div class="field"><span>Backups on your computer</span><ul class="snaps" id="bkList"><li class="empty">Loading…</li></ul></div>`
+      :snaps.length?`<div class="field"><span>Daily snapshots in this browser</span><ul class="snaps">${snaps.map(k=>`<li><span class="mono">${k.slice(-10)}</span><button class="btn sm ghost" type="button" data-snap="${esc(k)}">Restore</button></li>`).join('')}</ul></div>`:''}
   </section></div>`};
+async function loadBackups(){const el=$('#bkList');if(!el)return;
+  try{const r=await fetch('api/backups',{cache:'no-store'});const list=await r.json();
+    el.innerHTML=list.length?list.slice(0,12).map(b=>`<li><span class="mono">${esc(b.label)}</span><button class="btn sm ghost" type="button" data-bk="${esc(b.name)}">Restore</button></li>`).join('')+(list.length>12?`<li class="empty">${list.length-12} older backups in data/backups</li>`:''):'<li class="empty">No backups yet. One is made after your first change.</li>'}
+  catch(e){el.innerHTML='<li class="empty">Could not list backups.</li>'}}
 
 /* ---------- render ---------- */
 function route(){const h=location.hash.slice(1);return VIEWS[h]?h:'dashboard'}
 function render(){const v=route();
   document.querySelectorAll('[data-nav]').forEach(a=>a.dataset.nav===v?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current'));
-  $('#viewTitle').textContent=VIEWS[v][0];$('#viewSub').textContent=VIEWS[v][1]();
+  $('#viewTitle').textContent=VIEWS[v][0];
+  $('#viewSub').textContent=(filtersOn()&&(v==='board'||v==='table'))?`Showing ${filtered().length} of ${S.apps.length} applications · filters on`:VIEWS[v][1]();
   $('#tools').hidden=!['board','table','inbox'].includes(v);$('#fTrack').hidden=v==='inbox';
-  $('#nBoard').textContent=S.apps.filter(a=>!['rejected','withdrawn'].includes(a.status)).length;
+  $('#clearF').hidden=!filtersOn();
+  $('#nBoard').textContent=S.apps.filter(a=>!CLOSED.includes(a.status)).length;
   $('#nTable').textContent=S.apps.length;$('#nInbox').textContent=S.listings.length||'';
   $('#banner').hidden=!(S.apps.some(a=>a.sample)||S.listings.some(l=>l.sample));
   $('#view').innerHTML=R[v]();
+  if(v==='prefs'&&Store.mode==='file')loadBackups();
 }
 function focusCard(id){const el=document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);if(el)el.focus()}
 function toast(msg,undoable){const t=$('#toast');t.innerHTML=`<span>${esc(msg)}</span>${undoable?'<button type="button" class="tbtn" data-action="undo">Undo</button>':''}`;
   t.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>t.hidden=true,undoable?7000:2600)}
 
 /* ---------- dialog ---------- */
-let editing=null,confirmDel=false,force=false,returnTo=null,origStatus='saved';
+let editing=null,confirmDel=false,force=false,forceDates=false,returnTo=null,origStatus='saved',origApplied='';
 function openDrawer(id){
   const a=id?S.apps.find(x=>x.id===id):blankApp({});if(!a)return;
   if($('#drawer').hidden){const ae=document.activeElement;const host=ae&&ae.closest?ae.closest('[data-open]'):null;returnTo=host?host.dataset.open:(ae&&ae.id)||null}
-  editing=id||null;confirmDel=false;force=false;origStatus=a.status;
+  editing=id||null;confirmDel=false;force=false;forceDates=false;origStatus=a.status;origApplied=a.applied||'';
   const f=(k,l,type='text',cls='',extra='')=>`<label class="field ${cls}"><span>${l}</span><input id="f-${k}" type="${type}" value="${esc(a[k])}" ${extra}></label>`;
   $('#drawer').innerHTML=`<form id="appForm" style="display:contents" novalidate>
     <div class="dhead"><div><h2 id="dTitle">${id?esc(a.company):'New application'}</h2>${id?`<div class="sub">${esc(a.role)}</div>`:''}</div><button class="btn ghost sm" type="button" data-action="close">Close</button></div>
@@ -586,6 +624,7 @@ function openDrawer(id){
       ${f('url','Posting link','url','full','placeholder="https://"')}
       ${f('deadline','Deadline','date')}${f('applied','Date applied','date')}
       ${f('nextText','Next step')}${f('nextDate','Next step date','date')}
+      ${f('followedUp','Last followed up','date')}${f('snoozeUntil','Snooze follow-up until','date')}
       ${f('resume','Resume version','text','full')}
       ${f('contact','Contact / referral','text','full')}
       <label class="field full"><span>Notes</span><textarea id="f-notes" rows="4">${esc(a.notes)}</textarea></label>
@@ -598,29 +637,38 @@ function openDrawer(id){
   setTimeout(()=>$('#f-company').focus(),0);
 }
 function closeDrawer(){if($('#drawer').hidden)return;$('#drawer').hidden=true;$('#scrim').hidden=true;$('#app').inert=false;editing=null;
+  if(pendingExt){const p=pendingExt;pendingExt=null;applyExternal(p.d,p.msg)}
   const id=returnTo;returnTo=null;if(!id)return;const el=document.querySelector(`.card[data-open="${CSS.escape(id)}"],td button[data-open="${CSS.escape(id)}"],[data-open="${CSS.escape(id)}"]`)||document.getElementById(id);if(el)el.focus()}
+function dateIssues(hist){const first={},out=[];for(const h of hist)if(!first[h.s]||h.d<first[h.s])first[h.s]=h.d;
+  const seq=['applied','oa','interview','offer'];
+  for(let i=0;i<seq.length;i++)for(let j=i+1;j<seq.length;j++){const x=seq[i],y=seq[j];if(first[x]&&first[y]&&first[y]<first[x])out.push(`${LABEL[y]} (${fmt(first[y])}) is earlier than ${LABEL[x]} (${fmt(first[x])}).`)}
+  for(const c of CLOSED)if(first[c]&&first.applied&&first[c]<first.applied)out.push(`${LABEL[c]} (${fmt(first[c])}) is earlier than Applied (${fmt(first.applied)}).`);
+  if(hist.some(h=>daysFrom(h.d)>0))out.push('A status date is in the future.');
+  return out}
 function formError(html){const e=$('#formErr');e.innerHTML=html;e.hidden=false;e.scrollIntoView({block:'nearest'})}
 function submitForm(e){e.preventDefault();
   const g=k=>($('#f-'+k).value||'').trim();
   if(!g('company')||!g('role'))return formError('Add a company and a role to save.');
   const rawUrl=g('url'),url=safeUrl(rawUrl);
   if(rawUrl&&!url)return formError('The posting link must start with http:// or https://.');
-  for(const k of['deadline','applied','nextDate'])if(g(k)&&!parse(g(k)))return formError('Use a valid date.');
+  for(const k of['deadline','applied','nextDate','followedUp','snoozeUntil'])if(g(k)&&!parse(g(k)))return formError('Use a valid date.');
   const dup=findDup(g('company'),g('role'),url,editing);
   if(dup&&!force)return formError(`You already track <b>${esc(dup.company)}</b> · ${esc(dup.role)} (${LABEL[dup.status]}). <button class="btn sm" type="button" data-open="${dup.id}">Open it</button><button class="btn sm ghost" type="button" data-action="force-save">Save anyway</button>`);
+  if(pendingExt){const p=pendingExt;pendingExt=null;const ui=S.ui;S=migrate(p.d);S.ui=ui;Store.rev=+p.d.rev||Store.rev;undoStack.length=0}
+  const st=g('status'),sd=parse(g('stdate'))?g('stdate'):iso(TODAY),appliedIn=g('applied');
+  let hist;
+  if(!editing){const t=iso(TODAY);hist=[{s:'saved',d:st==='saved'?sd:(sd<t?sd:t)}];if(st!=='saved')hist.push({s:st,d:sd})}
+  else{hist=[...document.querySelectorAll('#hist li')].filter(li=>!li.hidden).map(li=>{const v=li.querySelector('input').value;return{s:li.dataset.s,d:parse(v)?v:iso(TODAY)}});
+    if(st!==origStatus||!hist.length)hist.push({s:st,d:sd})}
+  if(appliedIn&&appliedIn!==origApplied){const ha=hist.find(h=>h.s==='applied');if(ha)ha.d=appliedIn}
+  hist=hist.map((h,i)=>Object.assign({i},h)).sort((x,y)=>x.d.localeCompare(y.d)||x.i-y.i).map(({s,d})=>({s,d}));
+  if(!forceDates){const issues=dateIssues(hist);if(issues.length)return formError(`<span>${issues.map(esc).join('<br>')}</span><button class="btn sm" type="button" data-action="force-dates">Save anyway</button>`)}
   checkpoint();
   let a=editing?S.apps.find(x=>x.id===editing):null;const isNew=!a;
-  if(isNew){a=blankApp({});S.apps.push(a)}
-  const oldAppliedHist=(a.history.find(h=>h.s==='applied')||{}).d;
-  for(const k of['company','role','track','sponsor','location','deadline','applied','nextText','nextDate','resume','contact','notes'])a[k]=g(k);
-  a.url=url;a.priority=+g('priority')||2;
-  const st=g('status'),sd=parse(g('stdate'))?g('stdate'):iso(TODAY);
-  if(isNew){a.history=[{s:'saved',d:st==='saved'?sd:iso(TODAY)}];a.status='saved';if(st!=='saved')setStatus(a,st,sd)}
-  else{a.history=[...document.querySelectorAll('#hist li')].filter(li=>!li.hidden).map((li,i)=>{const v=li.querySelector('input').value;return{s:li.dataset.s,d:parse(v)?v:iso(TODAY),i}})
-      .sort((x,y)=>x.d.localeCompare(y.d)||x.i-y.i).map(({s,d})=>({s,d}));
-    if(st!==origStatus){a.status=origStatus;setStatus(a,st,sd)}else a.status=st;
-    if(!a.history.length)a.history=[{s:a.status,d:sd}]}
-  const ha=a.history.find(h=>h.s==='applied');if(ha&&(!a.applied||a.applied===oldAppliedHist))a.applied=ha.d;
+  if(isNew){a=blankApp(editing?{id:editing}:{});S.apps.push(a)}
+  for(const k of['company','role','track','sponsor','location','deadline','applied','nextText','nextDate','followedUp','snoozeUntil','resume','contact','notes'])a[k]=g(k);
+  a.url=url;a.priority=+g('priority')||2;a.history=hist;a.status=st;
+  if(!hist.some(h=>h.s==='applied')&&appliedIn&&st!=='saved')a.applied=appliedIn;else syncApplied(a);
   save();returnTo=a.id;closeDrawer();render();
   const back=document.querySelector(`.card[data-open="${CSS.escape(a.id)}"],td button[data-open="${CSS.escape(a.id)}"]`);if(back)back.focus();
   toast(isNew?`${a.company} added`:'Changes saved',true);
@@ -640,7 +688,7 @@ function importText(txt){txt=txt.trim();if(!txt)return toast('Paste JSON or CSV 
   let added=0,skipped=0;
   if(/^[\[{]/.test(txt)){const raw=JSON.parse(txt);checkpoint();const d=migrate(Array.isArray(raw)?{apps:raw}:raw);
     for(const a of d.apps){a.sample=false;addIfNew(a)?added++:skipped++}
-    for(const l of d.listings||[])if(!S.listings.some(x=>x.id===l.id||(urlKey(x.url)&&urlKey(x.url)===urlKey(l.url))))S.listings.push(l);
+    for(const l of d.listings||[])if(!S.dismissed.includes(listingKey(l))&&!S.listings.some(x=>x.id===l.id||listingKey(x)===listingKey(l)))S.listings.push(l);
   }else{const rows=parseCSV(txt);if(rows.length<2)return toast('The CSV needs a header row and at least one row.');
     const h=rows.shift().map(x=>x.trim().toLowerCase().replace(/^﻿/,''));const col=(...n)=>h.findIndex(x=>n.includes(x));
     const ix={company:col('company','company name','name','organization'),role:col('role','position','title','job title','job'),status:col('status','stage'),location:col('location','city'),url:col('url','link','apply link','job link','posting'),deadline:col('deadline','due','due date'),applied:col('applied','date applied','applied date','applied on'),notes:col('notes','note'),track:col('track','category','type'),sponsor:col('sponsor','sponsorship','visa','visa sponsorship')};
@@ -653,8 +701,8 @@ function importText(txt){txt=txt.trim();if(!txt)return toast('Paste JSON or CSV 
         status:st,history:[{s:'saved',d:applied||iso(TODAY)}]});
       if(st!=='saved')a.history.push({s:st,d:applied||iso(TODAY)});
       addIfNew(a)?added++:skipped++}}
-  save();render();toast(`Imported ${added}${skipped?` · skipped ${skipped} duplicate${skipped===1?'':'s'}`:''}`,true)}
-function restoreFrom(d,label){checkpoint();const m=migrate(d);S.apps=m.apps;S.listings=m.listings;S.settings=m.settings;save();render();toast(label,true)}
+  save(true);render();toast(`Imported ${added}${skipped?` · skipped ${skipped} duplicate${skipped===1?'':'s'}`:''}`,true)}
+function restoreFrom(d,label){checkpoint(true);const m=migrate(d);S.apps=m.apps;S.listings=m.listings;S.dismissed=m.dismissed;S.settings=m.settings;save(true);render();toast(label,true)}
 
 /* ---------- events ---------- */
 document.addEventListener('click',e=>{
@@ -665,18 +713,34 @@ document.addEventListener('click',e=>{
     if(k==='close')return closeDrawer();
     if(k==='undo')return undo();
     if(k==='force-save'){force=true;return $('#appForm').requestSubmit()}
-    if(k==='clear-samples'){checkpoint();S.apps=S.apps.filter(a=>!a.sample);S.listings=S.listings.filter(l=>!l.sample);save();render();return toast('Examples removed',true)}
+    if(k==='force-dates'){forceDates=true;return $('#appForm').requestSubmit()}
+    if(k==='clear-filters'){S.ui.q='';S.ui.track='';S.ui.sponsor='';$('#q').value='';$('#fTrack').value='';$('#fSponsor').value='';save();render();return}
+    if(k==='theme'){const order=['system','light','dark'];let cur='system';try{cur=localStorage.getItem('iat-theme')||'system'}catch(_){}
+      const next=order[(order.indexOf(cur)+1)%3];try{localStorage.setItem('iat-theme',next)}catch(_){}applyTheme(next);return}
+    if(k==='clear-samples'){checkpoint();S.apps=S.apps.filter(a=>!a.sample);S.listings=S.listings.filter(l=>!l.sample);save(true);render();return toast('Examples removed',true)}
+    if(k==='load-samples'){checkpoint();let n=0;for(const a of sampleApps())if(addIfNew(a))n++;for(const l of sampleListings())if(!S.listings.some(x=>listingKey(x)===listingKey(l))){S.listings.push(l);n++}
+      save();render();return toast(n?`Added ${n} example items`:'Example data is already loaded',!!n)}
+    if(k==='undismiss'){checkpoint();S.dismissed=[];save();render();return toast('Dismissed listings will show again on the next refresh',true)}
+    if(k==='clear-all'){if(act.dataset.armed){checkpoint();S.apps=[];S.listings=[];S.dismissed=[];save(true);render();return toast('All applications and listings cleared. A backup was saved first.',true)}
+      act.dataset.armed='1';act.textContent='Click again to clear all';setTimeout(()=>{if(act.isConnected){delete act.dataset.armed;act.textContent='Clear all data'}},3000);return}
     if(k==='refresh')return toast(Store.mode==='file'?'The Simplify fetcher is the next build step.':'The local version fetches Simplify here. This prototype uses an example feed.');
     if(k==='export'){const j=JSON.stringify(snapshotData(),null,2);$('#io').value=j;$('#io').select();
       const fall=()=>toast('Export is in the box. Copy it and keep it somewhere safe.');
       try{navigator.clipboard.writeText(j).then(()=>toast('Exported and copied to clipboard'),fall)}catch(_){fall()}return}
     if(k==='import'){try{importText($('#io').value)}catch(err){toast('Could not read that. Check it is valid JSON or CSV.')}return}
     if(k==='restore'){try{const d=JSON.parse($('#io').value);if(!d||!Array.isArray(d.apps))throw 0;restoreFrom(d,'Restored from export')}catch(err){toast('Restore needs a JSON export from this tracker.')}return}
-    if(k==='reset'){if(act.dataset.armed){checkpoint();const f=fresh();S.apps=f.apps;S.listings=f.listings;S.settings=f.settings;save();render();return toast('Reset to example data',true)}
-      act.dataset.armed='1';act.textContent='Click again to reset';setTimeout(()=>{if(act.isConnected){delete act.dataset.armed;act.textContent='Reset everything'}},3000);return}
     if(k==='delete'){if(!confirmDel){confirmDel=true;act.textContent='Click again to delete';return}
-      checkpoint();const a=S.apps.find(x=>x.id===editing);S.apps=S.apps.filter(x=>x.id!==editing);returnTo=null;save();closeDrawer();render();return toast(`${a?a.company:'Application'} deleted`,true)}
+      checkpoint();const a=S.apps.find(x=>x.id===editing);S.apps=S.apps.filter(x=>x.id!==editing);returnTo=null;save(true);closeDrawer();render();return toast(`${a?a.company:'Application'} deleted`,true)}
   }
+  const fu=t.closest('[data-fu]');
+  if(fu){const a=S.apps.find(x=>x.id===fu.dataset.id);if(!a)return;checkpoint();
+    if(fu.dataset.fu==='done'){a.followedUp=iso(TODAY);a.snoozeUntil=''}else a.snoozeUntil=rel(7);
+    save();render();return toast(fu.dataset.fu==='done'?`${a.company}: follow-up logged`:`${a.company}: snoozed until ${fmt(a.snoozeUntil)}`,true)}
+  const ms=t.closest('[data-missed]');
+  if(ms){const a=S.apps.find(x=>x.id===ms.dataset.missed);if(!a)return;checkpoint();setStatus(a,'missed');save();render();return toast(`${a.company} moved to Closed (missed deadline)`,true)}
+  const bk=t.closest('[data-bk]');
+  if(bk){fetch('api/backups/'+encodeURIComponent(bk.dataset.bk),{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.json()})
+    .then(d=>restoreFrom(d,'Restored backup '+bk.closest('li').querySelector('.mono').textContent)).catch(()=>toast('That backup could not be read.'));return}
   const hd=t.closest('[data-hdel]');if(hd){const rest=[...document.querySelectorAll('#hist li')].filter(x=>!x.hidden);if(rest.length<=1)return toast('Keep at least one history entry.');hd.closest('li').hidden=true;return}
   const sn=t.closest('[data-snap]');if(sn){try{restoreFrom(JSON.parse(localStorage.getItem(sn.dataset.snap)),'Restored snapshot '+sn.dataset.snap.slice(-10))}catch(_){toast('That snapshot could not be read.')}return}
   const tr=t.closest('[data-trackl]');
@@ -684,7 +748,7 @@ document.addEventListener('click',e=>{
     S.apps.push(blankApp({company:l.company,role:l.role,track:inferTrack(l.role),location:l.location,url:safeUrl(l.url),posted:l.posted,sponsor:l.sponsor,sample:l.sample,history:[{s:'saved',d:iso(TODAY)}]}));
     S.listings=S.listings.filter(x=>x!==l);save();render();return toast(`${l.company} added to Saved`,true)}
   const dm=t.closest('[data-dismiss]');
-  if(dm){checkpoint();const l=S.listings.find(x=>x.id===dm.dataset.dismiss);S.listings=S.listings.filter(x=>x!==l);save();render();return toast(`${l?l.company:'Listing'} dismissed`,true)}
+  if(dm){checkpoint();const l=S.listings.find(x=>x.id===dm.dataset.dismiss);S.listings=S.listings.filter(x=>x!==l);if(l&&!S.dismissed.includes(listingKey(l)))S.dismissed.push(listingKey(l));save();render();return toast(`${l?l.company:'Listing'} dismissed`,true)}
   const th=t.closest('[data-sort]');
   if(th){const k=th.dataset.sort;S.ui.sort=S.ui.sort.key===k?{key:k,dir:-S.ui.sort.dir}:{key:k,dir:1};save();render();const b=document.querySelector(`[data-sort="${k}"]`);if(b)b.focus();return}
   const op=t.closest('[data-open]');if(op)return openDrawer(op.dataset.open);
@@ -727,11 +791,13 @@ document.addEventListener('dragend',e=>{const c=e.target.closest&&e.target.close
 document.addEventListener('dragover',e=>{const col=e.target.closest&&e.target.closest('[data-drop]');if(!col)return;e.preventDefault();document.querySelectorAll('.col.over').forEach(x=>x!==col&&x.classList.remove('over'));col.classList.add('over')});
 document.addEventListener('drop',e=>{const col=e.target.closest&&e.target.closest('[data-drop]');if(!col)return;e.preventDefault();
   const a=S.apps.find(x=>x.id===e.dataTransfer.getData('text/plain'));if(!a)return;
-  const st=col.dataset.drop==='closed'?(['rejected','withdrawn'].includes(a.status)?a.status:'rejected'):col.dataset.drop;
+  const st=col.dataset.drop==='closed'?(CLOSED.includes(a.status)?a.status:'rejected'):col.dataset.drop;
   if(st===a.status)return render();checkpoint();moveTo(a,st);save();render();toast(`${a.company} → ${LABEL[a.status]}`,true)});
 window.addEventListener('hashchange',()=>{closeDrawer();render()});
 function tick(){const n=new Date();n.setHours(0,0,0,0);if(+n!==+TODAY){TODAY=n;takeDailySnapshot();if($('#drawer').hidden)render()}}
-setInterval(tick,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)tick()});
+setInterval(tick,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();checkRemote()}});
+function applyTheme(m){const r=document.documentElement;if(m==='light'||m==='dark')r.setAttribute('data-theme',m);else r.removeAttribute('data-theme');
+  const b=$('#themeBtn');if(b)b.textContent='Theme: '+(m==='light'?'Light':m==='dark'?'Dark':'System')}
 
 /* ---------- boot ---------- */
 (async()=>{
@@ -739,7 +805,8 @@ setInterval(tick,60000);document.addEventListener('visibilitychange',()=>{if(!do
   S=d?migrate(d):fresh();
   takeDailySnapshot();
   $('#fTrack').insertAdjacentHTML('beforeend',TRACKS.map(t=>`<option value="${t}">${t} · ${TRACK_NAME[t]}</option>`).join(''));
-  $('#fTrack').value=S.ui.track||'';$('#fSponsor').value=S.ui.sponsor||'';$('#q').value=S.ui.q||'';
+  S.ui.q='';$('#fTrack').value=S.ui.track||'';$('#fSponsor').value=S.ui.sponsor||'';$('#q').value='';
+  if(Store.mode==='file'){$('#themeBtn').hidden=false;let m='system';try{m=localStorage.getItem('iat-theme')||'system'}catch(_){}applyTheme(m)}
   render();
   setSaved(Store.mode==='file'?'Saved to data/tracker.json':'Saved in this browser only',Store.mode!=='file');
   if(Store.mode==='file')save();
