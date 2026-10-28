@@ -10,7 +10,7 @@ Pipeline
   2. Gates (a listing is dropped and counted under a reason):
      inactive, not Summer 2027, older than the window, outside the US,
      PhD/MBA-only, not a target field, U.S. citizenship or security clearance
-     required, already tracked, dismissed.
+     required, posting closed (rechecked daily), already tracked, dismissed.
   3. Read each new posting's text once (Workday, Greenhouse and Lever APIs,
      otherwise the plain page) and cache what it found.
   4. Score 0-100 as a weighted sum of components in [0, 1]:
@@ -216,8 +216,26 @@ class H1B:
         return total if found else None
 
 
+class PostingClosed(Exception):
+    pass
+
+
+CLOSED_TEXT = re.compile(r"no longer (available|accepting|open|active)|(position|job|role|requisition) (has been|is|was) (filled|closed|removed)|(job|posting|position) (is )?(closed|expired)|this (job|posting) (has )?(expired|closed)|not (currently )?accepting applications|job not found|position not found|page (you are looking for )?(could not be found|not found|doesn't exist)", re.I)
+
+
+def _api(url, headers=None):
+    """GET an ATS API; a 404/410 means the posting was removed."""
+    try:
+        return http_get(url, headers, timeout=15)[2]
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            raise PostingClosed(f"HTTP {e.code}")
+        raise
+
+
 def posting_text(url):
-    """Best-effort plain text of a posting, using ATS JSON APIs where the page is rendered by script."""
+    """Best-effort plain text of a posting, using ATS JSON APIs where the page is rendered by script.
+    Raises PostingClosed when the posting has clearly been taken down."""
     u = urllib.parse.urlparse(url)
     host, parts = u.netloc.lower(), [p for p in u.path.split("/") if p]
     try:
@@ -225,29 +243,46 @@ def posting_text(url):
             if parts and re.match(r"^[a-z]{2}-[A-Z]{2}$", parts[0]):
                 parts = parts[1:]
             if len(parts) >= 3:
-                api = f"https://{u.netloc}/wday/cxs/{host.split('.')[0]}/{'/'.join(parts)}"
-                _, _, b = http_get(api, {"Accept": "application/json"}, timeout=15)
-                return strip_html((json.loads(b).get("jobPostingInfo") or {}).get("jobDescription", ""))
+                j = json.loads(_api(f"https://{u.netloc}/wday/cxs/{host.split('.')[0]}/{'/'.join(parts)}", {"Accept": "application/json"}))
+                if not j.get("jobPostingInfo"):
+                    raise PostingClosed("Workday has no posting")
+                info = j["jobPostingInfo"]
+                if info.get("canApply") is False or info.get("postingAvailable") is False:
+                    raise PostingClosed("Workday says applications are closed")
+                return strip_html(info.get("jobDescription", ""))
         if re.match(r"^(job-boards|boards)(\.eu)?\.greenhouse\.io$", host) and len(parts) >= 3 and parts[1] == "jobs":
-            _, _, b = http_get(f"https://boards-api.greenhouse.io/v1/boards/{parts[0]}/jobs/{parts[2]}", timeout=15)
+            b = _api(f"https://boards-api.greenhouse.io/v1/boards/{parts[0]}/jobs/{parts[2]}")
             return strip_html(html.unescape(json.loads(b).get("content", "")))
         if host == "jobs.lever.co" and len(parts) >= 2:
-            _, _, b = http_get(f"https://api.lever.co/v0/postings/{parts[0]}/{parts[1]}", timeout=15)
-            j = json.loads(b)
+            j = json.loads(_api(f"https://api.lever.co/v0/postings/{parts[0]}/{parts[1]}"))
             return " ".join([j.get("descriptionPlain", ""), *[strip_html(x.get("content", "")) for x in j.get("lists", [])], j.get("additionalPlain", "")])
+    except PostingClosed:
+        raise
     except Exception:
         pass
-    _, _, b = http_get(url, {"Accept": "text/html"}, timeout=15)
-    return strip_html(b.decode("utf-8", "replace"))[:80000]
+    try:
+        _, _, b = http_get(url, {"Accept": "text/html"}, timeout=15)
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            raise PostingClosed(f"HTTP {e.code}")
+        raise
+    text = strip_html(b.decode("utf-8", "replace"))[:80000]
+    # Closed-job pages are short; a long page that merely mentions "no longer available" somewhere is not.
+    if len(text) < 12000 and CLOSED_TEXT.search(text):
+        raise PostingClosed("Page says the job is closed")
+    return text
 
 
 def analyze_text(url):
+    today = now_local().date().isoformat()
     try:
         text = posting_text(url)
+    except PostingClosed as e:
+        return {"read": False, "closed": True, "why": str(e), "at": today}
     except Exception as e:
-        return {"read": False, "error": str(e)[:120]}
+        return {"read": False, "error": str(e)[:120], "at": today}
     if len(text) < 200:
-        return {"read": False, "error": "Posting text not readable"}
+        return {"read": False, "error": "Posting text not readable", "at": today}
     return {
         "read": True,
         "citizen": bool(CITIZEN.search(text)),
@@ -398,10 +433,19 @@ def refresh(state, log=print):
 
     cache_path = os.path.join(CACHE, "postings.json")
     cache = _read_json(cache_path) or {}
-    todo = [it for it, _ in pre if it["id"] not in cache][:MAX_TEXT_READS]
+    today = now.date().isoformat()
+    # New postings first, then a once-a-day recheck so closed postings drop out.
+    new = [it for it, _ in pre if it["id"] not in cache]
+    stale = [it for it, _ in pre if it["id"] in cache and (cache[it["id"]].get("at") or "") < today]
+    todo = (new + stale)[:MAX_TEXT_READS]
     if todo:
         with ThreadPoolExecutor(max_workers=8) as ex:
             for it, res in zip(todo, ex.map(lambda x: analyze_text(x.get("url", "")), todo)):
+                old = cache.get(it["id"])
+                # Keep what an earlier read learned if today's recheck could not read the page.
+                if old and old.get("read") and not res.get("read") and not res.get("closed"):
+                    old["at"] = res["at"]
+                    res = old
                 cache[it["id"]] = res
     keep_ids = {it["id"] for it, _ in pre}
     cache = {k: v for k, v in cache.items() if k in keep_ids}
@@ -410,6 +454,9 @@ def refresh(state, log=print):
     out, read = [], 0
     for it, posted in pre:
         ana = cache.get(it["id"])
+        if ana and ana.get("closed"):
+            drop("Posting closed")
+            continue
         if ana and ana.get("read"):
             read += 1
             if ana.get("citizen") or ana.get("clearance"):
@@ -429,9 +476,28 @@ def refresh(state, log=print):
             "h1b": h, "textRead": bool(ana and ana.get("read")),
             "sponsor": "no" if no_sponsor else ("yes" if friendly else "unknown"),
         })
+    # Saved (not yet applied) applications: is the posting still open?
+    inactive = {url_key(it.get("url")) for it in feed if not it.get("active")} - {""}
+    active = {url_key(it.get("url")) for it in feed if it.get("active")} - {""}
+    saved = [a for a in (state or {}).get("apps") or [] if a.get("status") == "saved" and url_key(a.get("url"))]
+    saved_closed, to_check = [], []
+    for a in saved:
+        k = url_key(a["url"])
+        if k in inactive and k not in active:
+            saved_closed.append({"id": a["id"], "why": "Marked closed on SimplifyJobs"})
+        elif (a.get("liveAt") or "") < today:
+            to_check.append(a)
+    checked = {}
+    if to_check:
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            for a, res in zip(to_check, ex.map(lambda x: analyze_text(x["url"]), to_check)):
+                checked[a["id"]] = today
+                if res.get("closed"):
+                    saved_closed.append({"id": a["id"], "why": res.get("why") or "Posting closed"})
+
     info = {"at": now.isoformat(timespec="seconds"), "feed": len(feed), "window": window,
             "excluded": excluded, "textRead": read, "h1b": H1B_LABEL if h1b.counts else None, "error": None}
-    return {"listings": out, "fetch": info}
+    return {"listings": out, "fetch": info, "savedClosed": saved_closed, "savedChecked": checked}
 
 
 def apply(state, result):
@@ -456,10 +522,30 @@ def apply(state, result):
             continue
         l["isNew"] = bool(previous) and l["id"] not in previous
         fresh.append(l)
+    fresh_ids = {l["id"] for l in fresh}
+    info["removed"] = sum(1 for l in state.get("listings") or [] if l.get("source") == "simplify" and l.get("id") not in fresh_ids
+                          and listing_key(l) not in tracked and listing_key(l) not in dismissed)
     info["excluded"] = excluded
     info["matched"] = len(fresh)
     info["new"] = sum(1 for l in fresh if l["isNew"])
     state["listings"] = manual + fresh
+
+    # Saved applications whose posting closed move to Closed ("Posting closed"), with a note.
+    today = now_local().date().isoformat()
+    closed_names = []
+    by_id = {a.get("id"): a for a in apps}
+    for aid, day in (result.get("savedChecked") or {}).items():
+        if aid in by_id:
+            by_id[aid]["liveAt"] = day
+    for c in result.get("savedClosed") or []:
+        a = by_id.get(c["id"])
+        if not a or a.get("status") != "saved":
+            continue
+        a["status"] = "expired"
+        a.setdefault("history", []).append({"s": "expired", "d": today})
+        a["notes"] = ((a.get("notes") or "") + f" Posting closed ({c['why']}), detected {today}.").strip()
+        closed_names.append(a.get("company", ""))
+    info["savedClosed"] = closed_names
     state["fetch"] = info
     return info
 

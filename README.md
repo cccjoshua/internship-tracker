@@ -47,7 +47,9 @@ posting once (Workday, Greenhouse and Lever APIs, otherwise the page) and scores
 | Degree | 5 | Master's listed |
 | Location | 5 | preferred locations (default Texas or remote) |
 
-A posting that says it will not sponsor loses 20 points. Weights are editable in Preferences. The server
+A posting that says it will not sponsor loses 20 points. Each listing is labelled **Apply now** (top score, at most one missing skill), **Tailor first** or **Low priority**, with the resume version to use and the skills to add.
+
+Postings are rechecked once a day: listings whose page is gone (ATS 404, Workday says closed, or a short "no longer available" page) or that SimplifyJobs marks inactive are removed, and Saved applications whose posting closed move to Closed as "Posting closed". Weights are editable in Preferences. The server
 refreshes every 2 hours (configurable); the same data is available in the terminal:
 
 ```bash

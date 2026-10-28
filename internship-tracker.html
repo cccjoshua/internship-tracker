@@ -154,7 +154,30 @@ textarea{width:100%;resize:vertical}
 .todo .what{all:unset;cursor:pointer;min-width:0;display:block}
 .todo .what:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .mini{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
-.s-missed{--c:var(--st-withdrawn)}.s-ghosted{--c:var(--st-withdrawn)}
+.s-missed{--c:var(--st-withdrawn)}.s-ghosted{--c:var(--st-withdrawn)}.s-expired{--c:var(--st-withdrawn)}
+/* recommended action */
+.act{display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.act.now{background:var(--accent);color:var(--accent-ink)}.act.tailor{background:var(--hl-soft);color:var(--warn)}.act.low{background:var(--sunk);color:var(--muted)}
+.rv{font-weight:600;color:var(--ink)}
+.add{color:var(--warn)}
+/* today strip */
+.today{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.today a,.today div{background:var(--surface);padding:12px 16px;display:flex;flex-direction:column;gap:4px;text-decoration:none;color:var(--ink);min-width:0}
+.today a:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))}
+.today .k{font-size:12px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.06em}
+.today .t{font-size:15px;font-weight:600}
+.today .s{font-size:12px;color:var(--faint)}
+.today .go{color:var(--accent);font-size:12.5px;font-weight:500}
+.today .hot{color:var(--bad)}.today .soon{color:var(--warn)}
+.prog{height:6px;border-radius:3px;background:var(--sunk);overflow:hidden}
+.prog span{display:block;height:100%;background:var(--accent);border-radius:3px}
+.prog.done span{background:var(--good)}
+.notice{display:flex;gap:8px;align-items:center;padding:8px 12px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);font-size:13px;color:var(--muted)}
+.queue{border-color:var(--accent)}
+.queue .lsec-h{cursor:default}
+.chart .goal{stroke:var(--warn);stroke-width:1.5;stroke-dasharray:5 4}
+.chart .goal-l{fill:var(--warn);font-weight:600}
+@media (max-width:1080px){.today{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .todo .what b{font-weight:600}
 .todo .what span{color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .due{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
@@ -381,15 +404,16 @@ const safeUrl=u=>{u=normUrl(u);return /^https?:\/\/[^\s"'<>]+$/i.test(u)?u:''};
 const urlKey=u=>safeUrl(u).toLowerCase().replace(/#.*$/,'').replace(/\/+$/,'');
 
 /* ---------- model ---------- */
-const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn'],['missed','Missed deadline'],['ghosted','No response']];
+const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn'],['missed','Missed deadline'],['ghosted','No response'],['expired','Posting closed']];
 const LABEL=Object.fromEntries(STAGES);
-const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6,missed:7,ghosted:8};
-const CLOSED=['rejected','withdrawn','missed','ghosted'];
+const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6,missed:7,ghosted:8,expired:9};
+const CLOSED=['rejected','withdrawn','missed','ghosted','expired'];
 const FLOW=['saved','applied','oa','interview','offer'];
 const TRACKS=['SWE','DE','DA','DS','BIE'];
 const TRACK_NAME={SWE:'Software Eng.',DE:'Data Eng.',DA:'Data Analyst',DS:'Data Science',BIE:'BI Engineer'};
 const SPONSOR={yes:'Sponsors visa',no:'No sponsorship',unknown:'Sponsorship ?'};
-const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:30,skills:25,sponsor:20,recency:15,degree:5,location:5},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false,windowDays:10,fetchHours:2,topScore:75,minScore:55,staleDays:45};
+const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:30,skills:25,sponsor:20,recency:15,degree:5,location:5},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false,windowDays:10,fetchHours:2,topScore:75,minScore:55,staleDays:45,weeklyGoal:10,dailyGoal:3,
+  resumes:{DS:'DS / ML',DA:'DA / BI',BIE:'DA / BI',DE:'Data Eng',SWE:'SWE',Quant:'DS / ML'}};
 const WEIGHT_LABEL={fit:'Role fit (title matches a target track)',skills:'Skill match (posting skills on your resume)',sponsor:'Sponsorship evidence (H-1B history, CPT/OPT wording)',recency:'Recency (halves every 5 days)',degree:'Degree (Master’s listed)',location:'Preferred location'};
 const WEIGHT_SHORT={fit:'Role fit',skills:'Skills',sponsor:'Sponsorship',recency:'Recency',degree:'Degree',location:'Location'};
 const RECENCY_HALF_LIFE=5;
@@ -510,6 +534,18 @@ function staleApps(){const sd=+S.settings.staleDays||45;return S.apps.filter(a=>
 function followUps(){const fu=+S.settings.followUpDays||14,sd=+S.settings.staleDays||45;
   return S.apps.filter(a=>a.status==='applied'&&!(a.snoozeUntil&&daysFrom(a.snoozeUntil)>0)&&quietDays(a)>=fu&&quietDays(a)<sd)}
 const band=s=>s>=(+S.settings.topScore||75)?'b1':s>=(+S.settings.minScore||55)?'b2':'b3';
+/* Recommended next step for a listing: Apply now / Tailor first / Low priority. */
+function action(l){const miss=((l.skills&&l.skills.missing)||[]).length,no=l.sponsor==='no'||(l.flags||[]).includes('No sponsorship');
+  if(no||l.total<(+S.settings.minScore||55))return['low','Low priority'];
+  if(miss>=2||l.total<(+S.settings.topScore||75))return['tailor','Tailor first'];
+  return['now','Apply now']}
+const resumeFor=l=>(S.settings.resumes||DEFAULTS.resumes)[l.t||l.track]||'SWE';
+const appliedOn=d=>S.apps.filter(a=>a.history.some(h=>h.s==='applied'&&h.d===d)).length;
+function appliedThisWeek(){const s=new Date(TODAY);s.setDate(s.getDate()-((s.getDay()+6)%7));const from=iso(s);
+  return S.apps.filter(a=>a.history.some(h=>h.s==='applied'&&h.d>=from&&h.d<=iso(TODAY))).length}
+function queueList(){return S.listings.map(l=>Object.assign({},l,scoreParts(l),{t:l.track||inferTrack(l.role)}))
+  .filter(l=>!findDup(l.company,l.role,l.url)&&!(S.settings.hideNoSponsor&&l.sponsor==='no')&&action(l)[0]==='now')
+  .sort((a,b)=>b.total-a.total).slice(0,Math.max(5,(+S.settings.dailyGoal||3)+2))}
 const UI={expanded:new Set(),limits:{},attnAll:false,tableLimit:25};
 const filtersOn=()=>!!(S.ui.q||S.ui.track||S.ui.sponsor);
 
@@ -552,15 +588,17 @@ R.dashboard=()=>{
     ${items.length>5?`<div class="panel-foot"><button class="btn sm ghost" type="button" data-action="attn-all">${UI.attnAll?'Show fewer':`Show all ${items.length}`}</button></div>`:''}`:`<p class="empty">Nothing due in the next 7 days.</p>`;
   const topS=+S.settings.topScore||75;
   const best=S.listings.filter(l=>!findDup(l.company,l.role,l.url)&&!(S.settings.hideNoSponsor&&l.sponsor==='no')).map(l=>Object.assign({},l,scoreParts(l))).filter(l=>l.total>=topS).sort((a,b)=>b.total-a.total);
-  const topPanel=best.length?`<ul class="tmatch">${best.slice(0,5).map(l=>`<li><span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · ${l.posted?ago(l.posted):''}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
-    <div class="panel-foot"><a class="btn sm ghost" href="#inbox">See all ${best.length} top matches →</a></div>`:`<p class="empty">No listings scored ${topS}+ right now. New ones arrive with each refresh.</p>`;
+  const picks=queueList();
+  const topPanel=picks.length?`<ul class="tmatch">${picks.slice(0,5).map(l=>`<li><span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · Resume: ${esc(resumeFor(l))}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
+    <div class="panel-foot"><a class="btn sm ghost" href="#inbox">Open today’s queue · ${best.length} top matches in all →</a></div>`:`<p class="empty">No “Apply now” picks right now. New listings arrive with each refresh; “Tailor first” ones are in New listings.</p>`;
   const fst=[['applied','Applied'],['oa','Assessment'],['interview','Interview'],['offer','Offer']];
   const fc=fst.map(([s])=>A.filter(a=>reached(a,s)).length),base=Math.max(fc[0],1);
   const funnel=fst.map(([s,l],i)=>`<div class="frow"><span>${l}</span><div class="fbar" aria-hidden="true"><span class="s-${s}" style="width:${Math.max(fc[i]?3:0,fc[i]/base*100)}%"></span></div><span class="num"><b>${fc[i]}</b>${i?` · ${Math.round(fc[i]/base*100)}%`:''}</span></div>`).join('');
   const start=new Date(TODAY);start.setDate(start.getDate()-((start.getDay()+6)%7)-49);
   const wk=Array.from({length:8},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+7*i);return{d,c:0}});
   for(const a of A){const h=a.history.find(h=>h.s==='applied');const d=parse(h?h.d:a.applied);if(!d)continue;const i=Math.floor((d-start)/(7*864e5));if(i>=0&&i<8)wk[i].c++}
-  const mx=Math.max(...wk.map(w=>w.c)),top=mx<=4?4:Math.ceil(mx/2)*2;
+  const goalW=Math.max(0,+S.settings.weeklyGoal||0);
+  const mx=Math.max(goalW,...wk.map(w=>w.c)),top=mx<=4?4:Math.ceil(mx/2)*2;
   const W=880,H=190,L=30,B=24,T=16,Rp=6,pw=W-L-Rp,ph=H-B-T,bw=pw/8,y=v=>T+ph-(v/top)*ph;
   let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Applications submitted per week over the last 8 weeks: ${wk.map(w=>w.c).join(', ')}">`;
   for(const g of [0,top/2,top])svg+=`<line class="gl" x1="${L}" x2="${W-Rp}" y1="${y(g)}" y2="${y(g)}"/><text x="${L-8}" y="${y(g)+4}" text-anchor="end">${g}</text>`;
@@ -568,20 +606,34 @@ R.dashboard=()=>{
     svg+=`<rect class="bar${i===7?' now':''}" x="${x}" y="${T+ph-h}" width="${bwid}" height="${h}" rx="2"/>`;
     if(w.c)svg+=`<text class="val" x="${x+bwid/2}" y="${T+ph-h-5}" text-anchor="middle">${w.c}</text>`;
     svg+=`<text x="${x+bwid/2}" y="${H-6}" text-anchor="middle">${i===7?'This week':w.d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</text>`});
+  if(goalW)svg+=`<line class="goal" x1="${L}" x2="${W-Rp}" y1="${y(goalW)}" y2="${y(goalW)}"/><text class="goal-l" x="${W-Rp}" y="${y(goalW)-6}" text-anchor="end">Goal ${goalW}/week</text>`;
   svg+='</svg>';
   const segs=[['saved','Saved'],['active','In progress'],['closed','Closed']];
   const tcol={saved:'var(--st-saved)',active:'var(--st-applied)',closed:'var(--st-rejected)'};
   const tmax=Math.max(1,...TRACKS.map(t=>A.filter(a=>a.track===t).length));
   const trows=TRACKS.map(t=>{const at=A.filter(a=>a.track===t);const c={saved:at.filter(a=>a.status==='saved').length,active:at.filter(a=>['applied','oa','interview','offer'].includes(a.status)).length,closed:at.filter(a=>CLOSED.includes(a.status)).length};
     return `<div class="trow" role="img" aria-label="${t}: ${c.saved} saved, ${c.active} in progress, ${c.closed} closed"><b>${t}</b><div class="seg" style="width:${Math.max(at.length?8:0,at.length/tmax*100)}%">${segs.map(([k])=>c[k]?`<span style="flex:${c[k]};background:${tcol[k]}"></span>`:'').join('')}</div><span class="num">${at.length}</span></div>`}).join('');
+  const dG=+S.settings.dailyGoal||3,dDone=appliedOn(iso(TODAY)),Q=queueList();
+  const wDone=appliedThisWeek(),wG=goalW||10;
+  const nFollow=followUps().length+staleApps().length;
+  const dueItems=items.filter(i=>!i.fu&&!i.stale&&i.n<=3),overdue=dueItems.filter(i=>i.n<0).length;
+  const sc=(S.fetch&&S.fetch.savedClosed)||[];
+  const today=`<div class="today" role="group" aria-label="Today">
+    <a href="#inbox"><span class="k">Apply today</span><span class="t mono">${dDone}/${dG}</span><div class="prog ${dDone>=dG?'done':''}" style="padding:0"><span style="width:${Math.min(100,dDone/dG*100)}%"></span></div><span class="go">${dDone>=dG?'Daily goal met · keep going →':`${Q.length} picks in today’s queue →`}</span></a>
+    <div><span class="k">Follow up</span><span class="t ${nFollow?'soon':''}">${nFollow||'None'}</span><span class="s">${nFollow?'Listed under Needs attention':'No quiet applications yet'}</span></div>
+    <div><span class="k">Due in 3 days</span><span class="t ${overdue?'hot':dueItems.length?'soon':''}">${dueItems.length||'None'}</span><span class="s">${overdue?`<span class="due hot">${overdue} overdue</span>`:'Deadlines and next steps'}</span></div>
+    <div><span class="k">This week</span><span class="t mono">${wDone}/${wG}</span><div class="prog ${wDone>=wG?'done':''}" style="padding:0"><span style="width:${Math.min(100,wDone/wG*100)}%"></span></div><span class="s">${wDone>=wG?'Weekly goal met':`${wG-wDone} more to reach your weekly goal`}</span></div>
+  </div>${sc.length?`<div class="notice">Posting closed since the last refresh: <b>${sc.map(esc).join(', ')}</b> moved from Saved to Closed.</div>`:''}`;
+  const showTrack=replied>=5;
   return `<div style="display:flex;flex-direction:column;gap:16px">
+  ${today}
   <div class="kpis">${kpi('To apply',toApply,toApply?'saved, not submitted':`${best.length} top matches waiting`,'Applications you saved but have not submitted yet.')}${kpi('Applied',applied,active+' still active','Every application that reached the Applied stage, including ones later closed.')}${kpi('Response rate',pct(replied,applied),replied+' replies incl. rejections','Share of applications that got any reply: an assessment, interview, offer or rejection.')}${kpi('Interview rate',pct(intv,applied),intv+' reached interview','Share of applications that reached an interview.')}${kpi('Offers',offers,pct(offers,applied)+' of applications','Applications that reached an offer.')}</div>
   <div class="dash">
     <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>
-    <section class="panel a-top"><h2>Top matches to apply <small>score ${topS}+, not tracked yet</small></h2>${topPanel}</section>
-    <section class="panel a-pipe"><h2>Pipeline <small>applications that reached each stage</small></h2><div class="funnel">${funnel}</div></section>
-    <section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k,l])=>`<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>
-    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks</small></h2>${svg}</section>
+    <section class="panel a-top"><h2>Today’s queue <small>“Apply now” picks: score ${topS}+, at most 1 missing skill</small></h2>${topPanel}</section>
+    <section class="panel a-pipe" ${showTrack?'':'style="grid-column:1/-1"'}><h2>Pipeline <small>applications that reached each stage</small></h2><div class="funnel">${funnel}</div>${showTrack?'':`<p class="empty">A breakdown by track appears once you have 5 or more replies (now ${replied}).</p>`}</section>
+    ${showTrack?`<section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k,l])=>`<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>`:''}
+    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks · dashed line is your weekly goal</small></h2>${svg}</section>
   </div></div>`;
 };
 
@@ -643,7 +695,7 @@ function skillLine(l){const m=(l.skills&&l.skills.matched)||[],x=(l.skills&&l.sk
 function fetchSummary(){const f=S.fetch;if(!f)return Store.mode==='file'?'Not refreshed yet':'Example feed (the local version refreshes from SimplifyJobs)';
   const at=new Date(f.at),hrs=+S.settings.fetchHours||2,next=new Date(at.getTime()+hrs*3600e3);
   const t=d=>d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
-  return `Refreshed ${t(at)}${at.toDateString()!==new Date().toDateString()?' '+fmt(iso(at)):''}${f.new?` · ${f.new} new`:''} · next about ${t(next)}${f.error?` · <span class="due hot">last refresh failed: ${esc(f.error)}</span>`:''}`}
+  return `Refreshed ${t(at)}${at.toDateString()!==new Date().toDateString()?' '+fmt(iso(at)):''}${f.new?` · ${f.new} new`:''}${f.removed?` · ${f.removed} closed or expired removed`:''} · next about ${t(next)}${f.error?` · <span class="due hot">last refresh failed: ${esc(f.error)}</span>`:''}`}
 let refreshing=false;
 R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
   let L=S.listings.map(l=>Object.assign({},l,scoreParts(l),{t:l.track||inferTrack(l.role),dup:findDup(l.company,l.role,l.url)}));
@@ -662,13 +714,20 @@ R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
   if(!L.length)return head+`<div class="panel" style="margin-top:12px"><p class="empty">No listings match. Refresh now, clear the filters, or widen the window in Preferences.</p></div>`;
   if(S.ui.lsort==='newest')L.sort((a,b)=>(!!a.dup-!!b.dup)||(b.posted||'').localeCompare(a.posted||'')||b.total-a.total);
   const topS=+S.settings.topScore||75,minS=+S.settings.minScore||55,open=S.ui.sec||{};
+  const filtering=!!(S.ui.q||S.ui.track||S.ui.sponsor);
+  const Q=filtering?[]:queueList(),qids=new Set(Q.map(l=>l.id)),rest=L.filter(l=>!qids.has(l.id));
+  const goal=+S.settings.dailyGoal||3,done=appliedOn(iso(TODAY));
+  const queue=Q.length?`<section class="lsec queue" aria-label="Today's queue"><div class="lsec-h"><span>Today’s queue</span><span class="hint">best “Apply now” picks · open the posting, apply, then press Applied</span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:500"><span class="hint">Applied today</span> <b class="mono">${done}/${goal}</b><span class="prog ${done>=goal?'done':''}" style="width:90px"><span style="width:${Math.min(100,done/goal*100)}%"></span></span></span></div>
+      ${Q.map(lrow).join('')}</section>`:'';
   const groups=[
-    ['new','New since the last refresh','',L.filter(l=>!l.dup&&l.isNew&&l.total>=minS),true],
-    ['top',`Top matches`,`score ${topS}+`,L.filter(l=>!l.dup&&!l.isNew&&l.total>=topS),true],
-    ['more','More matches',`score ${minS}–${topS-1}`,L.filter(l=>!l.dup&&!l.isNew&&l.total>=minS&&l.total<topS),false],
-    ['low','Lower matches',`below ${minS}`,L.filter(l=>!l.dup&&l.total<minS),false],
-    ['dup','Already tracking','',L.filter(l=>l.dup),false]].filter(g=>g[3].length);
-  return head+`<div style="margin-top:12px">${groups.map(([k,title,hint,items,def])=>{
+    ['new','New since the last refresh','',rest.filter(l=>!l.dup&&l.isNew&&l.total>=minS),true],
+    ['top',`Top matches`,`score ${topS}+`,rest.filter(l=>!l.dup&&!l.isNew&&l.total>=topS),true],
+    ['more','More matches',`score ${minS}–${topS-1}`,rest.filter(l=>!l.dup&&!l.isNew&&l.total>=minS&&l.total<topS),false],
+    ['low','Lower matches',`below ${minS}`,rest.filter(l=>!l.dup&&l.total<minS),false],
+    ['dup','Already tracking','',rest.filter(l=>l.dup),false]].filter(g=>g[3].length);
+  const legend=`<div class="toolbar" style="margin-top:10px"><span class="act now">Apply now</span><span>score ${topS}+ and at most 1 missing skill</span><span class="act tailor">Tailor first</span><span>add the missing skills you truly have, then apply</span><span class="act low">Low priority</span><span>below ${minS} or no sponsorship</span></div>`;
+  return head+legend+`<div style="margin-top:12px">${queue}${Q.length?'<div style="height:12px"></div>':''}${groups.map(([k,title,hint,items,def])=>{
     const isOpen=open[k]!==undefined?open[k]:def,lim=UI.limits['sec-'+k]||25;
     return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${k==='new'?'<span class="chip new">New</span>':''}${esc(title)} <span class="cnt">${items.length}</span>${hint?`<span class="hint">${esc(hint)}</span>`:''}<span class="car" aria-hidden="true">›</span></button>
       ${isOpen?items.slice(0,lim).map(lrow).join('')+(items.length>lim?`<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(25,items.length-lim)} more of ${items.length-lim}</button>`:''):''}</section>`}).join('')}</div>`};
@@ -677,11 +736,13 @@ function lrow(l){
   const locs=(l.location||'').split('; '),loc=locs.length>2?locs.slice(0,2).join('; ')+` +${locs.length-2}`:l.location;
   const h=l.h1b===null||l.h1b===undefined?(l.source==='simplify'?'No H-1B record':''):`${Number(l.h1b).toLocaleString('en-US')} H-1B`;
   const flags=(l.flags||[]).filter(f=>f!=='Text not read').map(f=>`<span class="${f==='No sponsorship'?'neg':'pos'}">${esc(f)}</span>`).join('');
+  const [ak,al]=action(l),miss=(sk.missing||[]).slice(0,3);
+  const todo=l.dup?'':`<span class="l2"><span class="act ${ak}">${al}</span><span>Resume: <span class="rv">${esc(resumeFor(l))}</span></span>${miss.length?`<span class="add">Add: ${miss.map(esc).join(', ')}${(sk.missing||[]).length>3?' …':''}</span>`:''}</span>`;
   return `<article class="lrow" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
     <span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span>
     <button class="lmain" type="button" data-expand="${l.id}" aria-expanded="${ex}">
       <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span></span>
-      <span class="l2">${l.t?`<span>${esc(l.t)}</span>`:''}<span>${esc(loc||'')}</span>${l.posted?`<span>${ago(l.posted)}</span>`:''}${h?`<span>${h}</span>`:''}${n?`<span>Skills ${m}/${n}</span>`:''}${flags}${l.dup?`<span class="pos">Tracking · ${LABEL[l.dup.status]}</span>`:''}</span>
+      ${todo}<span class="l2">${l.t?`<span>${esc(l.t)}</span>`:''}<span>${esc(loc||'')}</span>${l.posted?`<span>${ago(l.posted)}</span>`:''}${h?`<span>${h}</span>`:''}${n?`<span>Skills ${m}/${n}</span>`:''}${flags}${l.dup?`<span class="pos">Tracking · ${LABEL[l.dup.status]}</span>`:''}</span>
     </button>
     <span class="lacts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}" title="Save to your board">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}" title="Add to your board as applied today">Applied</button>`}${link(l.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-dismiss="${l.id}" aria-label="Dismiss ${esc(l.company)}" title="Dismiss">✕</button></span>
     ${ex?`<div class="ldetail">${evidence(l)}${skillLine(l)}<div class="why"><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}${l.pen?`<span>No-sponsorship penalty <b>−${l.pen}</b></span>`:''}<span>Degree ${esc(l.degree||'—')}</span><span>Posted ${fmt(l.posted)}</span></div></div></div>`:''}
@@ -700,9 +761,14 @@ R.prefs=()=>{const st=S.settings,snaps=snapshots();
     <label class="field"><span>Offer to close as “No response” after (days)</span><input id="p-stale" type="number" min="15" max="120" value="${st.staleDays}"></label>
     <div class="row"><label class="field" style="flex:1"><span>Top match score</span><input id="p-top" type="number" min="1" max="100" value="${st.topScore}"></label>
       <label class="field" style="flex:1"><span>Hide below score</span><input id="p-min" type="number" min="0" max="99" value="${st.minScore}"></label></div>
+    <div class="row"><label class="field" style="flex:1"><span>Daily goal (applications)</span><input id="p-dgoal" type="number" min="1" max="20" value="${st.dailyGoal}"></label>
+      <label class="field" style="flex:1"><span>Weekly goal</span><input id="p-wgoal" type="number" min="1" max="60" value="${st.weeklyGoal}"></label></div>
     <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor?'checked':''}> Hide listings that do not sponsor visas</label>
     <label class="field"><span>Show listings posted in the last (days)</span><input id="p-window" type="number" min="1" max="60" value="${st.windowDays}"><span class="hint">Applies from the next refresh.</span></label>
     <label class="field"><span>Refresh listings every (hours)</span><input id="p-hours" type="number" min="1" max="24" step="1" value="${st.fetchHours}"><span class="hint">Runs on your Mac with no AI calls, so it costs nothing. The Mac must be awake; a missed run happens within 5 minutes of waking.</span></label></section>
+  <section class="panel"><h2>Resume versions <small>shown on each listing as “Resume: …”</small></h2>
+    <div class="weights" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)">${['DS','DA','BIE','DE','SWE'].map(k=>`<label for="rv-${k}">${k} · ${TRACK_NAME[k]}</label><input id="rv-${k}" type="text" data-resume="${k}" value="${esc((st.resumes||DEFAULTS.resumes)[k]||'')}" style="font-family:var(--f-ui);text-align:left">`).join('')}</div>
+    <p class="empty">Name the base resume you use for each track, e.g. its file name. Keep one base resume per track and tailor it per posting.</p></section>
   <section class="panel"><h2>Your data <small>${S.apps.length} applications · ${S.listings.length} listings</small></h2>
     <p class="empty">${where}</p>
     <label class="field"><span>Import or restore</span><textarea id="io" rows="6" placeholder="Paste a JSON export, or a CSV with columns like Company, Role, Status, Location, Link, Deadline"></textarea>
@@ -881,7 +947,7 @@ document.addEventListener('click',e=>{
       if(refreshing)return;const before=S.fetch&&S.fetch.at;refreshing=true;render();
       fetch('api/fetch',{method:'POST'}).then(r=>{if(!r.ok&&r.status!==202)throw 0}).catch(()=>{refreshing=false;render();toast('Could not start a refresh. Is the local server running?')});
       let n=0;const poll=setInterval(async()=>{n++;const l=await Store.latest();
-        if(l&&l.fetch&&l.fetch.at!==before){clearInterval(poll);refreshing=false;applyExternal(l,l.fetch.error?'Refresh failed: '+l.fetch.error:`Refreshed: ${l.fetch.matched} listings, ${l.fetch.new||0} new`)}
+        if(l&&l.fetch&&l.fetch.at!==before){clearInterval(poll);refreshing=false;applyExternal(l,l.fetch.error?'Refresh failed: '+l.fetch.error:`Refreshed: ${l.fetch.matched} listings, ${l.fetch.new||0} new${l.fetch.removed?`, ${l.fetch.removed} closed removed`:''}${(l.fetch.savedClosed||[]).length?`; posting closed: ${l.fetch.savedClosed.join(', ')}`:''}`)}
         else if(n>60){clearInterval(poll);refreshing=false;render();toast('The refresh is taking longer than usual. It will appear when it finishes.')}},3000);return}
     if(k==='export'){const j=JSON.stringify(snapshotData(),null,2);$('#io').value=j;$('#io').select();
       const fall=()=>toast('Export is in the box. Copy it and keep it somewhere safe.');
@@ -919,6 +985,9 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='showClosed'){S.ui.showClosed=t.checked;UI.tableLimit=25;save();return render()}
   if(t.id==='p-top'||t.id==='p-min'){const top=Math.min(100,Math.max(1,+$('#p-top').value||75)),min=Math.min(top-1,Math.max(0,+$('#p-min').value||55));
     S.settings.topScore=top;S.settings.minScore=min;save();return toast(`Top matches ${top}+, lower matches below ${min}`)}
+  if(t.id==='p-dgoal'){S.settings.dailyGoal=Math.min(20,Math.max(1,Math.round(+t.value||3)));save();return toast(`Daily goal: ${S.settings.dailyGoal} applications`)}
+  if(t.id==='p-wgoal'){S.settings.weeklyGoal=Math.min(60,Math.max(1,Math.round(+t.value||10)));save();return toast(`Weekly goal: ${S.settings.weeklyGoal} applications`)}
+  if(t.dataset.resume){S.settings.resumes=Object.assign({},DEFAULTS.resumes,S.settings.resumes,{[t.dataset.resume]:t.value.trim()||DEFAULTS.resumes[t.dataset.resume]});save();return toast('Resume version saved')}
   if(t.id==='p-stale'){S.settings.staleDays=Math.min(120,Math.max(15,Math.round(+t.value||45)));save();return toast('Saved')}
   if(t.dataset.target){const s=new Set(S.settings.targets);t.checked?s.add(t.dataset.target):s.delete(t.dataset.target);S.settings.targets=[...s];save();return toast('Target tracks saved')}
   if(t.dataset.weight){S.settings.weights[t.dataset.weight]=Math.max(0,+t.value||0);save();return toast('Weights saved')}
