@@ -8,27 +8,29 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
-/* Layout: quiet left rail (bottom tab bar on phones) + one working canvas; state is carried by stage colour (stripe, dot, chip), everything else stays neutral. */
+/* Layout: quiet left rail (bottom tab bar on phones) + one working canvas.
+   Colour roles: neutral greys carry the page; navy = primary action and application progress (lighter -> darker = further along);
+   yellow = new / needs action soon; red = overdue or a blocking problem; green = offer only; grey = closed. */
 :root{
-  --bg:#F4F5F7; --surface:#FFFFFF; --sunk:#ECEEF2; --ink:#14171C; --muted:#545B67; --faint:#646B77; --line:#DDE1E6;
-  --accent:#00205B; --accent-ink:#FFFFFF; --accent-soft:#E3E8F2;
-  --st-saved:#5F6876; --st-applied:#0E7490; --st-oa:#6537C9; --st-interview:#975003; --st-offer:#13713A; --st-rejected:#AE2222; --st-withdrawn:#626873;
-  --good:#13713A; --warn:#975003; --bad:#AE2222;
-  --shadow:0 12px 40px rgba(20,23,28,.16);
+  --bg:#F4F4F2; --surface:#FFFFFF; --sunk:#E8E8E8; --ink:#222831; --muted:#495464; --faint:#5F6774; --line:#D9DBE0; --line-strong:#BBBFCA;
+  --accent:#14213D; --accent-ink:#FFFFFF; --accent-soft:#E2E6EF;
+  --st-saved:#5B6E96; --st-applied:#3F67A3; --st-oa:#2B4A80; --st-interview:#14213D; --st-offer:#2E7D57; --st-rejected:#6B7280; --st-withdrawn:#6B7280;
+  --good:#2E7D57; --warn:#8A6100; --bad:#C0342A; --hl:#F2C230; --hl-soft:#FFF2C2;
+  --shadow:0 12px 40px rgba(34,40,49,.16);
   --f-ui:"Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --r:8px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0E1013; --surface:#161920; --sunk:#1B1F27; --ink:#E6E8EC; --muted:#A8AFBA; --faint:#888F9B; --line:#2A2F38;
-  --accent:#9DB8EA; --accent-ink:#0E1013; --accent-soft:#1C2740;
-  --st-saved:#A3AAB5; --st-applied:#5CC8E0; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
-  --good:#6CCB8E; --warn:#EDB163; --bad:#F08A8A; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}}
+  --bg:#1B1F26; --surface:#232831; --sunk:#2A303A; --ink:#ECECEA; --muted:#BBBFCA; --faint:#9AA0AB; --line:#363D49; --line-strong:#4A5260;
+  --accent:#AFC2E4; --accent-ink:#141821; --accent-soft:#2C3850;
+  --st-saved:#9AA7C2; --st-applied:#8FB0DE; --st-oa:#B0C6EA; --st-interview:#DCE5F5; --st-offer:#7CC7A0; --st-rejected:#8C93A0; --st-withdrawn:#8C93A0;
+  --good:#7CC7A0; --warn:#F2C230; --bad:#F2877C; --hl:#F2C230; --hl-soft:#3F3720; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0E1013; --surface:#161920; --sunk:#1B1F27; --ink:#E6E8EC; --muted:#A8AFBA; --faint:#888F9B; --line:#2A2F38;
-  --accent:#9DB8EA; --accent-ink:#0E1013; --accent-soft:#1C2740;
-  --st-saved:#A3AAB5; --st-applied:#5CC8E0; --st-oa:#B79CFF; --st-interview:#EDB163; --st-offer:#6CCB8E; --st-rejected:#F08A8A; --st-withdrawn:#9AA0AA;
-  --good:#6CCB8E; --warn:#EDB163; --bad:#F08A8A; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}
+  --bg:#1B1F26; --surface:#232831; --sunk:#2A303A; --ink:#ECECEA; --muted:#BBBFCA; --faint:#9AA0AB; --line:#363D49; --line-strong:#4A5260;
+  --accent:#AFC2E4; --accent-ink:#141821; --accent-soft:#2C3850;
+  --st-saved:#9AA7C2; --st-applied:#8FB0DE; --st-oa:#B0C6EA; --st-interview:#DCE5F5; --st-offer:#7CC7A0; --st-rejected:#8C93A0; --st-withdrawn:#8C93A0;
+  --good:#7CC7A0; --warn:#F2C230; --bad:#F2877C; --hl:#F2C230; --hl-soft:#3F3720; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}
 
 [hidden]{display:none!important}
 html,body{height:100%}
@@ -100,8 +102,48 @@ textarea{width:100%;resize:vertical}
 .kpi .l{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:500}
 .kpi .v{font-family:var(--f-mono);font-size:26px;font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .kpi .h{font-size:12px;color:var(--faint)}
-.dash{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);grid-template-areas:"att pipe" "att track" "week week";gap:16px}
-.a-att{grid-area:att}.a-pipe{grid-area:pipe}.a-track{grid-area:track}.a-week{grid-area:week}
+.dash{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);grid-template-areas:"att top" "pipe track" "week week";gap:16px}
+.a-att{grid-area:att}.a-top{grid-area:top}.a-pipe{grid-area:pipe}.a-track{grid-area:track}.a-week{grid-area:week}
+.panel-foot{display:flex;justify-content:flex-start;margin-top:auto}
+.kpi .l abbr{text-decoration:none;cursor:help;border-bottom:1px dotted var(--faint)}
+/* urgency stripes: yellow = act soon, red = overdue */
+.u-soon{box-shadow:inset 3px 0 0 var(--hl)}
+.u-hot{box-shadow:inset 3px 0 0 var(--bad)}
+.chip.new{background:var(--hl-soft);color:var(--warn);font-weight:600}
+.due.soon{color:var(--warn);font-weight:600}.due.hot{color:var(--bad);font-weight:600}
+/* score badge: navy filled = strong, tint = good, grey = weak */
+.sc{display:inline-grid;place-items:center;min-width:38px;height:26px;padding:0 6px;border-radius:6px;font-family:var(--f-mono);font-weight:500;font-size:13px;font-variant-numeric:tabular-nums}
+.sc.b1{background:var(--accent);color:var(--accent-ink)}.sc.b2{background:var(--accent-soft);color:var(--accent)}.sc.b3{background:var(--sunk);color:var(--muted)}
+/* compact listing rows */
+.lsec{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.lsec+.lsec{margin-top:12px}
+.lsec-h{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;cursor:pointer;font-weight:600;font-size:13px;background:var(--surface)}
+.lsec-h:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.lsec-h .cnt{font-family:var(--f-mono);font-weight:400;color:var(--faint)}
+.lsec-h .car{margin-left:auto;color:var(--faint);transition:transform .15s}
+.lsec-h[aria-expanded="true"] .car{transform:rotate(90deg)}
+.lsec-h .hint{font-weight:400;color:var(--faint);font-size:12px}
+.lrow{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:9px 14px;border-top:1px solid var(--line)}
+.lrow:hover{background:color-mix(in srgb,var(--sunk) 45%,transparent)}
+.lmain{all:unset;box-sizing:border-box;cursor:pointer;min-width:0;display:flex;flex-direction:column;gap:2px}
+.lmain:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:3px}
+.lmain .l1{display:flex;align-items:center;gap:6px;min-width:0}
+.lmain .l1 b{font-weight:600;white-space:nowrap}
+.lmain .l1 .role{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.lmain .l2{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:12px;color:var(--faint)}
+.lmain .l2 .neg{color:var(--bad);font-weight:600}.lmain .l2 .pos{color:var(--good);font-weight:600}
+.lacts{display:flex;gap:4px;align-items:center}
+.ldetail{grid-column:2/-1;display:flex;flex-direction:column;gap:6px;padding:4px 0 6px}
+.more{all:unset;cursor:pointer;padding:9px 14px;border-top:1px solid var(--line);color:var(--accent);font-weight:500;font-size:13px}
+.more:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;color:var(--muted);font-size:13px}
+.toolbar .grow{margin-right:auto}
+.tmatch{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.tmatch li{display:grid;grid-template-columns:40px minmax(0,1fr) auto;gap:10px;align-items:center;padding:7px 4px;border-top:1px solid var(--line)}
+.tmatch li:first-child{border-top:0}
+.tmatch .what{all:unset;cursor:pointer;min-width:0}
+.tmatch .what b{font-weight:600}
+.tmatch .what span{display:block;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
 .panel h2{font-size:13px;margin:0;font-weight:600;display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px}
 .panel h2 small{font-weight:400;color:var(--faint);font-size:12px}
@@ -112,7 +154,7 @@ textarea{width:100%;resize:vertical}
 .todo .what{all:unset;cursor:pointer;min-width:0;display:block}
 .todo .what:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .mini{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
-.s-missed{--c:var(--st-withdrawn)}
+.s-missed{--c:var(--st-withdrawn)}.s-ghosted{--c:var(--st-withdrawn)}
 .todo .what b{font-weight:600}
 .todo .what span{color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .due{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
@@ -140,8 +182,13 @@ textarea{width:100%;resize:vertical}
 .legend i{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 
 /* board */
-.board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(228px,1fr);gap:12px;overflow-x:auto;padding-bottom:8px;align-items:start}
-.col{background:var(--sunk);border-radius:var(--r);padding:0 8px 8px;border-top:3px solid var(--c);min-height:180px;transition:background .15s}
+.board{display:flex;gap:12px;overflow-x:auto;padding-bottom:8px;align-items:flex-start}
+.col{flex:1 1 228px;min-width:228px;background:var(--sunk);border-radius:var(--r);padding:0 8px 8px;border-top:3px solid var(--c);min-height:180px;transition:background .15s}
+.col.collapsed{flex:0 0 150px;min-width:150px;min-height:0}
+.col .colbtn{all:unset;cursor:pointer;display:block;text-align:center;padding:8px 6px;border-radius:6px;color:var(--accent);font-weight:500;font-size:12.5px}
+.col .colbtn:hover{background:var(--surface)}
+.col .colbtn:focus-visible{outline:2px solid var(--accent)}
+.card.u-soon{box-shadow:inset 3px 0 0 var(--hl)}.card.u-hot{box-shadow:inset 3px 0 0 var(--bad)}
 .col.over{background:var(--accent-soft)}
 .col h2{display:flex;align-items:center;gap:8px;padding:10px 4px 9px;font-weight:600;font-size:13px;margin:0}
 .col h2 .dot{width:8px;height:8px;border-radius:50%;background:var(--c)}
@@ -160,7 +207,9 @@ textarea{width:100%;resize:vertical}
 .col .empty{padding:14px 6px;text-align:center;border:1px dashed var(--line);border-radius:6px}
 
 /* table */
-.tablewrap{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.tablewrap{overflow:auto;max-height:calc(100vh - 210px);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+thead th{position:sticky;top:0;z-index:1;background:var(--surface)}
+tbody tr.closed td{color:var(--faint)}
 table{border-collapse:collapse;width:100%;min-width:920px;font-size:13px}
 th{text-align:left;font-weight:500;font-size:12px;color:var(--muted);padding:0;border-bottom:1px solid var(--line);white-space:nowrap;text-transform:uppercase;letter-spacing:.05em}
 th button{all:unset;cursor:pointer;display:block;padding:9px 12px}
@@ -235,8 +284,9 @@ td select{padding:3px 6px;font-size:12.5px}
 .toast .tbtn{all:unset;cursor:pointer;font-weight:600;padding:2px 6px;border-radius:4px;color:var(--bg);text-decoration:underline}
 .toast .tbtn:focus-visible{outline:2px solid var(--bg)}
 
+@media (max-width:760px){.lrow{grid-template-columns:40px minmax(0,1fr)}.lacts{grid-column:2/-1}.lmain .l1{flex-wrap:wrap}.lmain .l1 .role{white-space:normal}}
 @media (max-width:1080px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.prefs{grid-template-columns:minmax(0,1fr)}
-  .dash{grid-template-columns:minmax(0,1fr);grid-template-areas:"att" "pipe" "track" "week"}}
+  .dash{grid-template-columns:minmax(0,1fr);grid-template-areas:"att" "top" "pipe" "track" "week"}}
 @media (max-width:760px){
   .app{grid-template-columns:minmax(0,1fr)}
   .rail{position:fixed;top:auto;left:0;right:0;bottom:0;height:auto;overflow:visible;z-index:15;flex-direction:row;gap:0;
@@ -329,15 +379,15 @@ const safeUrl=u=>{u=normUrl(u);return /^https?:\/\/[^\s"'<>]+$/i.test(u)?u:''};
 const urlKey=u=>safeUrl(u).toLowerCase().replace(/#.*$/,'').replace(/\/+$/,'');
 
 /* ---------- model ---------- */
-const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn'],['missed','Missed deadline']];
+const STAGES=[['saved','Saved'],['applied','Applied'],['oa','Assessment'],['interview','Interviewing'],['offer','Offer'],['rejected','Rejected'],['withdrawn','Withdrawn'],['missed','Missed deadline'],['ghosted','No response']];
 const LABEL=Object.fromEntries(STAGES);
-const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6,missed:7};
-const CLOSED=['rejected','withdrawn','missed'];
+const ORDER={saved:0,applied:1,oa:2,interview:3,offer:4,rejected:5,withdrawn:6,missed:7,ghosted:8};
+const CLOSED=['rejected','withdrawn','missed','ghosted'];
 const FLOW=['saved','applied','oa','interview','offer'];
 const TRACKS=['SWE','DE','DA','DS','BIE'];
 const TRACK_NAME={SWE:'Software Eng.',DE:'Data Eng.',DA:'Data Analyst',DS:'Data Science',BIE:'BI Engineer'};
 const SPONSOR={yes:'Sponsors visa',no:'No sponsorship',unknown:'Sponsorship ?'};
-const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:30,skills:25,sponsor:20,recency:15,degree:5,location:5},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false,windowDays:10,fetchHours:2};
+const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:30,skills:25,sponsor:20,recency:15,degree:5,location:5},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false,windowDays:10,fetchHours:2,topScore:75,minScore:55,staleDays:45};
 const WEIGHT_LABEL={fit:'Role fit (title matches a target track)',skills:'Skill match (posting skills on your resume)',sponsor:'Sponsorship evidence (H-1B history, CPT/OPT wording)',recency:'Recency (halves every 5 days)',degree:'Degree (Master’s listed)',location:'Preferred location'};
 const WEIGHT_SHORT={fit:'Role fit',skills:'Skills',sponsor:'Sponsorship',recency:'Recency',degree:'Degree',location:'Location'};
 const RECENCY_HALF_LIFE=5;
@@ -453,8 +503,12 @@ function scoreParts(l){const w=S.settings.weights,t=l.track||inferTrack(l.role);
 function filtered(){const{q,track,sponsor}=S.ui;const t=(q||'').toLowerCase().trim();
   return S.apps.filter(a=>(!t||[a.company,a.role,a.location,a.notes,a.contact].join(' ').toLowerCase().includes(t))&&(!track||a.track===track)&&(!sponsor||a.sponsor===sponsor))}
 function lastDate(a){const l=a.history[a.history.length-1];return l?l.d:a.applied}
-function followUps(){const fu=+S.settings.followUpDays||14;
-  return S.apps.filter(a=>a.status==='applied'&&!(a.snoozeUntil&&daysFrom(a.snoozeUntil)>0)&&-daysFrom(maxDate(lastDate(a),a.followedUp))>=fu)}
+const quietDays=a=>-daysFrom(maxDate(lastDate(a),a.followedUp));
+function staleApps(){const sd=+S.settings.staleDays||45;return S.apps.filter(a=>a.status==='applied'&&!(a.snoozeUntil&&daysFrom(a.snoozeUntil)>0)&&quietDays(a)>=sd)}
+function followUps(){const fu=+S.settings.followUpDays||14,sd=+S.settings.staleDays||45;
+  return S.apps.filter(a=>a.status==='applied'&&!(a.snoozeUntil&&daysFrom(a.snoozeUntil)>0)&&quietDays(a)>=fu&&quietDays(a)<sd)}
+const band=s=>s>=(+S.settings.topScore||75)?'b1':s>=(+S.settings.minScore||55)?'b2':'b3';
+const UI={expanded:new Set(),limits:{},attnAll:false,tableLimit:25};
 const filtersOn=()=>!!(S.ui.q||S.ui.track||S.ui.sponsor);
 
 /* ---------- small renderers ---------- */
@@ -478,17 +532,26 @@ R.dashboard=()=>{
   const intv=A.filter(a=>reached(a,'interview')).length,offers=A.filter(a=>reached(a,'offer')).length;
   const toApply=A.filter(a=>a.status==='saved').length,active=A.filter(a=>['applied','oa','interview'].includes(a.status)).length;
   const pct=(n,d)=>d?Math.round(n/d*100)+'%':'—';
-  const kpi=(l,v,h)=>`<div class="kpi"><span class="l">${l}</span><span class="v">${v}</span><span class="h">${h}</span></div>`;
+  const kpi=(l,v,h,tip)=>`<div class="kpi"><span class="l">${tip?`<abbr title="${esc(tip)}">${l}</abbr>`:l}</span><span class="v">${v}</span><span class="h">${h}</span></div>`;
   const items=[];
   for(const a of A){if(CLOSED.includes(a.status))continue;
     if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n!==null&&n<=7)items.push({a,kind:n<0?'Missed?':'Deadline',n,text:(n<0?'Deadline passed ':'Apply by ')+fmt(a.deadline),missed:n<0})}
     if(a.nextText&&a.nextDate){const n=daysFrom(a.nextDate);if(n!==null&&n<=7)items.push({a,kind:'Next step',n,text:a.nextText})}}
-  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${-daysFrom(maxDate(lastDate(a),a.followedUp))} days`,fu:true});
+  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${quietDays(a)} days`,fu:true});
+  for(const a of staleApps())items.push({a,kind:'No reply',n:0.5,text:`Silent for ${quietDays(a)} days`,stale:true});
   items.sort((x,y)=>x.n-y.n);
+  const urg=i=>i.missed||(i.n<0&&!i.fu)?'u-hot':(i.fu||i.n<=3)?'u-soon':'';
   const acts=i=>i.fu?`<span class="mini"><button class="btn sm" type="button" data-fu="done" data-id="${i.a.id}">Followed up</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Snooze 7d</button></span>`
     :i.missed?`<span class="mini"><span class="due hot">${dueText(i.n)}</span><button class="btn sm" type="button" data-missed="${i.a.id}">Mark missed</button></span>`
+    :i.stale?`<span class="mini"><button class="btn sm" type="button" data-ghost="${i.a.id}">Close as no response</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Keep</button></span>`
     :`<span class="due ${dueCls(i.n)}">${dueText(i.n)}</span>`;
-  const todo=items.length?`<ul class="todo">${items.map(i=>`<li><span class="kind">${i.kind}</span><button class="what" type="button" data-open="${i.a.id}"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></button>${acts(i)}</li>`).join('')}</ul>`:`<p class="empty">Nothing due in the next 7 days.</p>`;
+  const shown=UI.attnAll?items:items.slice(0,5);
+  const todo=items.length?`<ul class="todo">${shown.map(i=>`<li class="${urg(i)}"><span class="kind">${i.kind}</span><button class="what" type="button" data-open="${i.a.id}"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></button>${acts(i)}</li>`).join('')}</ul>
+    ${items.length>5?`<div class="panel-foot"><button class="btn sm ghost" type="button" data-action="attn-all">${UI.attnAll?'Show fewer':`Show all ${items.length}`}</button></div>`:''}`:`<p class="empty">Nothing due in the next 7 days.</p>`;
+  const topS=+S.settings.topScore||75;
+  const best=S.listings.filter(l=>!findDup(l.company,l.role,l.url)&&!(S.settings.hideNoSponsor&&l.sponsor==='no')).map(l=>Object.assign({},l,scoreParts(l))).filter(l=>l.total>=topS).sort((a,b)=>b.total-a.total);
+  const topPanel=best.length?`<ul class="tmatch">${best.slice(0,5).map(l=>`<li><span class="sc ${band(l.total)}">${l.total}</span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · ${l.posted?ago(l.posted):''}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
+    <div class="panel-foot"><a class="btn sm ghost" href="#inbox">See all ${best.length} top matches →</a></div>`:`<p class="empty">No listings scored ${topS}+ right now. New ones arrive with each refresh.</p>`;
   const fst=[['applied','Applied'],['oa','Assessment'],['interview','Interview'],['offer','Offer']];
   const fc=fst.map(([s])=>A.filter(a=>reached(a,s)).length),base=Math.max(fc[0],1);
   const funnel=fst.map(([s,l],i)=>`<div class="frow"><span>${l}</span><div class="fbar" aria-hidden="true"><span class="s-${s}" style="width:${Math.max(fc[i]?3:0,fc[i]/base*100)}%"></span></div><span class="num"><b>${fc[i]}</b>${i?` · ${Math.round(fc[i]/base*100)}%`:''}</span></div>`).join('');
@@ -510,43 +573,63 @@ R.dashboard=()=>{
   const trows=TRACKS.map(t=>{const at=A.filter(a=>a.track===t);const c={saved:at.filter(a=>a.status==='saved').length,active:at.filter(a=>['applied','oa','interview','offer'].includes(a.status)).length,closed:at.filter(a=>CLOSED.includes(a.status)).length};
     return `<div class="trow" role="img" aria-label="${t}: ${c.saved} saved, ${c.active} in progress, ${c.closed} closed"><b>${t}</b><div class="seg" style="width:${Math.max(at.length?8:0,at.length/tmax*100)}%">${segs.map(([k])=>c[k]?`<span style="flex:${c[k]};background:${tcol[k]}"></span>`:'').join('')}</div><span class="num">${at.length}</span></div>`}).join('');
   return `<div style="display:flex;flex-direction:column;gap:16px">
-  <div class="kpis">${kpi('To apply',toApply,'saved, not submitted')}${kpi('Applied',applied,active+' still active')}${kpi('Response rate',pct(replied,applied),replied+' replies incl. rejections')}${kpi('Interview rate',pct(intv,applied),intv+' reached interview')}${kpi('Offers',offers,pct(offers,applied)+' of applications')}</div>
+  <div class="kpis">${kpi('To apply',toApply,toApply?'saved, not submitted':`${best.length} top matches waiting`,'Applications you saved but have not submitted yet.')}${kpi('Applied',applied,active+' still active','Every application that reached the Applied stage, including ones later closed.')}${kpi('Response rate',pct(replied,applied),replied+' replies incl. rejections','Share of applications that got any reply: an assessment, interview, offer or rejection.')}${kpi('Interview rate',pct(intv,applied),intv+' reached interview','Share of applications that reached an interview.')}${kpi('Offers',offers,pct(offers,applied)+' of applications','Applications that reached an offer.')}</div>
   <div class="dash">
-    <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow-ups after ${S.settings.followUpDays} days without reply</small></h2>${todo}</section>
+    <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>
+    <section class="panel a-top"><h2>Top matches to apply <small>score ${topS}+, not tracked yet</small></h2>${topPanel}</section>
     <section class="panel a-pipe"><h2>Pipeline <small>applications that reached each stage</small></h2><div class="funnel">${funnel}</div></section>
     <section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k,l])=>`<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>
     <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks</small></h2>${svg}</section>
   </div></div>`;
 };
 
+function urgency(a){
+  if(CLOSED.includes(a.status))return'';
+  if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n<0)return'u-hot';if(n<=3)return'u-soon'}
+  if(a.nextDate&&a.nextText){const n=daysFrom(a.nextDate);if(n<0)return'u-hot';if(n<=3)return'u-soon'}
+  if(followUps().includes(a)||staleApps().includes(a))return'u-soon';
+  return''}
 function card(a){
   let meta='';
   if(a.status==='saved')meta=a.deadline?`<span class="due ${dueCls(daysFrom(a.deadline))}">Deadline ${fmt(a.deadline)}</span>`:'<span>No deadline</span>';
   else if(a.applied)meta=`<span>Applied ${ago(a.applied)}</span>`;
+  if(a.status==='applied'&&quietDays(a)>=(+S.settings.followUpDays||14))meta+=`<span class="due soon">No reply for ${quietDays(a)} days</span>`;
   if(a.nextText)meta+=`<span class="next">→ ${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}</span>`;
-  return `<li class="card" draggable="true" data-id="${a.id}" data-open="${a.id}" tabindex="0" aria-label="${esc(a.company+', '+a.role+', '+LABEL[a.status])}">
+  return `<li class="card ${urgency(a)}" draggable="true" data-id="${a.id}" data-open="${a.id}" tabindex="0" aria-label="${esc(a.company+', '+a.role+', '+LABEL[a.status])}">
     <div class="card-top"><strong>${esc(a.company)}</strong>${prio(a.priority)}</div>
     <div class="role">${esc(a.role)}</div>
     <div class="chips">${a.track?`<span class="chip tag">${a.track}</span>`:''}${a.sponsor!=='unknown'?spChip(a.sponsor):''}${CLOSED.includes(a.status)?stChip(a.status):''}</div>
     <div class="meta">${meta}</div>
     <select class="move" data-status-for="${a.id}" aria-label="Move ${esc(a.company)} to stage">${opts(STAGES,a.status)}</select></li>`;
 }
+const COL_LIMIT=6;
+function colSort(s){
+  if(s==='saved')return(x,y)=>(x.deadline||'9').localeCompare(y.deadline||'9')||y.priority-x.priority;
+  if(s==='applied')return(x,y)=>quietDays(y)-quietDays(x)||y.priority-x.priority;  // longest silence first
+  if(s==='closed')return(x,y)=>(lastDate(y)||'').localeCompare(lastDate(x)||'');
+  return(x,y)=>(x.nextDate||'9').localeCompare(y.nextDate||'9')||y.priority-x.priority}
 R.board=()=>{const A=filtered();const cols=['saved','applied','oa','interview','offer','closed'];
-  return `<div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?CLOSED.includes(a.status):a.status===s).sort((x,y)=>y.priority-x.priority||(x.deadline||'9').localeCompare(y.deadline||'9'));
+  return `<div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?CLOSED.includes(a.status):a.status===s).sort(colSort(s));
     const name=s==='closed'?'Closed':LABEL[s];
-    return `<section class="col s-${s}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length?`<ul class="cards">${items.map(card).join('')}</ul>`:'<p class="empty">Drop a card here</p>'}</section>`}).join('')}</div>`};
+    if(s==='closed'&&!S.ui.closedOpen)return `<section class="col collapsed s-closed" data-drop="closed" aria-label="Closed, ${items.length} applications, collapsed"><h2><span class="dot"></span>Closed<span class="count">${items.length}</span></h2><button class="colbtn" type="button" data-action="closed-toggle">Show</button></section>`;
+    const lim=UI.limits['col-'+s]||COL_LIMIT,vis=items.slice(0,lim);
+    return `<section class="col s-${s}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length?`<ul class="cards">${vis.map(card).join('')}</ul>`:'<p class="empty">Drop a card here</p>'}${items.length>lim?`<button class="colbtn" type="button" data-more="col-${s}">Show ${items.length-lim} more</button>`:''}${s==='closed'?'<button class="colbtn" type="button" data-action="closed-toggle">Hide closed</button>':''}</section>`}).join('')}</div>`};
 
 const COLS=[['company','Company'],['role','Role'],['track','Track'],['status','Status'],['priority','Priority'],['applied','Applied'],['deadline','Deadline'],['nextDate','Next step'],['sponsor','Visa']];
 R.table=()=>{const{key,dir}=S.ui.sort;
   const val=a=>key==='status'?ORDER[a.status]:key==='priority'?-a.priority:String(a[key]||'').toLowerCase();
-  const A=filtered().sort((x,y)=>{const a=val(x),b=val(y);if(a===''&&b!=='')return 1;if(b===''&&a!=='')return -1;return(a>b?1:a<b?-1:0)*dir});
-  if(!A.length)return `<div class="panel"><p class="empty">No applications match. Clear the search or filters, or press N to add one.</p></div>`;
-  return `<div class="tablewrap"><table><thead><tr>${COLS.map(([k,l])=>`<th scope="col" aria-sort="${key===k?(dir>0?'ascending':'descending'):'none'}"><button type="button" data-sort="${k}">${l} ${key===k?`<span class="arr" aria-hidden="true">${dir>0?'↑':'↓'}</span>`:''}</button></th>`).join('')}</tr></thead><tbody>
-  ${A.map(a=>`<tr data-open="${a.id}"><td class="co"><button type="button" data-open="${a.id}">${esc(a.company)}</button></td><td class="ro">${esc(a.role)}</td><td>${a.track?`<span class="chip tag">${a.track}</span>`:''}</td>
+  const all=filtered(),nClosed=all.filter(a=>CLOSED.includes(a.status)).length;
+  const A0=(S.ui.showClosed?all:all.filter(a=>!CLOSED.includes(a.status))).sort((x,y)=>{const a=val(x),b=val(y);if(a===''&&b!=='')return 1;if(b===''&&a!=='')return -1;return(a>b?1:a<b?-1:0)*dir});
+  const A=A0.slice(0,UI.tableLimit);
+  const bar=`<div class="toolbar" style="margin-bottom:10px"><span class="grow">${A0.length} application${A0.length===1?'':'s'}${S.ui.showClosed?'':` · ${nClosed} closed hidden`}</span>
+    <label class="switch"><input type="checkbox" id="showClosed" ${S.ui.showClosed?'checked':''}> Show closed</label></div>`;
+  if(!A.length)return bar+`<div class="panel"><p class="empty">No applications match. Clear the search or filters, turn on “Show closed”, or press N to add one.</p></div>`;
+  return bar+`<div class="tablewrap"><table><thead><tr>${COLS.map(([k,l])=>`<th scope="col" aria-sort="${key===k?(dir>0?'ascending':'descending'):'none'}"><button type="button" data-sort="${k}">${l} ${key===k?`<span class="arr" aria-hidden="true">${dir>0?'↑':'↓'}</span>`:''}</button></th>`).join('')}</tr></thead><tbody>
+  ${A.map(a=>`<tr data-open="${a.id}" class="${CLOSED.includes(a.status)?'closed':''}"><td class="co ${urgency(a)}"><button type="button" data-open="${a.id}">${esc(a.company)}</button></td><td class="ro">${esc(a.role)}</td><td>${a.track?`<span class="chip tag">${a.track}</span>`:''}</td>
   <td><select data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES,a.status)}</select></td><td>${prio(a.priority)}</td>
   <td class="dt">${fmt(a.applied)}</td><td class="dt">${a.deadline?`<span class="due ${a.status==='saved'?dueCls(daysFrom(a.deadline)):''}">${fmt(a.deadline)}</span>`:'—'}</td>
   <td class="dt">${a.nextText?`${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}`:'—'}</td><td>${spChip(a.sponsor)}</td></tr>`).join('')}
-  </tbody></table></div>`};
+  </tbody></table>${A0.length>A.length?`<button class="more" type="button" data-action="table-more" style="display:block;width:100%;box-sizing:border-box">Show ${Math.min(25,A0.length-A.length)} more of ${A0.length-A.length}</button>`:''}</div>`};
 
 function evidence(l){
   const h=l.h1b===null||l.h1b===undefined?(l.source==='simplify'?'No H-1B record found for this employer':''):`${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS FY2023)`;
@@ -570,18 +653,37 @@ R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
   L.sort((a,b)=>(!!a.dup-!!b.dup)||b.total-a.total);
   const ex=S.fetch&&S.fetch.excluded?Object.entries(S.fetch.excluded).sort((a,b)=>b[1]-a[1]):[];
   const head=`<div class="inbox-head"><p><b>${L.length}</b> listing${L.length===1?'':'s'} ranked by fit${hidden?` · ${hidden} hidden without sponsorship`:''}<br><span class="sub">${fetchSummary()}</span></p>
+    <select id="lsort" aria-label="Sort listings"><option value="score"${S.ui.lsort!=='newest'?' selected':''}>Best match first</option><option value="newest"${S.ui.lsort==='newest'?' selected':''}>Newest first</option></select>
     <label class="switch"><input type="checkbox" id="hideNo" ${S.settings.hideNoSponsor?'checked':''}> Hide no-sponsorship</label>
     <button class="btn sm" type="button" data-action="refresh" ${refreshing?'disabled':''}>${refreshing?'Refreshing…':'Refresh now'}</button></div>
     ${ex.length?`<details class="why exl"><summary>Filtered out this refresh: ${ex.reduce((s,e)=>s+e[1],0).toLocaleString('en-US')}</summary><div class="parts">${ex.map(([k,n])=>`<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}</div></details>`:''}`;
   if(!L.length)return head+`<div class="panel" style="margin-top:12px"><p class="empty">No listings match. Refresh now, clear the filters, or widen the window in Preferences.</p></div>`;
-  return head+`<div class="list" style="margin-top:12px">${L.map(l=>`<article class="listing" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
-    <div class="ring" style="--p:${l.total}" aria-hidden="true"><span>${l.total}</span></div>
-    <div class="body"><div>${l.isNew?'<span class="chip s-applied">New</span> ':''}<b>${esc(l.company)}</b> <span class="role">· ${esc(l.role)}</span></div>
-      <div class="chips">${l.dup?`<span class="chip s-applied">Already tracking · ${LABEL[l.dup.status]}</span>`:''}${l.t?`<span class="chip tag">${esc(l.t)}</span>`:''}<span class="chip tag">${esc(l.location)}</span>${l.degree?`<span class="chip tag">${esc(l.degree)}</span>`:''}${l.posted?`<span class="chip tag">Posted ${ago(l.posted)}</span>`:''}</div>
-      ${evidence(l)}${skillLine(l)}
-      <details class="why"><summary>Why ${l.total}?</summary><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}${l.pen?`<span>No-sponsorship penalty <b>−${l.pen}</b></span>`:''}</div></details></div>
-    <div class="acts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open tracked</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button>`}<button class="btn sm ghost" type="button" data-dismiss="${l.id}">Dismiss</button>${link(l.url,'Open ↗')}</div>
-  </article>`).join('')}</div>`};
+  if(S.ui.lsort==='newest')L.sort((a,b)=>(!!a.dup-!!b.dup)||(b.posted||'').localeCompare(a.posted||'')||b.total-a.total);
+  const topS=+S.settings.topScore||75,minS=+S.settings.minScore||55,open=S.ui.sec||{};
+  const groups=[
+    ['new','New since the last refresh','',L.filter(l=>!l.dup&&l.isNew&&l.total>=minS),true],
+    ['top',`Top matches`,`score ${topS}+`,L.filter(l=>!l.dup&&!l.isNew&&l.total>=topS),true],
+    ['more','More matches',`score ${minS}–${topS-1}`,L.filter(l=>!l.dup&&!l.isNew&&l.total>=minS&&l.total<topS),false],
+    ['low','Lower matches',`below ${minS}`,L.filter(l=>!l.dup&&l.total<minS),false],
+    ['dup','Already tracking','',L.filter(l=>l.dup),false]].filter(g=>g[3].length);
+  return head+`<div style="margin-top:12px">${groups.map(([k,title,hint,items,def])=>{
+    const isOpen=open[k]!==undefined?open[k]:def,lim=UI.limits['sec-'+k]||25;
+    return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${k==='new'?'<span class="chip new">New</span>':''}${esc(title)} <span class="cnt">${items.length}</span>${hint?`<span class="hint">${esc(hint)}</span>`:''}<span class="car" aria-hidden="true">›</span></button>
+      ${isOpen?items.slice(0,lim).map(lrow).join('')+(items.length>lim?`<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(25,items.length-lim)} more of ${items.length-lim}</button>`:''):''}</section>`}).join('')}</div>`};
+function lrow(l){
+  const sk=l.skills||{},m=(sk.matched||[]).length,n=m+(sk.missing||[]).length,ex=UI.expanded.has(l.id);
+  const locs=(l.location||'').split('; '),loc=locs.length>2?locs.slice(0,2).join('; ')+` +${locs.length-2}`:l.location;
+  const h=l.h1b===null||l.h1b===undefined?(l.source==='simplify'?'No H-1B record':''):`${Number(l.h1b).toLocaleString('en-US')} H-1B`;
+  const flags=(l.flags||[]).filter(f=>f!=='Text not read').map(f=>`<span class="${f==='No sponsorship'?'neg':'pos'}">${esc(f)}</span>`).join('');
+  return `<article class="lrow" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
+    <span class="sc ${band(l.total)}" title="Match score">${l.total}</span>
+    <button class="lmain" type="button" data-expand="${l.id}" aria-expanded="${ex}">
+      <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span></span>
+      <span class="l2">${l.t?`<span>${esc(l.t)}</span>`:''}<span>${esc(loc||'')}</span>${l.posted?`<span>${ago(l.posted)}</span>`:''}${h?`<span>${h}</span>`:''}${n?`<span>Skills ${m}/${n}</span>`:''}${flags}${l.dup?`<span class="pos">Tracking · ${LABEL[l.dup.status]}</span>`:''}</span>
+    </button>
+    <span class="lacts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}" title="Save to your board">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}" title="Add to your board as applied today">Applied</button>`}${link(l.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-dismiss="${l.id}" aria-label="Dismiss ${esc(l.company)}" title="Dismiss">✕</button></span>
+    ${ex?`<div class="ldetail">${evidence(l)}${skillLine(l)}<div class="why"><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}${l.pen?`<span>No-sponsorship penalty <b>−${l.pen}</b></span>`:''}<span>Degree ${esc(l.degree||'—')}</span><span>Posted ${fmt(l.posted)}</span></div></div></div>`:''}
+  </article>`}
 
 R.prefs=()=>{const st=S.settings,snaps=snapshots();
   const where=Store.mode==='file'?'Saved to <b>data/tracker.json</b> on your computer. The server saves a backup at most every 30 minutes and before every delete, import or restore.':'Saved in <b>this browser only</b>. Clearing site data erases it, so export a backup regularly, or run the local server to save to a file.';
@@ -593,6 +695,9 @@ R.prefs=()=>{const st=S.settings,snaps=snapshots();
   <section class="panel"><h2>Reminders and filters</h2>
     <label class="field"><span>Preferred locations</span><input id="p-places" type="text" value="${esc(st.places.join(', '))}"><span class="hint">Comma separated, e.g. TX, Remote, Seattle</span></label>
     <label class="field"><span>Suggest a follow-up after (days without reply)</span><input id="p-fu" type="number" min="3" max="60" value="${st.followUpDays}"></label>
+    <label class="field"><span>Offer to close as “No response” after (days)</span><input id="p-stale" type="number" min="15" max="120" value="${st.staleDays}"></label>
+    <div class="row"><label class="field" style="flex:1"><span>Top match score</span><input id="p-top" type="number" min="1" max="100" value="${st.topScore}"></label>
+      <label class="field" style="flex:1"><span>Hide below score</span><input id="p-min" type="number" min="0" max="99" value="${st.minScore}"></label></div>
     <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor?'checked':''}> Hide listings that do not sponsor visas</label>
     <label class="field"><span>Show listings posted in the last (days)</span><input id="p-window" type="number" min="1" max="60" value="${st.windowDays}"><span class="hint">Applies from the next refresh.</span></label>
     <label class="field"><span>Refresh listings every (hours)</span><input id="p-hours" type="number" min="1" max="24" step="1" value="${st.fetchHours}"><span class="hint">Runs on your Mac with no AI calls, so it costs nothing. The Mac must be awake; a missed run happens within 5 minutes of waking.</span></label></section>
@@ -731,12 +836,33 @@ function importText(txt){txt=txt.trim();if(!txt)return toast('Paste JSON or CSV 
 function restoreFrom(d,label){checkpoint(true);const m=migrate(d);S.apps=m.apps;S.listings=m.listings;S.dismissed=m.dismissed;S.settings=m.settings;save(true);render();toast(label,true)}
 
 /* ---------- events ---------- */
+function trackListing(id,status){const l=S.listings.find(x=>x.id===id);if(!l)return;checkpoint();
+  const tr2=TRACKS.includes(l.track)?l.track:inferTrack(l.role);const sc=scoreParts(l).total;
+  const note=[`Match score ${sc} when tracked.`,l.h1b!==undefined&&l.h1b!==null?`${l.h1b} H-1B approvals (USCIS FY2023).`:'',(l.flags||[]).length?`Flags: ${l.flags.join(', ')}.`:'',
+    l.skills&&l.skills.matched&&l.skills.matched.length?`Skills to highlight: ${l.skills.matched.join(', ')}.`:'',l.skills&&l.skills.missing&&l.skills.missing.length?`Not on resume: ${l.skills.missing.join(', ')}.`:''].filter(Boolean).join(' ');
+  const a=blankApp({company:l.company,role:l.role,track:tr2,location:l.location,url:safeUrl(l.url),posted:l.posted,sponsor:l.sponsor,sample:l.sample,priority:sc>=80?3:sc>=65?2:1,notes:note,history:[{s:'saved',d:iso(TODAY)}]});
+  if(status==='applied')setStatus(a,'applied');
+  S.apps.push(a);S.listings=S.listings.filter(x=>x!==l);UI.expanded.delete(id);save();render();
+  toast(status==='applied'?`${l.company} added as Applied today`:`${l.company} added to Saved`,true)}
 document.addEventListener('click',e=>{
   const t=e.target;
+  const go=t.closest('[data-goto]');if(go){UI.expanded.add(go.dataset.goto);return}
   if(t.closest('select,input,textarea,summary,a[href]'))return;
+  const ex=t.closest('[data-expand]');
+  if(ex){const id=ex.dataset.expand;UI.expanded.has(id)?UI.expanded.delete(id):UI.expanded.add(id);render();const b=document.querySelector(`[data-expand="${CSS.escape(id)}"]`);if(b)b.focus();return}
+  const sec=t.closest('[data-sec]');
+  if(sec){const k=sec.dataset.sec;S.ui.sec=Object.assign({},S.ui.sec,{[k]:sec.getAttribute('aria-expanded')!=='true'});save();render();const b=document.querySelector(`[data-sec="${k}"]`);if(b)b.focus();return}
+  const mo=t.closest('[data-more]');
+  if(mo){const k=mo.dataset.more;UI.limits[k]=k.startsWith('col-')?1e9:(UI.limits[k]||25)+25;render();return}
+  const gh=t.closest('[data-ghost]');
+  if(gh){const a=S.apps.find(x=>x.id===gh.dataset.ghost);if(!a)return;checkpoint();setStatus(a,'ghosted');save();render();return toast(`${a.company} closed as no response`,true)}
+  const ap=t.closest('[data-appliedl]');if(ap)return trackListing(ap.dataset.appliedl,'applied');
   const act=t.closest('[data-action]');
   if(act){const k=act.dataset.action;
     if(k==='close')return closeDrawer();
+    if(k==='attn-all'){UI.attnAll=!UI.attnAll;return render()}
+    if(k==='closed-toggle'){S.ui.closedOpen=!S.ui.closedOpen;save();return render()}
+    if(k==='table-more'){UI.tableLimit+=25;return render()}
     if(k==='undo')return undo();
     if(k==='force-save'){force=true;return $('#appForm').requestSubmit()}
     if(k==='force-dates'){forceDates=true;return $('#appForm').requestSubmit()}
@@ -774,13 +900,7 @@ document.addEventListener('click',e=>{
     .then(d=>restoreFrom(d,'Restored backup '+bk.closest('li').querySelector('.mono').textContent)).catch(()=>toast('That backup could not be read.'));return}
   const hd=t.closest('[data-hdel]');if(hd){const rest=[...document.querySelectorAll('#hist li')].filter(x=>!x.hidden);if(rest.length<=1)return toast('Keep at least one history entry.');hd.closest('li').hidden=true;return}
   const sn=t.closest('[data-snap]');if(sn){try{restoreFrom(JSON.parse(localStorage.getItem(sn.dataset.snap)),'Restored snapshot '+sn.dataset.snap.slice(-10))}catch(_){toast('That snapshot could not be read.')}return}
-  const tr=t.closest('[data-trackl]');
-  if(tr){const l=S.listings.find(x=>x.id===tr.dataset.trackl);if(!l)return;checkpoint();
-    const tr2=TRACKS.includes(l.track)?l.track:inferTrack(l.role);const sc=scoreParts(l).total;
-    const note=[`Match score ${sc} when tracked.`,l.h1b!==undefined&&l.h1b!==null?`${l.h1b} H-1B approvals (USCIS FY2023).`:'',(l.flags||[]).length?`Flags: ${l.flags.join(', ')}.`:'',
-      l.skills&&l.skills.matched&&l.skills.matched.length?`Skills to highlight: ${l.skills.matched.join(', ')}.`:'',l.skills&&l.skills.missing&&l.skills.missing.length?`Not on resume: ${l.skills.missing.join(', ')}.`:''].filter(Boolean).join(' ');
-    S.apps.push(blankApp({company:l.company,role:l.role,track:tr2,location:l.location,url:safeUrl(l.url),posted:l.posted,sponsor:l.sponsor,sample:l.sample,priority:sc>=80?3:sc>=65?2:1,notes:note,history:[{s:'saved',d:iso(TODAY)}]}));
-    S.listings=S.listings.filter(x=>x!==l);save();render();return toast(`${l.company} added to Saved`,true)}
+  const tr=t.closest('[data-trackl]');if(tr)return trackListing(tr.dataset.trackl,'saved');
   const dm=t.closest('[data-dismiss]');
   if(dm){checkpoint();const l=S.listings.find(x=>x.id===dm.dataset.dismiss);S.listings=S.listings.filter(x=>x!==l);if(l&&!S.dismissed.includes(listingKey(l)))S.dismissed.push(listingKey(l));save();render();return toast(`${l?l.company:'Listing'} dismissed`,true)}
   const th=t.closest('[data-sort]');
@@ -793,6 +913,11 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='f-status'){$('#stdateWrap').hidden=t.value===origStatus;return}
   if(t.dataset.statusFor){const a=S.apps.find(x=>x.id===t.dataset.statusFor);if(!a)return;checkpoint();moveTo(a,t.value);save();render();if(t.classList.contains('move'))focusCard(a.id);return toast(`${a.company} → ${LABEL[a.status]}`,true)}
   if(t.id==='hideNo'||t.id==='p-hide'){S.settings.hideNoSponsor=t.checked;save();if(t.id==='hideNo')render();return}
+  if(t.id==='lsort'){S.ui.lsort=t.value;save();return render()}
+  if(t.id==='showClosed'){S.ui.showClosed=t.checked;UI.tableLimit=25;save();return render()}
+  if(t.id==='p-top'||t.id==='p-min'){const top=Math.min(100,Math.max(1,+$('#p-top').value||75)),min=Math.min(top-1,Math.max(0,+$('#p-min').value||55));
+    S.settings.topScore=top;S.settings.minScore=min;save();return toast(`Top matches ${top}+, lower matches below ${min}`)}
+  if(t.id==='p-stale'){S.settings.staleDays=Math.min(120,Math.max(15,Math.round(+t.value||45)));save();return toast('Saved')}
   if(t.dataset.target){const s=new Set(S.settings.targets);t.checked?s.add(t.dataset.target):s.delete(t.dataset.target);S.settings.targets=[...s];save();return toast('Target tracks saved')}
   if(t.dataset.weight){S.settings.weights[t.dataset.weight]=Math.max(0,+t.value||0);save();return toast('Weights saved')}
   if(t.id==='p-places'){S.settings.places=t.value.split(',').map(x=>x.trim()).filter(Boolean);save();return toast('Locations saved')}
