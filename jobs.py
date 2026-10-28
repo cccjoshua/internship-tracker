@@ -28,24 +28,36 @@ import webbrowser
 import fetcher
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-STATE = os.path.join(ROOT, "data", "tracker.json")
-LAST = os.path.join(ROOT, "data", "cache", "last_list.json")
+DATA = os.environ.get("IAT_DATA_DIR") or os.path.join(ROOT, "data")
+STATE = os.path.join(DATA, "tracker.json")
+LISTINGS = os.path.join(DATA, "listings.json")
+LAST = os.path.join(DATA, "cache", "last_list.json")
 SERVER = "http://127.0.0.1:8765"
 
 BOLD, DIM, GREEN, YELLOW, RED, RESET = ("\033[1m", "\033[2m", "\033[32m", "\033[33m", "\033[31m", "\033[0m") if sys.stdout.isatty() else ("",) * 6
 
 
-def load():
+def _read(path):
     try:
-        with open(STATE, encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             return json.load(f)
     except (OSError, ValueError):
-        sys.exit("No data yet. Start the tracker (python3 server.py) or run: python3 jobs.py fetch")
+        return None
 
 
-def weights(state):
-    w = (state.get("settings") or {}).get("weights") or {}
-    return w if "skills" in w else fetcher.DEFAULT_WEIGHTS
+def load():
+    """Your data plus the listings, with dismissed and tracked listings left out (as in the page)."""
+    user = _read(STATE) or {}
+    data = _read(LISTINGS)
+    if data is None:
+        sys.exit("No listings yet. Start the tracker (python3 server.py) or run: python3 jobs.py fetch")
+    tracked, dismissed = fetcher.tracked_keys(user), set(user.get("dismissed") or [])
+    keep = []
+    for l in data.get("listings") or []:
+        alt = "k:" + fetcher.norm_text(l.get("company")) + "|" + fetcher.norm_text(l.get("role"))
+        if not ({fetcher.listing_key(l), alt} & (tracked | dismissed)):
+            keep.append(l)
+    return {"settings": user.get("settings") or {}, "listings": keep, "fetch": data.get("fetch") or {}}
 
 
 def age_days(l):
@@ -67,17 +79,15 @@ def color_score(s):
 
 def cmd_list(a):
     state = load()
-    w = weights(state)
+    st = state["settings"]
     tracks = {t.strip().upper() for t in (a.track or "").split(",") if t.strip()}
     rows = []
     for l in state.get("listings") or []:
-        if l.get("source") != "simplify":
-            continue
-        s = fetcher.score(l, w)
+        c = fetcher.score_parts(l, st)
+        s = c["total"]
         d = age_days(l)
-        friendly = "CPT/OPT friendly" in (l.get("flags") or [])
-        nosp = "No sponsorship" in (l.get("flags") or [])
-        if tracks and (l.get("track") or "").upper() not in tracks:
+        friendly, nosp = c["friendly"], c["noSponsor"]
+        if tracks and (c["track"] or "").upper() not in tracks:
             continue
         if a.min and s < a.min:
             continue
@@ -93,10 +103,10 @@ def cmd_list(a):
             continue
         if a.company and a.company.lower() not in (l.get("company") or "").lower():
             continue
-        have = set((l.get("skills") or {}).get("matched", [])) | set((l.get("skills") or {}).get("missing", []))
+        have = set(l.get("skillsFound") or [])
         if a.skill and not all(any(k.lower() == h.lower() for h in have) for k in a.skill):
             continue
-        rows.append((s, d, l))
+        rows.append((s, d, l, c))
     rows.sort(key=lambda r: (-r[0], r[1] if r[1] is not None else 99))
     shown = rows if a.all else rows[: a.limit]
     width = shutil.get_terminal_size((140, 20)).columns
@@ -105,24 +115,23 @@ def cmd_list(a):
     print(f"{BOLD}{len(rows)} listings match{RESET}  {DIM}(refreshed {f.get('at', 'never')[:16].replace('T', ' ')}){RESET}")
     print(f"{DIM}{'#':>3}  {'Fit':>3}  {'Trk':5} {'Company':22} {'Role':{role_w}} {'Location':18} {'Age':>4} {'H-1B':>6}  Notes{RESET}")
     ids = []
-    for i, (s, d, l) in enumerate(shown, 1):
+    for i, (s, d, l, c) in enumerate(shown, 1):
         ids.append(l["id"])
-        sk = l.get("skills") or {}
-        n_all = len(sk.get("matched", [])) + len(sk.get("missing", []))
+        n_all = len(c["matched"]) + len(c["missing"])
         notes = []
         if l.get("isNew"):
             notes.append(f"{GREEN}new{RESET}")
-        if "CPT/OPT friendly" in (l.get("flags") or []):
+        if c["friendly"]:
             notes.append(f"{GREEN}CPT/OPT{RESET}")
-        if "No sponsorship" in (l.get("flags") or []):
+        if c["noSponsor"]:
             notes.append(f"{RED}no-sponsor{RESET}")
         if n_all:
-            notes.append(f"skills {len(sk.get('matched', []))}/{n_all}")
+            notes.append(f"skills {len(c['matched'])}/{n_all}")
         if l.get("deadline"):
             left = (dt.date.fromisoformat(l["deadline"]) - dt.date.today()).days
             notes.append(f"{RED if left <= 3 else YELLOW if left <= 7 else ''}due {l['deadline'][5:]}{RESET}")
         h = l.get("h1b")
-        print(f"{i:>3}  {color_score(s)}  {(l.get('track') or ''):5} {cut(l.get('company'), 22):22} {cut(l.get('role'), role_w):{role_w}} "
+        print(f"{i:>3}  {color_score(s)}  {(c['track'] or ''):5} {cut(l.get('company'), 22):22} {cut(l.get('role'), role_w):{role_w}} "
               f"{cut(l.get('location'), 18):18} {(str(d) + 'd') if d is not None else '?':>4} {('-' if h is None else h):>6}  {' '.join(notes)}")
     os.makedirs(os.path.dirname(LAST), exist_ok=True)
     with open(LAST, "w", encoding="utf-8") as fh:
@@ -148,26 +157,22 @@ def pick(ref):
 
 def cmd_show(a):
     state, l = pick(a.ref)
-    w = weights(state)
-    v = dict(l.get("v") or {})
+    c = fetcher.score_parts(l, state["settings"])
     d = age_days(l) or 0
-    v["recency"] = 0.5 ** (d / fetcher.RECENCY_HALF_LIFE)
-    tot = sum(max(0, float(w.get(k, 0) or 0)) for k in fetcher.DEFAULT_WEIGHTS)
     print(f"{BOLD}{l['company']} — {l['role']}{RESET}")
-    print(f"{l.get('location')}  ·  posted {d} days ago  ·  {l.get('degree')}  ·  track {l.get('track')}")
+    print(f"{l.get('location')}  ·  posted {d} days ago  ·  {l.get('degree')}  ·  track {c['track']}")
     print(f"Application deadline: {l.get('deadline') or 'not stated in the posting'}")
     print(f"{l.get('url')}\n")
-    print(f"{BOLD}Score {fetcher.score(l, w)}{RESET}")
-    for k in fetcher.DEFAULT_WEIGHTS:
-        wk = max(0, float(w.get(k, 0) or 0))
-        print(f"  {k:9} {wk * v.get(k, 0) / tot * 100:5.1f} / {wk / tot * 100:4.1f}   (value {v.get(k, 0):.2f})")
-    if l.get("penalty"):
-        print(f"  {'penalty':9} -{l['penalty']}   (posting says it will not sponsor)")
+    print(f"{BOLD}Score {c['total']}{RESET}")
+    for p in c["parts"]:
+        print(f"  {p['k']:9} {p['pts']:5.1f} / {p['max']:4.1f}   (value {p['v']:.2f})")
+    if c["penalty"]:
+        print(f"  {'penalty':9} -{c['penalty']:g}   (posting says it will not sponsor)")
     h = l.get("h1b")
-    print(f"\nSponsorship: {'no H-1B record found' if h is None else f'{h:,} H-1B approvals (USCIS FY2023)'}; flags: {', '.join(l.get('flags') or []) or 'none'}")
-    sk = l.get("skills") or {}
-    print(f"Skills on your resume: {', '.join(sk.get('matched', [])) or '-'}")
-    print(f"Asked for, not on resume: {', '.join(sk.get('missing', [])) or '-'}")
+    flags = [f for f, on in (("CPT/OPT friendly", c["friendly"]), ("No sponsorship", c["noSponsor"]), ("Text not read", not l.get("textRead"))) if on]
+    print(f"\nSponsorship: {'no H-1B record found' if h is None else f'{h:,} H-1B approvals (USCIS FY2023)'}; flags: {', '.join(flags) or 'none'}")
+    print(f"Skills on your resume: {', '.join(c['matched']) or '-'}")
+    print(f"Asked for, not on resume: {', '.join(c['missing']) or '-'}")
 
 
 def cmd_open(a):
@@ -186,10 +191,11 @@ def cmd_fetch(_):
             return
     except OSError:
         print("Server not running; refreshing directly.")
-        state = load() if os.path.exists(STATE) else {"apps": [], "listings": []}
-        info = fetcher.apply(state, fetcher.refresh(state))
-        state["rev"] = int(state.get("rev", 0) or 0) + 1
-        fetcher._write_json(STATE, state)
+        fetcher.CACHE = os.path.join(DATA, "cache")
+        user, before = _read(STATE) or {}, _read(LISTINGS) or {}
+        out = fetcher.apply(user, before, fetcher.refresh(user, before))
+        fetcher._write_json(LISTINGS, out)
+        info = out["fetch"]
     if info.get("error"):
         print("Refresh failed:", info["error"])
     else:

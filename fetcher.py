@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fetch, filter and score SimplifyJobs internship listings for the tracker.
+"""Fetch, filter and describe SimplifyJobs internship listings for the tracker.
 
 Everything here is deterministic Python (standard library only). No AI calls,
 so running it every couple of hours costs nothing.
@@ -8,20 +8,23 @@ Pipeline
   1. Download the SimplifyJobs listings feed (ETag-cached, so unchanged data is
      not downloaded again).
   2. Gates (a listing is dropped and counted under a reason):
-     inactive, not Summer 2027, older than the window, outside the US,
-     PhD/MBA-only, not a target field, U.S. citizenship or security clearance
-     required, posting closed (rechecked daily), already tracked, dismissed.
+     not Summer 2027, older than the window, outside the US, PhD/MBA-only,
+     not a target field, U.S. citizenship or security clearance required,
+     posting closed (rechecked daily), deadline passed, already tracked, dismissed.
   3. Read each new posting's text once (Workday, Greenhouse and Lever APIs,
-     otherwise the plain page) and cache what it found.
-  4. Score 0-100 as a weighted sum of components in [0, 1]:
-       fit      role family matches a target track
-       skills   share of the posting's tools/skills that are on your resume
-       sponsor  employer's H-1B approval history (USCIS data hub), raised to
-                0.9 when the posting welcomes CPT/OPT/F-1 students
-       recency  0.5 ** (days since posted / 5)   (computed live in the UI)
-       degree   Master's listed = 1, Bachelor's only = 0.7
-       location Texas or remote = 1, elsewhere in the US = 0.5
-     minus a fixed penalty when the posting says it will not sponsor.
+     otherwise the plain page) and cache what it found: the tools it names,
+     "no sponsorship" wording, CPT/OPT/F-1-friendly wording and a stated
+     application deadline (also Workday's posting end date).
+  4. Store the raw facts (track, locations, degrees, H-1B count, skills found).
+     The score itself is computed from those facts and your settings by
+     core.js in the page, so changing a setting re-ranks listings at once.
+     score() below is the same formula for the terminal (jobs.py);
+     tests/test_parity.py keeps the two identical.
+
+The refresh writes data/listings.json only. It never writes your applications
+(data/tracker.json), so a refresh can never conflict with an edit in the page.
+Saved applications whose posting closed are reported in listings.json
+("closures") and the page moves them to Closed.
 """
 import bisect
 import csv
@@ -38,7 +41,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CACHE = os.path.join(ROOT, "data", "cache")
+CACHE = os.path.join(ROOT, "data", "cache")  # server.py points this at its data folder
 FEEDS = [
     "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/.github/scripts/listings.json",
     "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/.github/scripts/listings.json",
@@ -47,13 +50,22 @@ H1B_URL = "https://www.uscis.gov/sites/default/files/document/data/h1b_datahubex
 H1B_LABEL = "FY2023"
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) internship-tracker/1.0 (personal use)"
 TERM = "Summer 2027"
+# Scoring defaults: the same values as DEFAULTS in core.js (checked by tests/test_parity.py).
 DEFAULT_WEIGHTS = {"fit": 30, "skills": 25, "sponsor": 20, "recency": 15, "degree": 5, "location": 5}
+DEFAULT_TARGETS = ["SWE", "DE", "DA", "DS", "BIE"]
+DEFAULT_PLACES = ["TX", "Remote"]
 NO_SPONSOR_PENALTY = 20
 RECENCY_HALF_LIFE = 5
 MAX_TEXT_READS = 150  # per run; the rest are read on the next run
 
-# Skills you can truthfully claim (from Experience_Details.md). Edit freely.
-MY_SKILLS = {
+# Skills you can truthfully claim (from Experience_Details.md). The page lets you edit
+# this list in Settings; this is the starting value.
+DEFAULT_MY_SKILLS = [
+    "Python", "SQL", "pandas", "NumPy", "scikit-learn", "PyTorch", "Machine learning", "Deep learning", "NLP",
+    "Regression", "Tableau", "Data visualization", "ETL", "Data modeling", "Databases", "Git", "Java", "C#", "C/C++",
+    "JavaScript", "LLMs", "Prompt engineering",
+]
+SKILLS = {
     "Python", "SQL", "pandas", "NumPy", "scikit-learn", "PyTorch", "Machine learning", "Deep learning",
     "NLP", "Regression", "Tableau", "Data visualization", "ETL", "Data modeling", "Databases", "Git",
     "Java", "C#", "C/C++", "JavaScript", "LLMs", "Prompt engineering",
@@ -378,64 +390,166 @@ def is_us(locations):
     return any(US_STATE.search(l) or not NON_US.search(l) for l in locs)
 
 
-def components(item, settings, h1b_n, ana):
-    title = item["title"]
-    track = infer_track(title, item.get("category", ""))
-    targets = settings.get("targets") or ["SWE", "DE", "DA", "DS", "BIE"]
-    fit = {"Quant": 0.4, "Other": 0.1}.get(track, 1.0 if track in targets else 0.4)
-    if re.search(r"\bph\.?d\b|doctoral|\bsenior\b|\bstaff\b|\bmba\b", title, re.I):
+SENIOR = re.compile(r"\bph\.?d\b|doctoral|\bsenior\b|\bstaff\b|\bmba\b", re.I)
+WEIGHT_KEYS = ["fit", "skills", "sponsor", "recency", "degree", "location"]
+
+
+def _num(x, default):
+    try:
+        v = float(x)
+    except (TypeError, ValueError):
+        return default
+    return v if math.isfinite(v) else default
+
+
+def settings_of(s):
+    s = s or {}
+    w = dict(DEFAULT_WEIGHTS)
+    w.update(s.get("weights") or {})
+    return {
+        "targets": s["targets"] if isinstance(s.get("targets"), list) else DEFAULT_TARGETS,
+        "weights": w,
+        "places": s["places"] if isinstance(s.get("places"), list) else DEFAULT_PLACES,
+        "mySkills": s["mySkills"] if isinstance(s.get("mySkills"), list) else DEFAULT_MY_SKILLS,
+        "noSponsorPenalty": max(0.0, _num(s.get("noSponsorPenalty"), NO_SPONSOR_PENALTY)),
+        "recencyHalfLife": max(0.5, _num(s.get("recencyHalfLife"), RECENCY_HALF_LIFE)),
+    }
+
+
+def degrees_of(l):
+    if isinstance(l.get("degrees"), list):
+        return l["degrees"]
+    s, out = l.get("degree") or "", []
+    if re.search(r"\b(bs|ba|bachelor)", s, re.I):
+        out.append("Bachelor's")
+    if re.search(r"\b(ms|ma|master)", s, re.I):
+        out.append("Master's")
+    if re.search(r"\bphd\b|doctor", s, re.I):
+        out.append("PhD")
+    if re.search(r"\bmba\b", s, re.I):
+        out.append("MBA")
+    return out
+
+
+def sponsor_of(l):
+    if l.get("noSponsor") or l.get("sponsor") == "no":
+        return "no"
+    if l.get("friendly") or l.get("sponsor") == "yes":
+        return "yes"
+    return "unknown"
+
+
+def components(l, settings=None, today=None):
+    """Component values in [0, 1]. Same rules as components() in core.js."""
+    s = settings_of(settings)
+    today = today or now_local().date()
+    track = l.get("track") or infer_track(l.get("role"), l.get("category", ""))
+    fit = 0.4 if track == "Quant" else 0.1 if track == "Other" else (1.0 if track in s["targets"] else 0.4)
+    if SENIOR.search(l.get("role") or ""):
         fit *= 0.5
-    found = (ana or {}).get("skills") or []
-    matched = [s for s in found if s in MY_SKILLS]
-    missing = [s for s in found if s not in MY_SKILLS]
+    found = l.get("skillsFound") if isinstance(l.get("skillsFound"), list) else []
+    mine = set(s["mySkills"])
+    matched = [k for k in found if k in mine]
+    missing = [k for k in found if k not in mine]
     skills = (len(matched) + 1) / (len(found) + 2) if found else 0.5
-    friendly = bool((ana or {}).get("friendly")) or item.get("sponsorship") == "Offers Sponsorship"
-    no_sponsor = bool((ana or {}).get("noSponsor")) or item.get("sponsorship") == "Does Not Offer Sponsorship"
-    if h1b_n is None:
-        sponsor = 0.3
-    else:
-        sponsor = min(1.0, math.log10(1 + h1b_n) / 3)
-    if friendly:
+    sp = sponsor_of(l)
+    h = l.get("h1b")
+    sponsor = 0.3 if h is None else min(1.0, math.log10(1 + float(h)) / 3)
+    if sp == "yes" or l.get("friendly"):
         sponsor = max(sponsor, 0.9)
+    no_sponsor = sp == "no"
     if no_sponsor:
         sponsor = 0.0
-    degrees = item.get("degrees") or []
-    degree = 1.0 if "Master's" in degrees or not degrees else 0.7
-    places = [p.lower() for p in settings.get("places") or ["TX", "Remote"]]
-    locs = item.get("locations") or []
-    loc_hit = any(p and (p in l.lower() or (p == "tx" and "texas" in l.lower())) for l in locs for p in places)
-    location = 1.0 if loc_hit else 0.5
-    v = {"fit": round(fit, 3), "skills": round(skills, 3), "sponsor": round(sponsor, 3), "degree": degree, "location": location}
-    flags = []
-    if friendly:
-        flags.append("CPT/OPT friendly")
-    if no_sponsor:
-        flags.append("No sponsorship")
-    if ana is not None and not ana.get("read"):
-        flags.append("Text not read")
-    return track, v, (NO_SPONSOR_PENALTY if no_sponsor else 0), flags, matched, missing, friendly, no_sponsor
-
-
-def score(listing, weights, today=None):
-    """Same formula as scoreParts() in the page."""
-    today = today or now_local().date()
-    v = dict(listing.get("v") or {})
     try:
-        age = max(0, (today - dt.date.fromisoformat(listing.get("posted"))).days)
+        age = max(0, (today - dt.date.fromisoformat(l.get("posted"))).days)
     except (TypeError, ValueError):
         age = 30
-    v["recency"] = 0.5 ** (age / RECENCY_HALF_LIFE)
-    w = {k: max(0.0, float(weights.get(k, DEFAULT_WEIGHTS[k]) or 0)) for k in DEFAULT_WEIGHTS}
-    tot = sum(w.values())
-    s = sum(w[k] * v.get(k, 0) for k in w) / tot * 100 if tot else 0
-    return max(0, round(s - (listing.get("penalty") or 0)))
+    recency = 0.5 ** (age / s["recencyHalfLife"])
+    degs = degrees_of(l)
+    degree = 1.0 if (not degs or "Master's" in degs) else 0.7 if "Bachelor's" in degs else 0.0
+    places = [str(p).lower().strip() for p in s["places"] if str(p).strip()]
+    locs = l.get("locations") if isinstance(l.get("locations"), list) and l.get("locations") else ([l["location"]] if l.get("location") else [])
+    locs = [str(x).lower() for x in locs]
+    hit = any(p in x or (p == "tx" and "texas" in x) for x in locs for p in places)
+    location = 1.0 if hit else 0.5
+    return {
+        "track": track, "matched": matched, "missing": missing, "noSponsor": no_sponsor,
+        "friendly": (not no_sponsor) and (sp == "yes" or bool(l.get("friendly"))),
+        "penalty": s["noSponsorPenalty"] if no_sponsor else 0,
+        "v": {"fit": fit, "skills": skills, "sponsor": sponsor, "recency": recency, "degree": degree, "location": location},
+    }
+
+
+def score_parts(l, settings=None, today=None):
+    """Total and per-component points. Same arithmetic, in the same order, as score() in core.js."""
+    s = settings_of(settings)
+    c = components(l, s, today)
+    tot = 0.0
+    for k in WEIGHT_KEYS:
+        tot += max(0.0, _num(s["weights"].get(k), 0))
+    parts = []
+    for k in WEIGHT_KEYS:
+        wk = max(0.0, _num(s["weights"].get(k), 0))
+        parts.append({"k": k, "v": c["v"][k], "pts": wk * c["v"][k] / tot * 100 if tot else 0, "max": wk / tot * 100 if tot else 0})
+    total = 0.0
+    for p in parts:
+        total += p["pts"]
+    c["total"] = max(0, math.floor(total - c["penalty"] + 0.5))  # JavaScript Math.round
+    c["parts"] = parts
+    return c
+
+
+def score(l, settings=None, today=None):
+    return score_parts(l, settings, today)["total"]
+
+
+def record(it, posted, ana, h1b_n):
+    """The listing as stored in listings.json: raw facts only, scored by core.js."""
+    locs = list(it.get("locations") or [])
+    friendly = bool((ana or {}).get("friendly")) or it.get("sponsorship") == "Offers Sponsorship"
+    no_sponsor = bool((ana or {}).get("noSponsor")) or it.get("sponsorship") == "Does Not Offer Sponsorship"
+    return {
+        "id": "sx-" + it["id"], "sid": it["id"], "source": "simplify",
+        "company": it.get("company_name", ""), "role": it.get("title", ""), "category": it.get("category", ""),
+        "track": infer_track(it.get("title", ""), it.get("category", "")),
+        "locations": locs, "location": "; ".join(locs[:3]) + (f" +{len(locs) - 3} more" if len(locs) > 3 else ""),
+        "url": it.get("url", ""), "posted": posted.date().isoformat(), "term": TERM,
+        "degrees": list(it.get("degrees") or []),
+        "degree": "/".join(d.replace("'s", "") for d in (it.get("degrees") or [])) or "Any",
+        "h1b": h1b_n, "friendly": friendly and not no_sponsor, "noSponsor": no_sponsor,
+        "textRead": bool(ana and ana.get("read")),
+        "skillsFound": list((ana or {}).get("skills") or []),
+        "deadline": (ana or {}).get("deadline") or "",
+    }
+
+
+def upgrade_listing(l):
+    """Convert a listing stored by an older version (pre-computed v, flags, skills) to raw facts."""
+    if "skillsFound" in l:
+        return l
+    l = dict(l)
+    sk = l.pop("skills", None) or {}
+    l["skillsFound"] = list(sk.get("matched") or []) + list(sk.get("missing") or [])
+    flags = l.pop("flags", None) or []
+    l["noSponsor"] = "No sponsorship" in flags or l.get("sponsor") == "no"
+    l["friendly"] = ("CPT/OPT friendly" in flags or l.get("sponsor") == "yes") and not l["noSponsor"]
+    if not l.get("locations"):
+        l["locations"] = [x for x in re.split(r";\s*", re.sub(r"\s*\+\d+ more$", "", l.get("location") or "")) if x]
+    if "degrees" not in l:
+        l["degrees"] = degrees_of(l)
+    for k in ("v", "penalty"):
+        l.pop(k, None)
+    return l
 
 
 # ---------------------------------------------------------------- refresh
-def refresh(state, log=print):
-    """Download, gate, read and score. Returns data for apply(); does not touch the state file."""
-    settings = (state or {}).get("settings") or {}
-    window = int(settings.get("windowDays") or 10)
+def refresh(user, listings_state=None, log=print):
+    """Download, gate, read and describe listings. Reads your data but never changes it.
+    Returns data for apply()."""
+    user = user or {}
+    listings_state = listings_state or {}
+    settings = user.get("settings") or {}
+    window = int(_num(settings.get("windowDays"), 10) or 10)
     feed = load_feed(log)
     h1b = H1B(log)
     now = now_local()
@@ -516,60 +630,56 @@ def refresh(state, log=print):
             if ana.get("citizen") or ana.get("clearance"):
                 drop("Citizenship or clearance required")
                 continue
-        h = h1b.lookup(it.get("company_name"))
-        track, v, penalty, flags, matched, missing, friendly, no_sponsor = components(it, settings, h, ana)
-        locs = it.get("locations") or []
-        out.append({
-            "id": "sx-" + it["id"], "sid": it["id"], "source": "simplify",
-            "company": it.get("company_name", ""), "role": it.get("title", ""),
-            "location": "; ".join(locs[:3]) + (f" +{len(locs) - 3} more" if len(locs) > 3 else ""),
-            "url": it.get("url", ""), "posted": posted.date().isoformat(), "term": TERM,
-            "degree": "/".join(d.replace("'s", "") for d in (it.get("degrees") or [])) or "Any",
-            "track": track, "v": v, "penalty": penalty, "flags": flags,
-            "skills": {"matched": matched, "missing": missing},
-            "h1b": h, "textRead": bool(ana and ana.get("read")),
-            "sponsor": "no" if no_sponsor else ("yes" if friendly else "unknown"),
-            "deadline": (ana or {}).get("deadline") or "",
-        })
-    # Saved (not yet applied) applications: is the posting still open?
+        out.append(record(it, posted, ana, h1b.lookup(it.get("company_name"))))
+
+    # Saved (not yet applied) applications: is the posting still open? Checked once a day.
     inactive = {url_key(it.get("url")) for it in feed if not it.get("active")} - {""}
     active = {url_key(it.get("url")) for it in feed if it.get("active")} - {""}
-    saved = [a for a in (state or {}).get("apps") or [] if a.get("status") == "saved" and url_key(a.get("url"))]
-    saved_closed, to_check = [], []
+    live = dict(listings_state.get("liveChecked") or {})
+    saved = [a for a in user.get("apps") or [] if a.get("status") == "saved" and url_key(a.get("url")) and not a.get("keepOpen")]
+    closures, to_check = [], []
     for a in saved:
         k = url_key(a["url"])
         if k in inactive and k not in active:
-            saved_closed.append({"id": a["id"], "why": "Marked closed on SimplifyJobs"})
-        elif (a.get("liveAt") or "") < today:
+            closures.append({"id": a["id"], "company": a.get("company", ""), "why": "Marked closed on SimplifyJobs", "day": today})
+        elif (live.get(a["id"]) or "") < today:
             to_check.append(a)
-    checked, deadlines = {}, {}
+    deadlines = dict(listings_state.get("savedDeadlines") or {})
     if to_check:
         with ThreadPoolExecutor(max_workers=8) as ex:
             for a, res in zip(to_check, ex.map(lambda x: analyze_text(x["url"]), to_check)):
-                checked[a["id"]] = today
+                live[a["id"]] = today
                 if res.get("closed"):
-                    saved_closed.append({"id": a["id"], "why": res.get("why") or "Posting closed"})
+                    closures.append({"id": a["id"], "company": a.get("company", ""), "why": res.get("why") or "Posting closed", "day": today})
                 elif res.get("deadline"):
                     deadlines[a["id"]] = res["deadline"]
-    for a in saved:  # a saved app whose deadline (found now or entered by you) has passed
-        d = deadlines.get(a["id"]) or a.get("deadline") or ""
-        if d and d < today and not any(c["id"] == a["id"] for c in saved_closed):
-            saved_closed.append({"id": a["id"], "why": f"deadline {d} passed"})
+    for a in saved:  # a saved application whose deadline (found in the posting or entered by you) has passed
+        d = a.get("deadline") or deadlines.get(a["id"]) or ""
+        if d and d < today and not any(c["id"] == a["id"] for c in closures):
+            closures.append({"id": a["id"], "company": a.get("company", ""), "why": f"deadline {d} passed", "day": today})
+    app_ids = {a.get("id") for a in user.get("apps") or []}
+    live = {k: v for k, v in live.items() if k in app_ids}
+    deadlines = {k: v for k, v in deadlines.items() if k in app_ids}
 
     info = {"at": now.isoformat(timespec="seconds"), "feed": len(feed), "window": window,
             "excluded": excluded, "textRead": read, "h1b": H1B_LABEL if h1b.counts else None, "error": None}
     info["deadlines"] = sum(1 for l in out if l["deadline"])
-    return {"listings": out, "fetch": info, "savedClosed": saved_closed, "savedChecked": checked, "savedDeadlines": deadlines}
+    return {"listings": out, "fetch": info, "closures": closures, "liveChecked": live, "savedDeadlines": deadlines}
 
 
-def apply(state, result):
-    """Merge fresh listings into the latest state (call while holding the server's state lock)."""
-    apps = state.get("apps") or []
-    tracked = {url_key(a.get("url")) for a in apps} | {"k:" + norm_text(a.get("company")) + "|" + norm_text(a.get("role")) for a in apps}
-    tracked.discard("")
-    dismissed = set(state.get("dismissed") or [])
-    previous = {l.get("id") for l in state.get("listings") or []}
-    manual = [l for l in state.get("listings") or [] if l.get("source") != "simplify" and not l.get("sample")]
+def tracked_keys(user):
+    apps = (user or {}).get("apps") or []
+    keys = {url_key(a.get("url")) for a in apps} | {"k:" + norm_text(a.get("company")) + "|" + norm_text(a.get("role")) for a in apps}
+    keys.discard("")
+    return keys
+
+
+def apply(user, listings_state, result):
+    """Build the new listings.json content from a refresh result. Does not modify `user`."""
+    listings_state = listings_state or {}
+    tracked = tracked_keys(user)
+    dismissed = set((user or {}).get("dismissed") or [])
+    previous = {l.get("id") for l in listings_state.get("listings") or []}
     info = dict(result["fetch"])
     excluded = dict(info.get("excluded") or {})
     fresh = []
@@ -585,42 +695,42 @@ def apply(state, result):
         l["isNew"] = bool(previous) and l["id"] not in previous
         fresh.append(l)
     fresh_ids = {l["id"] for l in fresh}
-    info["removed"] = sum(1 for l in state.get("listings") or [] if l.get("source") == "simplify" and l.get("id") not in fresh_ids
+    info["removed"] = sum(1 for l in listings_state.get("listings") or [] if l.get("id") not in fresh_ids
                           and listing_key(l) not in tracked and listing_key(l) not in dismissed)
     info["excluded"] = excluded
     info["matched"] = len(fresh)
     info["new"] = sum(1 for l in fresh if l["isNew"])
-    state["listings"] = manual + fresh
+    info["savedClosed"] = [c["company"] for c in result.get("closures") or []]
+    return {
+        "lrev": int(listings_state.get("lrev", 0) or 0) + 1,
+        "listings": fresh,
+        "fetch": info,
+        "closures": result.get("closures") or [],
+        "liveChecked": result.get("liveChecked") or {},
+        # Deadlines found in the postings of saved applications; the page fills an empty deadline, never overwrites yours.
+        "savedDeadlines": result.get("savedDeadlines") or {},
+    }
 
-    # Saved applications whose posting closed move to Closed ("Posting closed"), with a note.
-    today = now_local().date().isoformat()
-    closed_names = []
-    by_id = {a.get("id"): a for a in apps}
-    for aid, day in (result.get("savedChecked") or {}).items():
-        if aid in by_id:
-            by_id[aid]["liveAt"] = day
-    for aid, d in (result.get("savedDeadlines") or {}).items():
-        if aid in by_id and not by_id[aid].get("deadline"):
-            by_id[aid]["deadline"] = d  # fill only; never overwrite a date you entered
-    for c in result.get("savedClosed") or []:
-        a = by_id.get(c["id"])
-        if not a or a.get("status") != "saved":
-            continue
-        a["status"] = "expired"
-        a.setdefault("history", []).append({"s": "expired", "d": today})
-        a["notes"] = ((a.get("notes") or "") + f" Posting closed ({c['why']}), detected {today}.").strip()
-        closed_names.append(a.get("company", ""))
-    info["savedClosed"] = closed_names
-    state["fetch"] = info
-    return info
+
+def failed(listings_state, error):
+    """listings.json content after a refresh that failed: keep the listings, record the error."""
+    out = dict(listings_state or {})
+    info = dict(out.get("fetch") or {})
+    info.update({"error": str(error)[:300], "at": now_local().isoformat(timespec="seconds")})
+    out["fetch"] = info
+    out["closures"] = []
+    out["lrev"] = int(out.get("lrev", 0) or 0) + 1
+    return out
 
 
 if __name__ == "__main__":
     import sys
-    state = _read_json(os.path.join(ROOT, "data", "tracker.json")) or {}
-    res = refresh(state, log=lambda m: print(m, file=sys.stderr))
+    data = os.path.join(ROOT, "data")
+    user = _read_json(os.path.join(data, "tracker.json")) or {}
+    res = refresh(user, _read_json(os.path.join(data, "listings.json")) or {}, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(res["fetch"], indent=2))
     print("kept:", len(res["listings"]))
-    w = DEFAULT_WEIGHTS
-    for l in sorted(res["listings"], key=lambda x: -score(x, w))[:25]:
-        print(f"{score(l, w):3d}  {l['track']:5s} {l['company'][:22]:22s} {l['role'][:46]:46s} h1b={l['h1b']} fl={','.join(l['flags'])} sk={len(l['skills']['matched'])}/{len(l['skills']['matched'])+len(l['skills']['missing'])}")
+    st = user.get("settings") or {}
+    for l in sorted(res["listings"], key=lambda x: -score(x, st))[:25]:
+        c = score_parts(l, st)
+        print(f"{c['total']:3d}  {c['track']:5s} {l['company'][:22]:22s} {l['role'][:46]:46s} h1b={l['h1b']} sk={len(c['matched'])}/{len(l['skillsFound'])}")
