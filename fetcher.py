@@ -220,6 +220,54 @@ class PostingClosed(Exception):
     pass
 
 
+MONTHS = {m: i + 1 for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
+DATE_PAT = (r"(?:(?:mon|tues?|wed(?:nes)?|thu(?:rs?)?|fri|sat(?:ur)?|sun)[a-z]*,?\s+)?"
+            r"(?P<date>(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?"
+            r"|\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*,?(?:\s+20\d\d)?"
+            r"|\d{1,2}/\d{1,2}/(?:20)?\d\d|20\d\d-\d{2}-\d{2})")
+DEADLINE = re.compile(
+    r"(?:application\s+deadline|deadline\s+(?:to|for)\s+(?:apply|applications?|submission)|apply\s+(?:no\s+later\s+than|by|before)"
+    r"|applications?\s+(?:will\s+be\s+|are\s+)?(?:accepted|received|open)\s+(?:until|through|thru|till)|accepting\s+applications\s+(?:until|through)"
+    r"|(?:closing|posting\s+(?:close|end)|expiration)\s+date|(?:posting|position|job|requisition|role|application\s+window)\s+(?:will\s+)?(?:close|closes|end|ends|expire|expires)(?:\s+on)?"
+    r"|(?:must|should)\s+(?:be\s+)?(?:submit\w*|apply|received)\s+(?:by|before|no\s+later\s+than)|deadline)"
+    r"\W{0,4}(?:is\s+|on\s+|of\s+|by\s+|at\s+)?(?:11:59\s*(?:pm|p\.m\.)\s*\w*\s*(?:on\s+)?)?" + DATE_PAT, re.I)
+
+
+def parse_date(s, today):
+    """'Nov 15', 'November 15th, 2026', '15 Nov 2026', '11/15/2026', '2026-11-15' -> date (year guessed forward)."""
+    s = s.lower().replace(",", " ").replace(".", " ")
+    try:
+        m = re.match(r"(20\d\d)-(\d{2})-(\d{2})$", s.strip())
+        if m:
+            return dt.date(int(m[1]), int(m[2]), int(m[3]))
+        m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{2,4})$", s.strip())
+        if m:
+            y = int(m[3])
+            return dt.date(y + 2000 if y < 100 else y, int(m[1]), int(m[2]))
+        mon = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", s)
+        day = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)?\b", s)
+        year = re.search(r"\b(20\d\d)\b", s)
+        if not (mon and day):
+            return None
+        y = int(year[1]) if year else today.year
+        d = dt.date(y, MONTHS[mon[1]], int(day[1]))
+        if not year and d < today - dt.timedelta(days=60):
+            d = d.replace(year=y + 1)  # "Jan 15" read in November means next January
+        return d
+    except ValueError:
+        return None
+
+
+def find_deadline(text, today=None):
+    """Application deadline stated in a posting, as ISO date, or None. Only dates within a sane range count."""
+    today = today or now_local().date()
+    for m in DEADLINE.finditer(text or ""):
+        d = parse_date(m.group("date"), today)
+        if d and today - dt.timedelta(days=120) <= d <= today + dt.timedelta(days=400):
+            return d.isoformat()
+    return None
+
+
 CLOSED_TEXT = re.compile(r"no longer (available|accepting|open|active)|(position|job|role|requisition) (has been|is|was) (filled|closed|removed)|(job|posting|position) (is )?(closed|expired)|this (job|posting) (has )?(expired|closed)|not (currently )?accepting applications|job not found|position not found|page (you are looking for )?(could not be found|not found|doesn't exist)", re.I)
 
 
@@ -249,7 +297,9 @@ def posting_text(url):
                 info = j["jobPostingInfo"]
                 if info.get("canApply") is False or info.get("postingAvailable") is False:
                     raise PostingClosed("Workday says applications are closed")
-                return strip_html(info.get("jobDescription", ""))
+                text = strip_html(info.get("jobDescription", ""))
+                end = (info.get("endDate") or "")[:10]  # Workday's own "posting ends" date, when the employer set one
+                return text + (f" Application deadline: {end}." if re.match(r"^20\d\d-\d\d-\d\d$", end) else "")
         if re.match(r"^(job-boards|boards)(\.eu)?\.greenhouse\.io$", host) and len(parts) >= 3 and parts[1] == "jobs":
             b = _api(f"https://boards-api.greenhouse.io/v1/boards/{parts[0]}/jobs/{parts[2]}")
             return strip_html(html.unescape(json.loads(b).get("content", "")))
@@ -290,6 +340,7 @@ def analyze_text(url):
         "noSponsor": bool(NO_SPONSOR.search(text)),
         "friendly": bool(FRIENDLY.search(text)),
         "skills": sorted(k for k, r in SKILL_RE.items() if r.search(text)),
+        "deadline": find_deadline(text),
         "at": now_local().date().isoformat(),
     }
 
@@ -457,6 +508,9 @@ def refresh(state, log=print):
         if ana and ana.get("closed"):
             drop("Posting closed")
             continue
+        if ana and ana.get("deadline") and ana["deadline"] < today:
+            drop("Deadline passed")
+            continue
         if ana and ana.get("read"):
             read += 1
             if ana.get("citizen") or ana.get("clearance"):
@@ -475,6 +529,7 @@ def refresh(state, log=print):
             "skills": {"matched": matched, "missing": missing},
             "h1b": h, "textRead": bool(ana and ana.get("read")),
             "sponsor": "no" if no_sponsor else ("yes" if friendly else "unknown"),
+            "deadline": (ana or {}).get("deadline") or "",
         })
     # Saved (not yet applied) applications: is the posting still open?
     inactive = {url_key(it.get("url")) for it in feed if not it.get("active")} - {""}
@@ -487,17 +542,24 @@ def refresh(state, log=print):
             saved_closed.append({"id": a["id"], "why": "Marked closed on SimplifyJobs"})
         elif (a.get("liveAt") or "") < today:
             to_check.append(a)
-    checked = {}
+    checked, deadlines = {}, {}
     if to_check:
         with ThreadPoolExecutor(max_workers=8) as ex:
             for a, res in zip(to_check, ex.map(lambda x: analyze_text(x["url"]), to_check)):
                 checked[a["id"]] = today
                 if res.get("closed"):
                     saved_closed.append({"id": a["id"], "why": res.get("why") or "Posting closed"})
+                elif res.get("deadline"):
+                    deadlines[a["id"]] = res["deadline"]
+    for a in saved:  # a saved app whose deadline (found now or entered by you) has passed
+        d = deadlines.get(a["id"]) or a.get("deadline") or ""
+        if d and d < today and not any(c["id"] == a["id"] for c in saved_closed):
+            saved_closed.append({"id": a["id"], "why": f"deadline {d} passed"})
 
     info = {"at": now.isoformat(timespec="seconds"), "feed": len(feed), "window": window,
             "excluded": excluded, "textRead": read, "h1b": H1B_LABEL if h1b.counts else None, "error": None}
-    return {"listings": out, "fetch": info, "savedClosed": saved_closed, "savedChecked": checked}
+    info["deadlines"] = sum(1 for l in out if l["deadline"])
+    return {"listings": out, "fetch": info, "savedClosed": saved_closed, "savedChecked": checked, "savedDeadlines": deadlines}
 
 
 def apply(state, result):
@@ -537,6 +599,9 @@ def apply(state, result):
     for aid, day in (result.get("savedChecked") or {}).items():
         if aid in by_id:
             by_id[aid]["liveAt"] = day
+    for aid, d in (result.get("savedDeadlines") or {}).items():
+        if aid in by_id and not by_id[aid].get("deadline"):
+            by_id[aid]["deadline"] = d  # fill only; never overwrite a date you entered
     for c in result.get("savedClosed") or []:
         a = by_id.get(c["id"])
         if not a or a.get("status") != "saved":

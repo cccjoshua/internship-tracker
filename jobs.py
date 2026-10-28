@@ -118,6 +118,9 @@ def cmd_list(a):
             notes.append(f"{RED}no-sponsor{RESET}")
         if n_all:
             notes.append(f"skills {len(sk.get('matched', []))}/{n_all}")
+        if l.get("deadline"):
+            left = (dt.date.fromisoformat(l["deadline"]) - dt.date.today()).days
+            notes.append(f"{RED if left <= 3 else YELLOW if left <= 7 else ''}due {l['deadline'][5:]}{RESET}")
         h = l.get("h1b")
         print(f"{i:>3}  {color_score(s)}  {(l.get('track') or ''):5} {cut(l.get('company'), 22):22} {cut(l.get('role'), role_w):{role_w}} "
               f"{cut(l.get('location'), 18):18} {(str(d) + 'd') if d is not None else '?':>4} {('-' if h is None else h):>6}  {' '.join(notes)}")
@@ -152,6 +155,7 @@ def cmd_show(a):
     tot = sum(max(0, float(w.get(k, 0) or 0)) for k in fetcher.DEFAULT_WEIGHTS)
     print(f"{BOLD}{l['company']} — {l['role']}{RESET}")
     print(f"{l.get('location')}  ·  posted {d} days ago  ·  {l.get('degree')}  ·  track {l.get('track')}")
+    print(f"Application deadline: {l.get('deadline') or 'not stated in the posting'}")
     print(f"{l.get('url')}\n")
     print(f"{BOLD}Score {fetcher.score(l, w)}{RESET}")
     for k in fetcher.DEFAULT_WEIGHTS:
