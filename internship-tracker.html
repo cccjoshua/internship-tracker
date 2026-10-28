@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Internship Application Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%277%27 fill=%27%2314213D%27/%3E%3Cpath d=%27M9 17l5 5 9-11%27 stroke=%27%23FFBF00%27 stroke-width=%273.5%27 fill=%27none%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: quiet left rail (bottom tab bar on phones) + one working canvas.
    Colour roles: neutral greys carry the page; navy = primary action and application progress (lighter -> darker = further along);
-   yellow = new / needs action soon; red = overdue or a blocking problem; green = offer only; grey = closed. */
+   amber #FFBF00 = new / needs action soon (fill and stripes only; amber text uses the darker --warn for contrast); red = overdue or a blocking problem; green = offer only; grey = closed. */
 :root{
   --bg:#F4F4F2; --surface:#FFFFFF; --sunk:#E8E8E8; --ink:#222831; --muted:#495464; --faint:#5F6774; --line:#D9DBE0; --line-strong:#BBBFCA;
   --accent:#14213D; --accent-ink:#FFFFFF; --accent-soft:#E2E6EF;
   --st-saved:#5B6E96; --st-applied:#3F67A3; --st-oa:#2B4A80; --st-interview:#14213D; --st-offer:#2E7D57; --st-rejected:#6B7280; --st-withdrawn:#6B7280;
-  --good:#2E7D57; --warn:#8A6100; --bad:#C0342A; --hl:#F2C230; --hl-soft:#FFF2C2;
+  --good:#2E7D57; --warn:#7A5600; --bad:#C0342A; --hl:#FFBF00; --hl-soft:#FFF2CC;
   --shadow:0 12px 40px rgba(34,40,49,.16);
   --f-ui:"Instrument Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --f-mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -25,12 +26,12 @@
   --bg:#1B1F26; --surface:#232831; --sunk:#2A303A; --ink:#ECECEA; --muted:#BBBFCA; --faint:#9AA0AB; --line:#363D49; --line-strong:#4A5260;
   --accent:#AFC2E4; --accent-ink:#141821; --accent-soft:#2C3850;
   --st-saved:#9AA7C2; --st-applied:#8FB0DE; --st-oa:#B0C6EA; --st-interview:#DCE5F5; --st-offer:#7CC7A0; --st-rejected:#8C93A0; --st-withdrawn:#8C93A0;
-  --good:#7CC7A0; --warn:#F2C230; --bad:#F2877C; --hl:#F2C230; --hl-soft:#3F3720; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}}
+  --good:#7CC7A0; --warn:#FFBF00; --bad:#F2877C; --hl:#FFBF00; --hl-soft:#3D3318; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#1B1F26; --surface:#232831; --sunk:#2A303A; --ink:#ECECEA; --muted:#BBBFCA; --faint:#9AA0AB; --line:#363D49; --line-strong:#4A5260;
   --accent:#AFC2E4; --accent-ink:#141821; --accent-soft:#2C3850;
   --st-saved:#9AA7C2; --st-applied:#8FB0DE; --st-oa:#B0C6EA; --st-interview:#DCE5F5; --st-offer:#7CC7A0; --st-rejected:#8C93A0; --st-withdrawn:#8C93A0;
-  --good:#7CC7A0; --warn:#F2C230; --bad:#F2877C; --hl:#F2C230; --hl-soft:#3F3720; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}
+  --good:#7CC7A0; --warn:#FFBF00; --bad:#F2877C; --hl:#FFBF00; --hl-soft:#3D3318; --shadow:0 12px 40px rgba(0,0,0,.55); color-scheme:dark}
 
 [hidden]{display:none!important}
 html,body{height:100%}
@@ -328,7 +329,7 @@ td.vi{text-align:center}
 .toast .tbtn:focus-visible{outline:2px solid var(--bg)}
 
 @media (max-width:760px){.lrow{grid-template-columns:40px minmax(0,1fr)}.lacts{grid-column:2/-1}.lmain .l1{flex-wrap:wrap}.lmain .l1 .role{white-space:normal}}
-@media (max-width:1080px){.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.prefs{grid-template-columns:minmax(0,1fr)}
+@media (max-width:1080px){.kpis{grid-template-columns:repeat(6,minmax(0,1fr))}.kpi{grid-column:span 2}.kpi:nth-child(n+4){grid-column:span 3}.prefs{grid-template-columns:minmax(0,1fr)}
   .dash{grid-template-columns:minmax(0,1fr);grid-template-areas:"att" "top" "pipe" "track" "week"}}
 @media (max-width:760px){
   .app{grid-template-columns:minmax(0,1fr)}
@@ -341,7 +342,7 @@ td.vi{text-align:center}
   .nav .lbl-s{display:inline}
   main{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-bottom:calc(90px + env(safe-area-inset-bottom,0px))}
   .toast{bottom:calc(76px + env(safe-area-inset-bottom,0px))}
-  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.kpi,.kpi:nth-child(n+4){grid-column:auto}.kpi:last-child:nth-child(odd){grid-column:1/-1}
   input[type=search]{width:100%}
   .tools{width:100%}
   .listing{grid-template-columns:44px minmax(0,1fr)}
@@ -370,7 +371,7 @@ td.vi{text-align:center}
       <div><span class="kbd">N</span> new application</div>
       <div><span class="kbd">/</span> search</div>
       <div><span class="kbd">Shift</span> <span class="kbd">←</span><span class="kbd">→</span> move card</div>
-      <div><span class="kbd">Ctrl</span> <span class="kbd">Z</span> undo</div>
+      <div><span class="kbd" id="modKey">Ctrl</span> <span class="kbd">Z</span> undo</div>
     </div>
   </aside>
 
@@ -634,7 +635,7 @@ R.dashboard=()=>{
   if(goalW)svg+=`<line class="goal" x1="${L}" x2="${W-Rp}" y1="${y(goalW)}" y2="${y(goalW)}"/><text class="goal-l" x="${W-Rp}" y="${y(goalW)-6}" text-anchor="end">Goal ${goalW}/week</text>`;
   svg+='</svg>';
   const segs=[['saved','Saved'],['active','In progress'],['closed','Closed']];
-  const tcol={saved:'var(--st-saved)',active:'var(--st-applied)',closed:'var(--st-rejected)'};
+  const tcol={saved:'var(--line-strong)',active:'var(--st-applied)',closed:'var(--st-rejected)'};
   const tmax=Math.max(1,...TRACKS.map(t=>A.filter(a=>a.track===t).length));
   const trows=TRACKS.map(t=>{const at=A.filter(a=>a.track===t);const c={saved:at.filter(a=>a.status==='saved').length,active:at.filter(a=>['applied','oa','interview','offer'].includes(a.status)).length,closed:at.filter(a=>CLOSED.includes(a.status)).length};
     return `<div class="trow" role="img" aria-label="${t}: ${c.saved} saved, ${c.active} in progress, ${c.closed} closed"><b>${t}</b><div class="seg" style="width:${Math.max(at.length?8:0,at.length/tmax*100)}%">${segs.map(([k])=>c[k]?`<span style="flex:${c[k]};background:${tcol[k]}"></span>`:'').join('')}</div><span class="num">${at.length}</span></div>`}).join('');
@@ -1028,7 +1029,7 @@ document.addEventListener('click',e=>{
 document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='f-status'){$('#stdateWrap').hidden=t.value===origStatus;return}
   if(t.dataset.statusFor){const a=S.apps.find(x=>x.id===t.dataset.statusFor);if(!a)return;checkpoint();moveTo(a,t.value);save();render();if(t.classList.contains('move'))focusCard(a.id);return toast(`${a.company} → ${LABEL[a.status]}`,true)}
-  if(t.id==='hideNo'||t.id==='p-hide'){S.settings.hideNoSponsor=t.checked;save();if(t.id==='hideNo')render();return}
+  if(t.id==='hideNo'||t.id==='p-hide'){S.settings.hideNoSponsor=t.checked;save();if(t.id==='hideNo')render();else toast(t.checked?'Listings without sponsorship are hidden':'Listings without sponsorship are shown');return}
   if(t.id==='lsort'){S.ui.lsort=t.value;save();return render()}
   if(t.id==='showClosed'){S.ui.showClosed=t.checked;UI.tableLimit=25;save();return render()}
   if(t.id==='p-top'||t.id==='p-min'){const top=Math.min(100,Math.max(1,+$('#p-top').value||75)),min=Math.min(top-1,Math.max(0,+$('#p-min').value||55));
@@ -1084,6 +1085,7 @@ function applyTheme(m){const r=document.documentElement;if(m==='light'||m==='dar
   const d=await Store.init();
   S=d?migrate(d):fresh();
   takeDailySnapshot();
+  if(/Mac|iPhone|iPad/.test(navigator.platform||navigator.userAgent))$('#modKey').textContent='⌘';
   $('#fTrack').insertAdjacentHTML('beforeend',TRACKS.map(t=>`<option value="${t}">${t} · ${TRACK_NAME[t]}</option>`).join(''));
   S.ui.q='';$('#fTrack').value=S.ui.track||'';$('#fSponsor').value=S.ui.sponsor||'';$('#q').value='';
   if(Store.mode==='file'){$('#themeBtn').hidden=false;let m='system';try{m=localStorage.getItem('iat-theme')||'system'}catch(_){}applyTheme(m)}
