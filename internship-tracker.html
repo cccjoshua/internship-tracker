@@ -234,8 +234,10 @@ td select{padding:3px 6px;font-size:12.5px}
 .list{display:flex;flex-direction:column;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
 .listing{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:14px;align-items:start;padding:12px 14px;border-top:1px solid var(--line)}
 .listing:first-child{border-top:0}
-.ring{--p:0;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--accent) calc(var(--p)*1%),var(--line) 0)}
+.ring{--p:0;--rc:var(--accent);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--rc) calc(var(--p)*1%),var(--line) 0)}
 .ring span{width:36px;height:36px;border-radius:50%;background:var(--surface);display:grid;place-items:center;font-family:var(--f-mono);font-size:13px;font-weight:500}
+.ring.sm{width:38px;height:38px}.ring.sm span{width:31px;height:31px;font-size:12.5px}
+.ring.b1{--rc:var(--accent)}.ring.b1 span{font-weight:600}.ring.b2{--rc:var(--st-applied)}.ring.b3{--rc:var(--line-strong)}.ring.b3 span{color:var(--muted)}
 .listing .body{min-width:0;display:flex;flex-direction:column;gap:5px}
 .listing .body b{font-weight:600}
 .listing .body .role{color:var(--muted)}
@@ -550,7 +552,7 @@ R.dashboard=()=>{
     ${items.length>5?`<div class="panel-foot"><button class="btn sm ghost" type="button" data-action="attn-all">${UI.attnAll?'Show fewer':`Show all ${items.length}`}</button></div>`:''}`:`<p class="empty">Nothing due in the next 7 days.</p>`;
   const topS=+S.settings.topScore||75;
   const best=S.listings.filter(l=>!findDup(l.company,l.role,l.url)&&!(S.settings.hideNoSponsor&&l.sponsor==='no')).map(l=>Object.assign({},l,scoreParts(l))).filter(l=>l.total>=topS).sort((a,b)=>b.total-a.total);
-  const topPanel=best.length?`<ul class="tmatch">${best.slice(0,5).map(l=>`<li><span class="sc ${band(l.total)}">${l.total}</span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · ${l.posted?ago(l.posted):''}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
+  const topPanel=best.length?`<ul class="tmatch">${best.slice(0,5).map(l=>`<li><span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · ${l.posted?ago(l.posted):''}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
     <div class="panel-foot"><a class="btn sm ghost" href="#inbox">See all ${best.length} top matches →</a></div>`:`<p class="empty">No listings scored ${topS}+ right now. New ones arrive with each refresh.</p>`;
   const fst=[['applied','Applied'],['oa','Assessment'],['interview','Interview'],['offer','Offer']];
   const fc=fst.map(([s])=>A.filter(a=>reached(a,s)).length),base=Math.max(fc[0],1);
@@ -676,7 +678,7 @@ function lrow(l){
   const h=l.h1b===null||l.h1b===undefined?(l.source==='simplify'?'No H-1B record':''):`${Number(l.h1b).toLocaleString('en-US')} H-1B`;
   const flags=(l.flags||[]).filter(f=>f!=='Text not read').map(f=>`<span class="${f==='No sponsorship'?'neg':'pos'}">${esc(f)}</span>`).join('');
   return `<article class="lrow" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
-    <span class="sc ${band(l.total)}" title="Match score">${l.total}</span>
+    <span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span>
     <button class="lmain" type="button" data-expand="${l.id}" aria-expanded="${ex}">
       <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span></span>
       <span class="l2">${l.t?`<span>${esc(l.t)}</span>`:''}<span>${esc(loc||'')}</span>${l.posted?`<span>${ago(l.posted)}</span>`:''}${h?`<span>${h}</span>`:''}${n?`<span>Skills ${m}/${n}</span>`:''}${flags}${l.dup?`<span class="pos">Tracking · ${LABEL[l.dup.status]}</span>`:''}</span>
