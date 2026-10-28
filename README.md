@@ -31,17 +31,46 @@ launchctl kickstart -k gui/$(id -u)/com.joshua.internship-tracker   # restart af
 launchctl bootout gui/$(id -u)/com.joshua.internship-tracker        # stop and unload
 ```
 
+## Job listings: fetch, filter and score (no AI calls)
+
+`fetcher.py` downloads the [SimplifyJobs](https://github.com/SimplifyJobs) listings feed (ETag-cached), keeps
+Summer 2027 US postings from the last 10 days, and drops ones that are PhD/MBA-only, outside the target fields,
+require U.S. citizenship or a security clearance, or are already tracked or dismissed. It reads each new
+posting once (Workday, Greenhouse and Lever APIs, otherwise the page) and scores it 0-100:
+
+| Component | Weight | How it is measured |
+|---|---|---|
+| Role fit | 30 | title maps to a target track (SWE, DE, DA, DS, BIE) |
+| Skill match | 25 | share of the tools the posting names that are on the resume (Laplace-smoothed) |
+| Sponsorship evidence | 20 | employer's H-1B approvals in the USCIS H-1B Employer Data Hub (log scale), 0.9 if the posting welcomes CPT/OPT/F-1 |
+| Recency | 15 | halves every 5 days since posting |
+| Degree | 5 | Master's listed |
+| Location | 5 | preferred locations (default Texas or remote) |
+
+A posting that says it will not sponsor loses 20 points. Weights are editable in Preferences. The server
+refreshes every 2 hours (configurable); the same data is available in the terminal:
+
+```bash
+python3 jobs.py                               # top 20
+python3 jobs.py --track DS,DA,BIE --min 70 --days 5 --sponsor ok
+python3 jobs.py show 1                        # score breakdown, matched and missing skills
+python3 jobs.py open 1                        # open the posting
+python3 jobs.py fetch                         # refresh now
+```
+
 ## Project structure
 
 ```
 internship-tracker.html   UI: views, state, scoring, import/export (vanilla JS, no build step)
-server.py                 Local server: serves the page, GET/PUT /api/state, daily backups
+server.py                 Local server: page, GET/PUT /api/state, backups, scheduled refresh
+fetcher.py                Feed download, gates, posting text checks, scoring
+jobs.py                   Terminal list/show/open/fetch
 data/                     Your data (not committed)
 ```
 
 ## Roadmap
 
-- Fetch new listings from SimplifyJobs on a schedule and score them automatically
+- Calibrate the weights against real outcomes once there are enough applications
 - Calendar (.ics) export for deadlines and interviews
 - Contacts and per-round interview notes
 - Load the data into SQL (star schema) for a Tableau dashboard of the application funnel

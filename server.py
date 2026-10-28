@@ -13,6 +13,10 @@ Run:  python3 server.py            (opens http://127.0.0.1:8765)
   one before every delete, import, restore or clear. All backups from the last
   3 days are kept; older ones are thinned to one per day and removed after 60
   days.
+- Refreshes SimplifyJobs listings in the background (fetcher.py) every
+  settings.fetchHours hours (default 2), checking every 5 minutes so a run
+  missed while the Mac slept happens soon after it wakes. POST /api/fetch
+  runs one now.
 - Listens on 127.0.0.1 only and refuses cross-origin writes.
 Uses only the Python standard library (Python 3.8+).
 """
@@ -27,7 +31,11 @@ import socketserver
 import sys
 import tempfile
 import threading
+import time
+import traceback
 import webbrowser
+
+import fetcher
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PAGE = "internship-tracker.html"
@@ -98,6 +106,59 @@ def write_state(data):
     os.replace(tmp, STATE)
 
 
+FETCH_LOCK = threading.Lock()
+
+
+def run_fetch():
+    """Download and score listings, then merge them into the latest state. Returns the fetch summary."""
+    if not FETCH_LOCK.acquire(blocking=False):
+        return {"busy": True}
+    try:
+        try:
+            snapshot = load_state() or {}
+        except (OSError, ValueError):
+            snapshot = {}
+        try:
+            result = fetcher.refresh(snapshot, log=lambda m: print(m, flush=True))
+        except Exception as e:
+            print(traceback.format_exc(), flush=True)
+            result = None
+            error = str(e)[:300]
+        with LOCK:
+            current = load_state() or {"apps": [], "listings": []}
+            if result:
+                info = fetcher.apply(current, result)
+            else:
+                info = dict(current.get("fetch") or {})
+                info.update({"error": error, "at": dt.datetime.now().astimezone().isoformat(timespec="seconds")})
+                current["fetch"] = info
+            backup(force=False)
+            current["rev"] = int(current.get("rev", 0) or 0) + 1
+            current["savedAt"] = dt.datetime.now().isoformat(timespec="seconds")
+            write_state(current)
+        return info
+    finally:
+        FETCH_LOCK.release()
+
+
+def scheduler():
+    time.sleep(5)
+    while True:
+        try:
+            state = load_state() or {}
+            hours = float((state.get("settings") or {}).get("fetchHours") or 2)
+            last = (state.get("fetch") or {}).get("at")
+            due = True
+            if last:
+                elapsed = dt.datetime.now().astimezone() - dt.datetime.fromisoformat(last)
+                due = elapsed >= dt.timedelta(hours=max(0.5, hours))
+            if due:
+                run_fetch()
+        except Exception:
+            print(traceback.format_exc(), flush=True)
+        time.sleep(300)
+
+
 class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=ROOT, **kwargs)
@@ -139,6 +200,18 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         elif path != "/" + PAGE:
             return self.send_error(404)  # serve the page only, never data/ or this script
         return super().do_GET()
+
+    def do_POST(self):
+        if self._path() != "/api/fetch":
+            return self.send_error(404)
+        if self.headers.get("Origin") not in (None, f"http://{self.headers.get('Host')}"):
+            return self._json(403, {"error": "Cross-origin requests are not allowed."})
+        if "wait=1" in self.path:
+            return self._json(200, run_fetch())
+        if FETCH_LOCK.locked():
+            return self._json(202, {"started": False, "busy": True})
+        threading.Thread(target=run_fetch, daemon=True).start()
+        return self._json(202, {"started": True})
 
     def do_PUT(self):
         if self._path() != "/api/state":
@@ -186,6 +259,7 @@ def main():
     ap = argparse.ArgumentParser(description="Internship Application Tracker (local)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--no-browser", action="store_true")
+    ap.add_argument("--no-fetch", action="store_true", help="do not refresh listings in the background")
     args = ap.parse_args()
     if not os.path.exists(os.path.join(ROOT, PAGE)):
         sys.exit(f"{PAGE} must be in the same folder as server.py")
@@ -196,6 +270,8 @@ def main():
         print(f"Data file: {STATE}", flush=True)
         if not args.no_browser:
             threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        if not args.no_fetch:
+            threading.Thread(target=scheduler, daemon=True).start()
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

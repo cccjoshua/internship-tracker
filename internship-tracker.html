@@ -194,6 +194,11 @@ td select{padding:3px 6px;font-size:12.5px}
 .why summary{cursor:pointer;font-size:12px;color:var(--muted);width:max-content}
 .why .parts{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--muted);padding-top:4px}
 .why .parts b{color:var(--ink);font-family:var(--f-mono);font-weight:500}
+.ev,.sk{display:flex;flex-wrap:wrap;gap:5px 8px;align-items:center;font-size:12px;color:var(--muted)}
+.sk-l{font-weight:500;color:var(--muted);margin-right:2px}
+.chip.miss{--c:var(--muted);background:transparent;border:1px dashed var(--line)}
+.exl{margin-top:6px}
+.inbox-head .sub{font-size:12px}
 
 /* prefs */
 .prefs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start}
@@ -332,9 +337,10 @@ const FLOW=['saved','applied','oa','interview','offer'];
 const TRACKS=['SWE','DE','DA','DS','BIE'];
 const TRACK_NAME={SWE:'Software Eng.',DE:'Data Eng.',DA:'Data Analyst',DS:'Data Science',BIE:'BI Engineer'};
 const SPONSOR={yes:'Sponsors visa',no:'No sponsorship',unknown:'Sponsorship ?'};
-const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:35,recency:20,sponsor:20,degree:15,location:10},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false};
-const WEIGHT_LABEL={fit:'Role fit (matches a target track)',recency:'Recency (newer is better, 0 after 30 days)',sponsor:'Visa sponsorship (yes 100%, unknown 50%)',degree:'Degree level (MS-eligible)',location:'Preferred location'};
-const WEIGHT_SHORT={fit:'Role fit',recency:'Recency',sponsor:'Visa',degree:'Degree',location:'Location'};
+const DEFAULTS={targets:['SWE','DE','DA','DS','BIE'],weights:{fit:30,skills:25,sponsor:20,recency:15,degree:5,location:5},places:['TX','Remote'],followUpDays:14,hideNoSponsor:false,windowDays:10,fetchHours:2};
+const WEIGHT_LABEL={fit:'Role fit (title matches a target track)',skills:'Skill match (posting skills on your resume)',sponsor:'Sponsorship evidence (H-1B history, CPT/OPT wording)',recency:'Recency (halves every 5 days)',degree:'Degree (Master’s listed)',location:'Preferred location'};
+const WEIGHT_SHORT={fit:'Role fit',skills:'Skills',sponsor:'Sponsorship',recency:'Recency',degree:'Degree',location:'Location'};
+const RECENCY_HALF_LIFE=5;
 
 function hist(...p){return p.map(([s,n])=>({s,d:rel(n)}))}
 function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',followedUp:'',snoozeUntil:'',history:[]},o)}
@@ -364,13 +370,13 @@ const defaultUi=()=>({q:'',track:'',sponsor:'',sort:{key:'deadline',dir:1}});
 function fresh(){return{v:SCHEMA,apps:sampleApps(),listings:sampleListings(),dismissed:[],settings:JSON.parse(JSON.stringify(DEFAULTS)),ui:defaultUi()}}
 function migrate(d){d=d||{};
   const s={v:SCHEMA,apps:Array.isArray(d.apps)?d.apps:[],listings:Array.isArray(d.listings)?d.listings:[],dismissed:Array.isArray(d.dismissed)?d.dismissed.slice(-3000):[],
-    settings:Object.assign({},DEFAULTS,d.settings,{weights:Object.assign({},DEFAULTS.weights,(d.settings||{}).weights)}),ui:Object.assign(defaultUi(),d.ui)};
+    settings:Object.assign({},DEFAULTS,d.settings,{weights:Object.assign({},DEFAULTS.weights,(((d.settings||{}).weights)||{}).skills!==undefined?d.settings.weights:{})}),ui:Object.assign(defaultUi(),d.ui),fetch:d.fetch||null};
   s.apps=s.apps.filter(a=>a&&a.company).map(a=>{const b=blankApp(a);b.url=safeUrl(b.url);if(!LABEL[b.status])b.status='saved';b.priority=Math.min(3,Math.max(1,+b.priority||2));
     if(!['yes','no','unknown'].includes(b.sponsor))b.sponsor='unknown';
     b.history=(Array.isArray(b.history)?b.history:[]).filter(h=>h&&LABEL[h.s]&&parse(h.d));if(!b.history.length)b.history=[{s:b.status,d:b.applied||iso(TODAY)}];return b});
   s.listings=s.listings.filter(l=>l&&l.company).map(l=>Object.assign({id:uid(),degree:'',sponsor:'unknown',location:'',posted:''},l,{url:safeUrl(l.url)}));
   return s}
-const snapshotData=()=>({v:SCHEMA,apps:S.apps,listings:S.listings,dismissed:S.dismissed,settings:S.settings,ui:Object.assign({},S.ui,{q:''})});
+const snapshotData=()=>({v:SCHEMA,apps:S.apps,listings:S.listings,dismissed:S.dismissed,settings:S.settings,fetch:S.fetch||null,ui:Object.assign({},S.ui,{q:''})});
 const listingKey=l=>urlKey(l.url)||('k:'+norm(l.company)+'|'+norm(l.role));
 
 /* ---------- storage: local file via server.py (revision-checked), else this browser ---------- */
@@ -433,15 +439,17 @@ function inferTrack(role){const r=role||'';
   if(/data scien|machine learning|\bML\b|quantitative|\bAI\b/i.test(r))return'DS';
   if(/software|developer|\bSWE\b|backend|frontend|full.?stack/i.test(r))return'SWE';
   return''}
-function scoreParts(l){const w=S.settings.weights,t=inferTrack(l.role);
-  const v={fit:S.settings.targets.includes(t)?1:(t?0.3:0),
-    recency:Math.max(0,1-Math.abs(daysFrom(l.posted)||0)/30),
-    sponsor:l.sponsor==='yes'?1:l.sponsor==='unknown'?0.5:0,
-    degree:/phd/i.test(l.degree||'')&&!/ms|bs/i.test(l.degree||'')?0:1,
-    location:S.settings.places.some(p=>p&&(l.location||'').toLowerCase().includes(p.toLowerCase()))?1:0.6};
+/* Same formula as fetcher.score(): stored components in [0,1] for everything except recency, which is computed live. */
+function scoreParts(l){const w=S.settings.weights,t=l.track||inferTrack(l.role);
+  const age=Math.max(0,-(daysFrom(l.posted)??30));
+  const v=l.v?Object.assign({},l.v):{fit:S.settings.targets.includes(t)?1:(t?0.4:0.1),skills:0.5,
+    sponsor:l.sponsor==='yes'?0.9:l.sponsor==='no'?0:0.3,degree:/phd/i.test(l.degree||'')&&!/ms|bs|master|bachelor/i.test(l.degree||'')?0:1,
+    location:S.settings.places.some(p=>p&&(l.location||'').toLowerCase().includes(p.toLowerCase()))?1:0.5};
+  v.recency=Math.pow(0.5,age/RECENCY_HALF_LIFE);
   let tot=0;for(const k in DEFAULTS.weights)tot+=Math.max(0,+w[k]||0);
-  const parts=Object.keys(DEFAULTS.weights).map(k=>{const wk=Math.max(0,+w[k]||0);return{k,pts:tot?wk*v[k]/tot*100:0,max:tot?wk/tot*100:0}});
-  return{total:Math.round(parts.reduce((s,p)=>s+p.pts,0)),parts}}
+  const parts=Object.keys(DEFAULTS.weights).map(k=>{const wk=Math.max(0,+w[k]||0);return{k,pts:tot?wk*(v[k]||0)/tot*100:0,max:tot?wk/tot*100:0}});
+  const pen=+l.penalty||0;
+  return{total:Math.max(0,Math.round(parts.reduce((s,p)=>s+p.pts,0)-pen)),parts,pen}}
 function filtered(){const{q,track,sponsor}=S.ui;const t=(q||'').toLowerCase().trim();
   return S.apps.filter(a=>(!t||[a.company,a.role,a.location,a.notes,a.contact].join(' ').toLowerCase().includes(t))&&(!track||a.track===track)&&(!sponsor||a.sponsor===sponsor))}
 function lastDate(a){const l=a.history[a.history.length-1];return l?l.d:a.applied}
@@ -540,22 +548,38 @@ R.table=()=>{const{key,dir}=S.ui.sort;
   <td class="dt">${a.nextText?`${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}`:'—'}</td><td>${spChip(a.sponsor)}</td></tr>`).join('')}
   </tbody></table></div>`};
 
+function evidence(l){
+  const h=l.h1b===null||l.h1b===undefined?(l.source==='simplify'?'No H-1B record found for this employer':''):`${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS FY2023)`;
+  const fl=(l.flags||[]).map(f=>`<span class="chip ${f==='CPT/OPT friendly'?'v-yes':f==='No sponsorship'?'v-no':'tag'}">${esc(f)}${f==='No sponsorship'&&l.penalty?` −${l.penalty}`:''}</span>`).join('');
+  return h||fl?`<div class="ev"><span>${esc(h)}</span>${fl}</div>`:''}
+function skillLine(l){const m=(l.skills&&l.skills.matched)||[],x=(l.skills&&l.skills.missing)||[];
+  if(!m.length&&!x.length)return l.source==='simplify'?`<div class="sk empty">${l.textRead?'No specific tools named in the posting':'Posting text could not be read; skill match counted as neutral'}</div>`:'';
+  return `<div class="sk"><span class="sk-l">Skills ${m.length}/${m.length+x.length}</span>${m.map(s=>`<span class="chip v-yes">${esc(s)}</span>`).join('')}${x.map(s=>`<span class="chip miss">${esc(s)}</span>`).join('')}</div>`}
+function fetchSummary(){const f=S.fetch;if(!f)return Store.mode==='file'?'Not refreshed yet':'Example feed (the local version refreshes from SimplifyJobs)';
+  const at=new Date(f.at),hrs=+S.settings.fetchHours||2,next=new Date(at.getTime()+hrs*3600e3);
+  const t=d=>d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+  return `Refreshed ${t(at)}${at.toDateString()!==new Date().toDateString()?' '+fmt(iso(at)):''}${f.new?` · ${f.new} new`:''} · next about ${t(next)}${f.error?` · <span class="due hot">last refresh failed: ${esc(f.error)}</span>`:''}`}
+let refreshing=false;
 R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
-  let L=S.listings.map(l=>Object.assign({},l,scoreParts(l),{t:inferTrack(l.role),dup:findDup(l.company,l.role,l.url)}));
+  let L=S.listings.map(l=>Object.assign({},l,scoreParts(l),{t:l.track||inferTrack(l.role),dup:findDup(l.company,l.role,l.url)}));
   const hidden=S.settings.hideNoSponsor?L.filter(l=>l.sponsor==='no').length:0;
   if(S.settings.hideNoSponsor)L=L.filter(l=>l.sponsor!=='no');
   if(S.ui.sponsor)L=L.filter(l=>l.sponsor===S.ui.sponsor);
+  if(S.ui.track)L=L.filter(l=>l.t===S.ui.track);
   if(t)L=L.filter(l=>(l.company+' '+l.role+' '+l.location).toLowerCase().includes(t));
   L.sort((a,b)=>(!!a.dup-!!b.dup)||b.total-a.total);
-  const head=`<div class="inbox-head"><p>${L.length} listing${L.length===1?'':'s'} from SimplifyJobs (example feed)${hidden?` · ${hidden} hidden without sponsorship`:''}</p>
+  const ex=S.fetch&&S.fetch.excluded?Object.entries(S.fetch.excluded).sort((a,b)=>b[1]-a[1]):[];
+  const head=`<div class="inbox-head"><p><b>${L.length}</b> listing${L.length===1?'':'s'} ranked by fit${hidden?` · ${hidden} hidden without sponsorship`:''}<br><span class="sub">${fetchSummary()}</span></p>
     <label class="switch"><input type="checkbox" id="hideNo" ${S.settings.hideNoSponsor?'checked':''}> Hide no-sponsorship</label>
-    <button class="btn sm" type="button" data-action="refresh">Refresh feed</button></div>`;
-  if(!L.length)return head+`<div class="panel" style="margin-top:12px"><p class="empty">No new listings. Refresh the feed or loosen the filters.</p></div>`;
+    <button class="btn sm" type="button" data-action="refresh" ${refreshing?'disabled':''}>${refreshing?'Refreshing…':'Refresh now'}</button></div>
+    ${ex.length?`<details class="why exl"><summary>Filtered out this refresh: ${ex.reduce((s,e)=>s+e[1],0).toLocaleString('en-US')}</summary><div class="parts">${ex.map(([k,n])=>`<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}</div></details>`:''}`;
+  if(!L.length)return head+`<div class="panel" style="margin-top:12px"><p class="empty">No listings match. Refresh now, clear the filters, or widen the window in Preferences.</p></div>`;
   return head+`<div class="list" style="margin-top:12px">${L.map(l=>`<article class="listing" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
     <div class="ring" style="--p:${l.total}" aria-hidden="true"><span>${l.total}</span></div>
-    <div class="body"><div><b>${esc(l.company)}</b> <span class="role">· ${esc(l.role)}</span></div>
-      <div class="chips">${l.dup?`<span class="chip s-applied">Already tracking · ${LABEL[l.dup.status]}</span>`:''}${l.t?`<span class="chip tag">${l.t}</span>`:''}<span class="chip tag">${esc(l.location)}</span>${l.degree?`<span class="chip tag">${esc(l.degree)}</span>`:''}${l.posted?`<span class="chip tag">Posted ${ago(l.posted)}</span>`:''}${spChip(l.sponsor)}</div>
-      <details class="why"><summary>Why ${l.total}?</summary><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}</div></details></div>
+    <div class="body"><div>${l.isNew?'<span class="chip s-applied">New</span> ':''}<b>${esc(l.company)}</b> <span class="role">· ${esc(l.role)}</span></div>
+      <div class="chips">${l.dup?`<span class="chip s-applied">Already tracking · ${LABEL[l.dup.status]}</span>`:''}${l.t?`<span class="chip tag">${esc(l.t)}</span>`:''}<span class="chip tag">${esc(l.location)}</span>${l.degree?`<span class="chip tag">${esc(l.degree)}</span>`:''}${l.posted?`<span class="chip tag">Posted ${ago(l.posted)}</span>`:''}</div>
+      ${evidence(l)}${skillLine(l)}
+      <details class="why"><summary>Why ${l.total}?</summary><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}${l.pen?`<span>No-sponsorship penalty <b>−${l.pen}</b></span>`:''}</div></details></div>
     <div class="acts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open tracked</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button>`}<button class="btn sm ghost" type="button" data-dismiss="${l.id}">Dismiss</button>${link(l.url,'Open ↗')}</div>
   </article>`).join('')}</div>`};
 
@@ -569,7 +593,9 @@ R.prefs=()=>{const st=S.settings,snaps=snapshots();
   <section class="panel"><h2>Reminders and filters</h2>
     <label class="field"><span>Preferred locations</span><input id="p-places" type="text" value="${esc(st.places.join(', '))}"><span class="hint">Comma separated, e.g. TX, Remote, Seattle</span></label>
     <label class="field"><span>Suggest a follow-up after (days without reply)</span><input id="p-fu" type="number" min="3" max="60" value="${st.followUpDays}"></label>
-    <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor?'checked':''}> Hide listings that do not sponsor visas</label></section>
+    <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor?'checked':''}> Hide listings that do not sponsor visas</label>
+    <label class="field"><span>Show listings posted in the last (days)</span><input id="p-window" type="number" min="1" max="60" value="${st.windowDays}"><span class="hint">Applies from the next refresh.</span></label>
+    <label class="field"><span>Refresh listings every (hours)</span><input id="p-hours" type="number" min="1" max="24" step="1" value="${st.fetchHours}"><span class="hint">Runs on your Mac with no AI calls, so it costs nothing. The Mac must be awake; a missed run happens within 5 minutes of waking.</span></label></section>
   <section class="panel"><h2>Your data <small>${S.apps.length} applications · ${S.listings.length} listings</small></h2>
     <p class="empty">${where}</p>
     <label class="field"><span>Import or restore</span><textarea id="io" rows="6" placeholder="Paste a JSON export, or a CSV with columns like Company, Role, Status, Location, Link, Deadline"></textarea>
@@ -591,7 +617,7 @@ function render(){const v=route();
   document.querySelectorAll('[data-nav]').forEach(a=>a.dataset.nav===v?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current'));
   $('#viewTitle').textContent=VIEWS[v][0];
   $('#viewSub').textContent=(filtersOn()&&(v==='board'||v==='table'))?`Showing ${filtered().length} of ${S.apps.length} applications · filters on`:VIEWS[v][1]();
-  $('#tools').hidden=!['board','table','inbox'].includes(v);$('#fTrack').hidden=v==='inbox';
+  $('#tools').hidden=!['board','table','inbox'].includes(v);
   $('#clearF').hidden=!filtersOn();
   $('#nBoard').textContent=S.apps.filter(a=>!CLOSED.includes(a.status)).length;
   $('#nTable').textContent=S.apps.length;$('#nInbox').textContent=S.listings.length||'';
@@ -723,7 +749,12 @@ document.addEventListener('click',e=>{
     if(k==='undismiss'){checkpoint();S.dismissed=[];save();render();return toast('Dismissed listings will show again on the next refresh',true)}
     if(k==='clear-all'){if(act.dataset.armed){checkpoint();S.apps=[];S.listings=[];S.dismissed=[];save(true);render();return toast('All applications and listings cleared. A backup was saved first.',true)}
       act.dataset.armed='1';act.textContent='Click again to clear all';setTimeout(()=>{if(act.isConnected){delete act.dataset.armed;act.textContent='Clear all data'}},3000);return}
-    if(k==='refresh')return toast(Store.mode==='file'?'The Simplify fetcher is the next build step.':'The local version fetches Simplify here. This prototype uses an example feed.');
+    if(k==='refresh'){if(Store.mode!=='file')return toast('The local version refreshes from SimplifyJobs. This preview uses an example feed.');
+      if(refreshing)return;const before=S.fetch&&S.fetch.at;refreshing=true;render();
+      fetch('api/fetch',{method:'POST'}).then(r=>{if(!r.ok&&r.status!==202)throw 0}).catch(()=>{refreshing=false;render();toast('Could not start a refresh. Is the local server running?')});
+      let n=0;const poll=setInterval(async()=>{n++;const l=await Store.latest();
+        if(l&&l.fetch&&l.fetch.at!==before){clearInterval(poll);refreshing=false;applyExternal(l,l.fetch.error?'Refresh failed: '+l.fetch.error:`Refreshed: ${l.fetch.matched} listings, ${l.fetch.new||0} new`)}
+        else if(n>60){clearInterval(poll);refreshing=false;render();toast('The refresh is taking longer than usual. It will appear when it finishes.')}},3000);return}
     if(k==='export'){const j=JSON.stringify(snapshotData(),null,2);$('#io').value=j;$('#io').select();
       const fall=()=>toast('Export is in the box. Copy it and keep it somewhere safe.');
       try{navigator.clipboard.writeText(j).then(()=>toast('Exported and copied to clipboard'),fall)}catch(_){fall()}return}
@@ -745,7 +776,10 @@ document.addEventListener('click',e=>{
   const sn=t.closest('[data-snap]');if(sn){try{restoreFrom(JSON.parse(localStorage.getItem(sn.dataset.snap)),'Restored snapshot '+sn.dataset.snap.slice(-10))}catch(_){toast('That snapshot could not be read.')}return}
   const tr=t.closest('[data-trackl]');
   if(tr){const l=S.listings.find(x=>x.id===tr.dataset.trackl);if(!l)return;checkpoint();
-    S.apps.push(blankApp({company:l.company,role:l.role,track:inferTrack(l.role),location:l.location,url:safeUrl(l.url),posted:l.posted,sponsor:l.sponsor,sample:l.sample,history:[{s:'saved',d:iso(TODAY)}]}));
+    const tr2=TRACKS.includes(l.track)?l.track:inferTrack(l.role);const sc=scoreParts(l).total;
+    const note=[`Match score ${sc} when tracked.`,l.h1b!==undefined&&l.h1b!==null?`${l.h1b} H-1B approvals (USCIS FY2023).`:'',(l.flags||[]).length?`Flags: ${l.flags.join(', ')}.`:'',
+      l.skills&&l.skills.matched&&l.skills.matched.length?`Skills to highlight: ${l.skills.matched.join(', ')}.`:'',l.skills&&l.skills.missing&&l.skills.missing.length?`Not on resume: ${l.skills.missing.join(', ')}.`:''].filter(Boolean).join(' ');
+    S.apps.push(blankApp({company:l.company,role:l.role,track:tr2,location:l.location,url:safeUrl(l.url),posted:l.posted,sponsor:l.sponsor,sample:l.sample,priority:sc>=80?3:sc>=65?2:1,notes:note,history:[{s:'saved',d:iso(TODAY)}]}));
     S.listings=S.listings.filter(x=>x!==l);save();render();return toast(`${l.company} added to Saved`,true)}
   const dm=t.closest('[data-dismiss]');
   if(dm){checkpoint();const l=S.listings.find(x=>x.id===dm.dataset.dismiss);S.listings=S.listings.filter(x=>x!==l);if(l&&!S.dismissed.includes(listingKey(l)))S.dismissed.push(listingKey(l));save();render();return toast(`${l?l.company:'Listing'} dismissed`,true)}
@@ -763,6 +797,8 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.dataset.weight){S.settings.weights[t.dataset.weight]=Math.max(0,+t.value||0);save();return toast('Weights saved')}
   if(t.id==='p-places'){S.settings.places=t.value.split(',').map(x=>x.trim()).filter(Boolean);save();return toast('Locations saved')}
   if(t.id==='p-fu'){S.settings.followUpDays=Math.min(90,Math.max(1,+t.value||14));save();return toast('Reminder saved')}
+  if(t.id==='p-window'){S.settings.windowDays=Math.min(60,Math.max(1,Math.round(+t.value||10)));save();return toast('Saved. Applies from the next refresh.')}
+  if(t.id==='p-hours'){S.settings.fetchHours=Math.min(24,Math.max(1,Math.round(+t.value||2)));save();return toast(`Listings will refresh every ${S.settings.fetchHours} hours`)}
   if(t.id==='fTrack'){S.ui.track=t.value;save();return render()}
   if(t.id==='fSponsor'){S.ui.sponsor=t.value;save();return render()}
 });
@@ -795,7 +831,7 @@ document.addEventListener('drop',e=>{const col=e.target.closest&&e.target.closes
   if(st===a.status)return render();checkpoint();moveTo(a,st);save();render();toast(`${a.company} → ${LABEL[a.status]}`,true)});
 window.addEventListener('hashchange',()=>{closeDrawer();render()});
 function tick(){const n=new Date();n.setHours(0,0,0,0);if(+n!==+TODAY){TODAY=n;takeDailySnapshot();if($('#drawer').hidden)render()}}
-setInterval(tick,60000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();checkRemote()}});
+setInterval(tick,60000);setInterval(()=>{if(!document.hidden)checkRemote()},90000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();checkRemote()}});
 function applyTheme(m){const r=document.documentElement;if(m==='light'||m==='dark')r.setAttribute('data-theme',m);else r.removeAttribute('data-theme');
   const b=$('#themeBtn');if(b)b.textContent='Theme: '+(m==='light'?'Light':m==='dark'?'Dark':'System')}
 
