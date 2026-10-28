@@ -155,6 +155,8 @@ textarea{width:100%;resize:vertical}
 .todo .what:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .mini{display:flex;flex-wrap:wrap;gap:6px;align-items:center;justify-content:flex-end}
 .s-missed{--c:var(--st-withdrawn)}.s-ghosted{--c:var(--st-withdrawn)}.s-expired{--c:var(--st-withdrawn)}
+.chip.fu{--c:var(--good)}
+.meta .fu-done{color:var(--good)}
 /* recommended action */
 .act{display:inline-flex;align-items:center;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
 .act.now{background:var(--accent);color:var(--accent-ink)}.act.tailor{background:var(--hl-soft);color:var(--warn)}.act.low{background:var(--sunk);color:var(--muted)}
@@ -419,7 +421,10 @@ const WEIGHT_SHORT={fit:'Role fit',skills:'Skills',sponsor:'Sponsorship',recency
 const RECENCY_HALF_LIFE=5;
 
 function hist(...p){return p.map(([s,n])=>({s,d:rel(n)}))}
-function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',followedUp:'',snoozeUntil:'',history:[]},o)}
+function blankApp(o){return Object.assign({id:uid(),company:'',role:'',track:'',status:'saved',priority:2,sponsor:'unknown',location:'',url:'',posted:'',deadline:'',applied:'',resume:'',contact:'',notes:'',nextText:'',nextDate:'',followedUp:'',snoozeUntil:'',followLog:[],history:[]},o)}
+/* Follow-ups are logged separately from stage history so they never change the application's stage. */
+function logFollowUp(a,d){a.followLog=[...new Set([...(a.followLog||[]),d])].filter(x=>parse(x)).sort();a.followedUp=a.followLog[a.followLog.length-1]||''}
+function followText(a){const n=(a.followLog||[]).length;return n?`Followed up ${fmt(a.followedUp)}${n>1?` · ${n}×`:''}`:''}
 function sampleApps(){const a=o=>blankApp(Object.assign({sample:true},o));return[
   a({company:'Pelican Logistics',role:'Business Intelligence Engineer Intern',track:'BIE',location:'Seattle, WA',status:'saved',priority:3,deadline:rel(9),resume:'Resume_PelicanLogistics.docx',nextText:'Submit application',nextDate:rel(1),history:hist(['saved',-1])}),
   a({company:'Copperline Software',role:'Business Data Analyst Intern, Strategy & Planning',track:'DA',location:'Mountain View, CA',status:'saved',priority:2,deadline:rel(5),nextText:'Tailor resume',nextDate:rel(0),history:hist(['saved',-3])}),
@@ -449,7 +454,8 @@ function migrate(d){d=d||{};
     settings:Object.assign({},DEFAULTS,d.settings,{weights:Object.assign({},DEFAULTS.weights,(((d.settings||{}).weights)||{}).skills!==undefined?d.settings.weights:{})}),ui:Object.assign(defaultUi(),d.ui),fetch:d.fetch||null};
   s.apps=s.apps.filter(a=>a&&a.company).map(a=>{const b=blankApp(a);b.url=safeUrl(b.url);if(!LABEL[b.status])b.status='saved';b.priority=Math.min(3,Math.max(1,+b.priority||2));
     if(!['yes','no','unknown'].includes(b.sponsor))b.sponsor='unknown';
-    b.history=(Array.isArray(b.history)?b.history:[]).filter(h=>h&&LABEL[h.s]&&parse(h.d));if(!b.history.length)b.history=[{s:b.status,d:b.applied||iso(TODAY)}];return b});
+    b.history=(Array.isArray(b.history)?b.history:[]).filter(h=>h&&LABEL[h.s]&&parse(h.d));if(!b.history.length)b.history=[{s:b.status,d:b.applied||iso(TODAY)}];
+    b.followLog=(Array.isArray(b.followLog)?b.followLog:[]).filter(x=>parse(x));if(b.followedUp&&parse(b.followedUp)&&!b.followLog.includes(b.followedUp))b.followLog.push(b.followedUp);b.followLog.sort();return b});
   s.listings=s.listings.filter(l=>l&&l.company).map(l=>Object.assign({id:uid(),degree:'',sponsor:'unknown',location:'',posted:''},l,{url:safeUrl(l.url)}));
   return s}
 const snapshotData=()=>({v:SCHEMA,apps:S.apps,listings:S.listings,dismissed:S.dismissed,settings:S.settings,fetch:S.fetch||null,ui:Object.assign({},S.ui,{q:''})});
@@ -648,6 +654,7 @@ function card(a){
   if(a.status==='saved')meta=a.deadline?`<span class="due ${dueCls(daysFrom(a.deadline))}">Deadline ${fmt(a.deadline)}</span>`:'<span>No deadline</span>';
   else if(a.applied)meta=`<span>Applied ${ago(a.applied)}</span>`;
   if(a.status==='applied'&&quietDays(a)>=(+S.settings.followUpDays||14))meta+=`<span class="due soon">No reply for ${quietDays(a)} days</span>`;
+  if(followText(a)&&!CLOSED.includes(a.status))meta+=`<span class="fu-done">✓ ${followText(a)}</span>`;
   if(a.nextText)meta+=`<span class="next">→ ${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}</span>`;
   return `<li class="card ${urgency(a)}" draggable="true" data-id="${a.id}" data-open="${a.id}" tabindex="0" aria-label="${esc(a.company+', '+a.role+', '+LABEL[a.status])}">
     <div class="card-top"><strong>${esc(a.company)}</strong>${prio(a.priority)}</div>
@@ -669,7 +676,7 @@ R.board=()=>{const A=filtered();const cols=['saved','applied','oa','interview','
     const lim=UI.limits['col-'+s]||COL_LIMIT,vis=items.slice(0,lim);
     return `<section class="col s-${s}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length?`<ul class="cards">${vis.map(card).join('')}</ul>`:'<p class="empty">Drop a card here</p>'}${items.length>lim?`<button class="colbtn" type="button" data-more="col-${s}">Show ${items.length-lim} more</button>`:''}${s==='closed'?'<button class="colbtn" type="button" data-action="closed-toggle">Hide closed</button>':''}</section>`}).join('')}</div>`};
 
-const COLS=[['company','Company'],['role','Role'],['track','Track'],['status','Status'],['priority','Priority'],['applied','Applied'],['deadline','Deadline'],['nextDate','Next step'],['sponsor','Visa']];
+const COLS=[['company','Company'],['role','Role'],['track','Track'],['status','Status'],['priority','Priority'],['applied','Applied'],['deadline','Deadline'],['followedUp','Followed up'],['nextDate','Next step'],['sponsor','Visa']];
 R.table=()=>{const{key,dir}=S.ui.sort;
   const val=a=>key==='status'?ORDER[a.status]:key==='priority'?-a.priority:String(a[key]||'').toLowerCase();
   const all=filtered(),nClosed=all.filter(a=>CLOSED.includes(a.status)).length;
@@ -682,6 +689,7 @@ R.table=()=>{const{key,dir}=S.ui.sort;
   ${A.map(a=>`<tr data-open="${a.id}" class="${CLOSED.includes(a.status)?'closed':''}"><td class="co ${urgency(a)}"><button type="button" data-open="${a.id}">${esc(a.company)}</button></td><td class="ro">${esc(a.role)}</td><td>${a.track?`<span class="chip tag">${a.track}</span>`:''}</td>
   <td><select data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES,a.status)}</select></td><td>${prio(a.priority)}</td>
   <td class="dt">${fmt(a.applied)}</td><td class="dt">${a.deadline?`<span class="due ${a.status==='saved'?dueCls(daysFrom(a.deadline)):''}">${fmt(a.deadline)}</span>`:'—'}</td>
+  <td class="dt">${a.followedUp?`${fmt(a.followedUp)}${(a.followLog||[]).length>1?` · ${a.followLog.length}×`:''}`:'—'}</td>
   <td class="dt">${a.nextText?`${esc(a.nextText)}${a.nextDate?' · '+fmt(a.nextDate):''}`:'—'}</td><td>${spChip(a.sponsor)}</td></tr>`).join('')}
   </tbody></table>${A0.length>A.length?`<button class="more" type="button" data-action="table-more" style="display:block;width:100%;box-sizing:border-box">Show ${Math.min(25,A0.length-A.length)} more of ${A0.length-A.length}</button>`:''}</div>`};
 
@@ -828,7 +836,9 @@ function openDrawer(id){
       ${f('contact','Contact / referral','text','full')}
       <label class="field full"><span>Notes</span><textarea id="f-notes" rows="4">${esc(a.notes)}</textarea></label>
     </div>
-    ${id?`<div class="field"><span>History <span class="hint">· edit a date to backfill when something happened</span></span><ul class="timeline" id="hist">${a.history.map(h=>`<li data-s="${h.s}"><input type="date" value="${h.d}" aria-label="Date for ${LABEL[h.s]}">${stChip(h.s)}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove ${LABEL[h.s]} entry">Remove</button></li>`).join('')}</ul></div>`:''}
+    ${id?`<div class="field"><span>History <span class="hint">· edit a date to backfill when something happened</span></span><ul class="timeline" id="hist">${[...a.history.map((h,i)=>({k:'s',v:h.s,d:h.d,i})),...(a.followLog||[]).map((d,i)=>({k:'f',d,i:100+i}))].sort((x,y)=>x.d.localeCompare(y.d)||x.i-y.i).map(e=>e.k==='s'
+      ?`<li data-s="${e.v}"><input type="date" value="${e.d}" aria-label="Date for ${LABEL[e.v]}">${stChip(e.v)}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove ${LABEL[e.v]} entry">Remove</button></li>`
+      :`<li data-flog><input type="date" value="${e.d}" aria-label="Follow-up date">${'<span class="chip fu">✓ Followed up</span>'}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove follow-up entry">Remove</button></li>`).join('')}</ul></div>`:''}
     <div class="dfoot">${id?`<button class="btn ghost danger" type="button" data-action="delete">Delete</button>`:''}${link(a.url,'Open posting ↗','btn ghost')}<span class="spacer"></span>
       <button class="btn" type="button" data-action="close">Cancel</button><button class="btn primary" type="submit">${id?'Save changes':'Add application'}</button></div>
   </form>`;
@@ -857,7 +867,7 @@ function submitForm(e){e.preventDefault();
   const st=g('status'),sd=parse(g('stdate'))?g('stdate'):iso(TODAY),appliedIn=g('applied');
   let hist;
   if(!editing){const t=iso(TODAY);hist=[{s:'saved',d:st==='saved'?sd:(sd<t?sd:t)}];if(st!=='saved')hist.push({s:st,d:sd})}
-  else{hist=[...document.querySelectorAll('#hist li')].filter(li=>!li.hidden).map(li=>{const v=li.querySelector('input').value;return{s:li.dataset.s,d:parse(v)?v:iso(TODAY)}});
+  else{hist=[...document.querySelectorAll('#hist li[data-s]')].filter(li=>!li.hidden).map(li=>{const v=li.querySelector('input').value;return{s:li.dataset.s,d:parse(v)?v:iso(TODAY)}});
     if(st!==origStatus||!hist.length)hist.push({s:st,d:sd})}
   if(appliedIn&&appliedIn!==origApplied){const ha=hist.find(h=>h.s==='applied');if(ha)ha.d=appliedIn}
   hist=hist.map((h,i)=>Object.assign({i},h)).sort((x,y)=>x.d.localeCompare(y.d)||x.i-y.i).map(({s,d})=>({s,d}));
@@ -866,6 +876,8 @@ function submitForm(e){e.preventDefault();
   let a=editing?S.apps.find(x=>x.id===editing):null;const isNew=!a;
   if(isNew){a=blankApp(editing?{id:editing}:{});S.apps.push(a)}
   for(const k of['company','role','track','sponsor','location','deadline','applied','nextText','nextDate','followedUp','snoozeUntil','resume','contact','notes'])a[k]=g(k);
+  if(editing){a.followLog=[...document.querySelectorAll('#hist li[data-flog]')].filter(li=>!li.hidden).map(li=>li.querySelector('input').value).filter(x=>parse(x))}
+  const fuField=g('followedUp');if(fuField&&fuField!==(a.followLog||[]).slice(-1)[0])logFollowUp(a,fuField);else{a.followLog=[...new Set(a.followLog||[])].sort();a.followedUp=a.followLog[a.followLog.length-1]||''}
   a.url=url;a.priority=+g('priority')||2;a.history=hist;a.status=st;
   if(!hist.some(h=>h.s==='applied')&&appliedIn&&st!=='saved')a.applied=appliedIn;else syncApplied(a);
   save();returnTo=a.id;closeDrawer();render();
@@ -959,14 +971,15 @@ document.addEventListener('click',e=>{
   }
   const fu=t.closest('[data-fu]');
   if(fu){const a=S.apps.find(x=>x.id===fu.dataset.id);if(!a)return;checkpoint();
-    if(fu.dataset.fu==='done'){a.followedUp=iso(TODAY);a.snoozeUntil=''}else a.snoozeUntil=rel(7);
+    if(fu.dataset.fu==='done'){logFollowUp(a,iso(TODAY));a.snoozeUntil=''}else a.snoozeUntil=rel(7);
     save();render();return toast(fu.dataset.fu==='done'?`${a.company}: follow-up logged`:`${a.company}: snoozed until ${fmt(a.snoozeUntil)}`,true)}
   const ms=t.closest('[data-missed]');
   if(ms){const a=S.apps.find(x=>x.id===ms.dataset.missed);if(!a)return;checkpoint();setStatus(a,'missed');save();render();return toast(`${a.company} moved to Closed (missed deadline)`,true)}
   const bk=t.closest('[data-bk]');
   if(bk){fetch('api/backups/'+encodeURIComponent(bk.dataset.bk),{cache:'no-store'}).then(r=>{if(!r.ok)throw 0;return r.json()})
     .then(d=>restoreFrom(d,'Restored backup '+bk.closest('li').querySelector('.mono').textContent)).catch(()=>toast('That backup could not be read.'));return}
-  const hd=t.closest('[data-hdel]');if(hd){const rest=[...document.querySelectorAll('#hist li')].filter(x=>!x.hidden);if(rest.length<=1)return toast('Keep at least one history entry.');hd.closest('li').hidden=true;return}
+  const hd=t.closest('[data-hdel]');if(hd){const li=hd.closest('li');if(li.hasAttribute('data-s')){const rest=[...document.querySelectorAll('#hist li[data-s]')].filter(x=>!x.hidden);if(rest.length<=1)return toast('Keep at least one stage in the history.')}
+    li.hidden=true;if(li.hasAttribute('data-flog')){const left=[...document.querySelectorAll('#hist li[data-flog]')].filter(x=>!x.hidden).map(x=>x.querySelector('input').value).sort();$('#f-followedUp').value=left[left.length-1]||''}return}
   const sn=t.closest('[data-snap]');if(sn){try{restoreFrom(JSON.parse(localStorage.getItem(sn.dataset.snap)),'Restored snapshot '+sn.dataset.snap.slice(-10))}catch(_){toast('That snapshot could not be read.')}return}
   const tr=t.closest('[data-trackl]');if(tr)return trackListing(tr.dataset.trackl,'saved');
   const dm=t.closest('[data-dismiss]');
