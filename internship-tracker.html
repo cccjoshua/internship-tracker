@@ -55,6 +55,7 @@ a{color:var(--accent)}
 .nav svg{width:16px;height:16px;flex:none}
 .nav .n{margin-left:auto;font-family:var(--f-mono);font-size:11.5px;color:var(--faint)}
 .nav a[aria-current="page"] .n{color:var(--accent)}
+.nav .n.hot{color:var(--warn);font-weight:600}
 .nav .lbl-s{display:none}
 .rail-foot{margin-top:auto;font-size:12px;color:var(--faint);padding-left:8px;display:flex;flex-direction:column;gap:6px}
 .savestate{display:flex;align-items:center;gap:6px;color:var(--muted)}
@@ -131,6 +132,9 @@ textarea{width:100%;resize:vertical}
 .lmain .l1{display:flex;align-items:center;gap:6px;min-width:0}
 .lmain .l1 b{font-weight:600;white-space:nowrap}
 .lmain .l1 .role{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.lmain .xcar{flex:none;color:var(--faint);font-size:15px;line-height:1;transition:transform .15s;margin-left:2px}
+.lmain[aria-expanded="true"] .xcar{transform:rotate(90deg);color:var(--accent)}
+.lmain:hover .xcar{color:var(--accent)}
 .lmain .l2{display:flex;flex-wrap:wrap;gap:2px 10px;font-size:12px;color:var(--faint)}
 .lmain .l2 .neg{color:var(--bad);font-weight:600}.lmain .l2 .pos{color:var(--good);font-weight:600}
 .lacts{display:flex;gap:4px;align-items:center}
@@ -164,11 +168,11 @@ textarea{width:100%;resize:vertical}
 .rv{font-weight:600;color:var(--ink)}
 .add{color:var(--warn)}
 /* today strip */
-.today{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-.today a,.today div{background:var(--surface);padding:12px 16px;display:flex;flex-direction:column;gap:4px;text-decoration:none;color:var(--ink);min-width:0}
-.today a:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))}
+.today{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.today .tile{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:5px;text-decoration:none;color:var(--ink);min-width:0}
+.today a.tile:hover{background:color-mix(in srgb,var(--sunk) 50%,var(--surface))}
+.today .t{font-size:22px;font-weight:500;letter-spacing:-.01em;line-height:1.2}
 .today .k{font-size:12px;color:var(--muted);font-weight:500;text-transform:uppercase;letter-spacing:.06em}
-.today .t{font-size:15px;font-weight:600}
 .today .s{font-size:12px;color:var(--faint)}
 .today .go{color:var(--accent);font-size:12.5px;font-weight:500}
 .today .hot{color:var(--bad)}.today .soon{color:var(--warn)}
@@ -180,7 +184,8 @@ textarea{width:100%;resize:vertical}
 .queue .lsec-h{cursor:default}
 .chart .goal{stroke:var(--warn);stroke-width:1.5;stroke-dasharray:5 4}
 .chart .goal-l{fill:var(--warn);font-weight:600}
-@media (max-width:1080px){.today{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:1080px){.today{grid-template-columns:repeat(6,minmax(0,1fr))}.today .tile{grid-column:span 2}.today .tile:nth-child(n+4){grid-column:span 3}}
+@media (max-width:760px){.today{grid-template-columns:repeat(2,minmax(0,1fr))}.today .tile,.today .tile:nth-child(n+4){grid-column:auto}.today .tile:first-child{grid-column:1/-1}}
 .todo .what b{font-weight:600}
 .todo .what span{color:var(--muted);display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:13px}
 .due{font-family:var(--f-mono);font-size:12px;color:var(--muted);white-space:nowrap}
@@ -193,7 +198,8 @@ textarea{width:100%;resize:vertical}
 .fbar span{display:block;height:100%;background:var(--c);border-radius:3px}
 .frow .num{font-family:var(--f-mono);text-align:right;font-size:12.5px;color:var(--muted)}
 .frow .num b{color:var(--ink);font-weight:500}
-.chart svg{width:100%;height:auto;display:block}
+.chart svg{display:block;max-width:100%;height:auto}
+.chartbox{width:100%;min-width:0}
 .chart text{fill:var(--faint);font-family:var(--f-mono);font-size:11px}
 .chart .gl{stroke:var(--line);stroke-width:1}
 .chart .bar{fill:var(--accent);opacity:.38}
@@ -232,6 +238,12 @@ textarea{width:100%;resize:vertical}
 @media (hover:none){.card .move{display:block}}
 .col .empty{padding:14px 6px;text-align:center;border:1px dashed var(--line);border-radius:6px}
 
+/* layout toggle */
+.segctl{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+.segctl a{padding:4px 12px;font-size:12.5px;font-weight:500;color:var(--muted);text-decoration:none}
+.segctl a+a{border-left:1px solid var(--line)}
+.segctl a:hover{background:var(--sunk);color:var(--ink)}
+.segctl a[aria-current]{background:var(--accent);color:var(--accent-ink)}
 /* table */
 .tablewrap{overflow:auto;max-height:calc(100vh - 210px);background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
 thead th{position:sticky;top:0;z-index:1;background:var(--surface)}
@@ -290,7 +302,15 @@ td.vi{text-align:center}
 .ev,.sk{display:flex;flex-wrap:wrap;gap:5px 8px;align-items:center;font-size:12px;color:var(--muted)}
 .sk-l{font-weight:500;color:var(--muted);margin-right:2px}
 .chip.miss{--c:var(--muted);background:transparent;border:1px dashed var(--line)}
-.exl{margin-top:6px}
+.exl{margin-top:0}
+.info{position:relative;font-size:12.5px;color:var(--muted)}
+.info summary{cursor:pointer;list-style:none;padding:2px 6px;border-radius:4px}
+.info summary::-webkit-details-marker{display:none}
+.info summary:hover,.info[open] summary{background:var(--sunk);color:var(--ink)}
+.info-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:5;width:min(380px,calc(100vw - 32px));background:var(--surface);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.info-pop p{margin:0;display:flex;gap:8px;align-items:baseline;color:var(--ink)}
+.info-pop .act{flex:none}
+.info-pop p.sub{display:block;color:var(--muted);font-size:12px}
 .inbox-head .sub{font-size:12px}
 
 /* prefs */
@@ -313,6 +333,10 @@ td.vi{text-align:center}
   padding-top:max(20px,env(safe-area-inset-top,0px));padding-bottom:max(24px,env(safe-area-inset-bottom,0px));padding-left:22px;padding-right:max(22px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:16px}
 .drawer h2{margin:0;font-size:18px;letter-spacing:-.01em}
 .dgrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.dsec{display:flex;flex-direction:column;gap:10px;padding-top:14px;border-top:1px solid var(--line)}
+.dsec h3{margin:0;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.dsec.more summary{cursor:pointer;font-size:13px;font-weight:500;color:var(--muted)}
+.dsec.more summary:hover{color:var(--ink)}
 .dgrid .full{grid-column:1/-1}
 .dgrid input,.dgrid select,.dgrid textarea{width:100%}
 .dhead{display:flex;align-items:flex-start;gap:10px}
@@ -359,9 +383,8 @@ td.vi{text-align:center}
   <aside class="rail">
     <div class="brand"><b>Internship Tracker</b><span>Summer 2027 season</span></div>
     <nav class="nav" aria-label="Views">
-      <a href="#dashboard" data-nav="dashboard"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Dashboard</span><span class="lbl-s">Home</span></a>
-      <a href="#board" data-nav="board"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2.5" width="3.4" height="11" rx="1"/><rect x="6.3" y="2.5" width="3.4" height="7" rx="1"/><rect x="10.6" y="2.5" width="3.4" height="9" rx="1"/></svg><span class="lbl">Board</span><span class="lbl-s">Board</span><span class="n" id="nBoard"></span></a>
-      <a href="#table" data-nav="table"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h12"/></svg><span class="lbl">Applications</span><span class="lbl-s">List</span><span class="n" id="nTable"></span></a>
+      <a href="#dashboard" data-nav="dashboard"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Dashboard</span><span class="lbl-s">Home</span><span class="n" id="nDash"></span></a>
+      <a href="#board" data-nav="apps" id="navApps"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2.5" width="3.4" height="11" rx="1"/><rect x="6.3" y="2.5" width="3.4" height="7" rx="1"/><rect x="10.6" y="2.5" width="3.4" height="9" rx="1"/></svg><span class="lbl">Applications</span><span class="lbl-s">Apps</span><span class="n" id="nApps"></span></a>
       <a href="#inbox" data-nav="inbox"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 9.5 4 3h8l2 6.5V13H2z"/><path d="M2 9.5h3.5l1 1.5h3l1-1.5H14"/></svg><span class="lbl">New listings</span><span class="lbl-s">Listings</span><span class="n" id="nInbox"></span></a>
       <a href="#prefs" data-nav="prefs"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M3 8h10M3 12h10"/><circle cx="6" cy="4" r="1.6" fill="var(--surface)"/><circle cx="10.5" cy="8" r="1.6" fill="var(--surface)"/><circle cx="5" cy="12" r="1.6" fill="var(--surface)"/></svg><span class="lbl">Preferences</span><span class="lbl-s">Prefs</span></a>
     </nav>
@@ -584,26 +607,40 @@ const link=(u,txt,cls='btn sm ghost')=>{u=safeUrl(u);return u?`<a class="${cls}"
 
 /* ---------- views ---------- */
 const VIEWS={dashboard:['Dashboard',()=>TODAY.toLocaleDateString('en-US',{weekday:'long',month:'long',day:'numeric'})],
-  board:['Board',()=>'Drag a card, or focus it and press Shift + arrow keys'],
+  board:['Applications',()=>'Drag a card between stages, or focus it and press Shift + arrow keys'],
   table:['Applications',()=>'Select a company to edit; select a column to sort'],
   inbox:['New listings',()=>'Ranked by your scoring rules'],
   prefs:['Preferences',()=>'Scoring, reminders and your data']};
 const R={};
 
+function attentionItems(){const items=[];
+  for(const a of S.apps){if(CLOSED.includes(a.status))continue;
+    if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n!==null&&n<=7)items.push({a,kind:n<0?'Missed?':'Deadline',n,text:(n<0?'Deadline passed ':'Apply by ')+fmt(a.deadline),missed:n<0})}
+    if(a.nextText&&a.nextDate){const n=daysFrom(a.nextDate);if(n!==null&&n<=7)items.push({a,kind:'Next step',n,text:a.nextText})}}
+  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${quietDays(a)} days`,fu:true});
+  for(const a of staleApps())items.push({a,kind:'No reply',n:0.5,text:`Silent for ${quietDays(a)} days`,stale:true});
+  return items.sort((x,y)=>x.n-y.n)}
+function applyNowCount(){return S.listings.filter(l=>!findDup(l.company,l.role,l.url)&&!(S.settings.hideNoSponsor&&l.sponsor==='no')).map(l=>Object.assign({},l,scoreParts(l))).filter(l=>action(l)[0]==='now').length}
+/* Drawn at the box's real pixel width (1 unit = 1px), so labels stay 11px on any screen. */
+function weekSvg(width){const{wk,goalW}=UI.week||{wk:[],goalW:0};if(!wk.length)return'';
+  const mx=Math.max(goalW,...wk.map(w=>w.c)),top=mx<=4?4:Math.ceil(mx/2)*2;
+  const W=Math.max(280,Math.round(width)),H=200,L=28,B=24,T=18,Rp=6,pw=W-L-Rp,ph=H-B-T,bw=pw/8,y=v=>T+ph-(v/top)*ph,narrow=bw<62;
+  let svg=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Applications submitted per week over the last 8 weeks: ${wk.map(w=>w.c).join(', ')}">`;
+  for(const g of [0,top/2,top])svg+=`<line class="gl" x1="${L}" x2="${W-Rp}" y1="${y(g)}" y2="${y(g)}"/><text x="${L-8}" y="${y(g)+4}" text-anchor="end">${g}</text>`;
+  wk.forEach((w,i)=>{const bwid=Math.min(48,bw*.56),x=L+bw*i+(bw-bwid)/2,h=ph*(w.c/top);
+    svg+=`<rect class="bar${i===7?' now':''}" x="${x}" y="${T+ph-h}" width="${bwid}" height="${h}" rx="2"/>`;
+    if(w.c)svg+=`<text class="val" x="${x+bwid/2}" y="${T+ph-h-5}" text-anchor="middle">${w.c}</text>`;
+    if(bw>=44||i%2===1)svg+=`<text x="${x+bwid/2}" y="${H-6}" text-anchor="middle">${i===7?(narrow?'Now':'This week'):narrow?`${w.d.getMonth()+1}/${w.d.getDate()}`:w.d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</text>`});
+  if(goalW)svg+=`<line class="goal" x1="${L}" x2="${W-Rp}" y1="${y(goalW)}" y2="${y(goalW)}"/><text class="goal-l" x="${W-Rp}" y="${y(goalW)-6}" text-anchor="end">Goal ${goalW}/week</text>`;
+  return svg+'</svg>'}
+function fitChart(){const box=$('#weekChart');if(box&&box.clientWidth)box.innerHTML=weekSvg(box.clientWidth)}
 R.dashboard=()=>{
   const A=S.apps,appliedA=A.filter(a=>reached(a,'applied')),applied=appliedA.length;
   const replied=appliedA.filter(a=>['oa','interview','offer','rejected'].some(s=>reached(a,s))).length;
   const intv=A.filter(a=>reached(a,'interview')).length,offers=A.filter(a=>reached(a,'offer')).length;
   const toApply=A.filter(a=>a.status==='saved').length,active=A.filter(a=>['applied','oa','interview'].includes(a.status)).length;
   const pct=(n,d)=>d?Math.round(n/d*100)+'%':'—';
-  const kpi=(l,v,h,tip)=>`<div class="kpi"><span class="l">${tip?`<abbr title="${esc(tip)}">${l}</abbr>`:l}</span><span class="v">${v}</span><span class="h">${h}</span></div>`;
-  const items=[];
-  for(const a of A){if(CLOSED.includes(a.status))continue;
-    if(a.status==='saved'&&a.deadline){const n=daysFrom(a.deadline);if(n!==null&&n<=7)items.push({a,kind:n<0?'Missed?':'Deadline',n,text:(n<0?'Deadline passed ':'Apply by ')+fmt(a.deadline),missed:n<0})}
-    if(a.nextText&&a.nextDate){const n=daysFrom(a.nextDate);if(n!==null&&n<=7)items.push({a,kind:'Next step',n,text:a.nextText})}}
-  for(const a of followUps())items.push({a,kind:'Follow up',n:-0.5,text:`No reply for ${quietDays(a)} days`,fu:true});
-  for(const a of staleApps())items.push({a,kind:'No reply',n:0.5,text:`Silent for ${quietDays(a)} days`,stale:true});
-  items.sort((x,y)=>x.n-y.n);
+  const items=attentionItems();
   const urg=i=>i.missed||(i.n<0&&!i.fu)?'u-hot':(i.fu||i.n<=3)?'u-soon':'';
   const acts=i=>i.fu?`<span class="mini"><button class="btn sm" type="button" data-fu="done" data-id="${i.a.id}">Followed up</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Snooze 7d</button></span>`
     :i.missed?`<span class="mini"><span class="due hot">${dueText(i.n)}</span><button class="btn sm" type="button" data-missed="${i.a.id}">Mark missed</button></span>`
@@ -615,7 +652,7 @@ R.dashboard=()=>{
   const topS=+S.settings.topScore||75;
   const best=S.listings.filter(l=>!findDup(l.company,l.role,l.url)&&!(S.settings.hideNoSponsor&&l.sponsor==='no')).map(l=>Object.assign({},l,scoreParts(l))).filter(l=>l.total>=topS).sort((a,b)=>b.total-a.total);
   const picks=queueList();
-  const topPanel=picks.length?`<ul class="tmatch">${picks.slice(0,5).map(l=>`<li><span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · Resume: ${esc(resumeFor(l))}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
+  const topPanel=picks.length?`<ul class="tmatch">${picks.slice(0,5).map(l=>`<li><span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span><a class="what" href="#inbox" data-goto="${l.id}"><b>${esc(l.company)}</b><span>${l.isNew?'<span class="chip new">New</span> ':''}${esc(l.role)} · Resume: ${esc(resumeFor(l))}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${l.id}" title="Save to Applications">Save</button><button class="btn sm" type="button" data-appliedl="${l.id}">Applied</button></span></li>`).join('')}</ul>
     <div class="panel-foot"><a class="btn sm ghost" href="#inbox">Open today’s queue · ${best.length} top matches in all →</a></div>`:`<p class="empty">No “Apply now” picks right now. New listings arrive with each refresh; “Tailor first” ones are in New listings.</p>`;
   const fst=[['applied','Applied'],['oa','Assessment'],['interview','Interview'],['offer','Offer']];
   const fc=fst.map(([s])=>A.filter(a=>reached(a,s)).length),base=Math.max(fc[0],1);
@@ -624,16 +661,7 @@ R.dashboard=()=>{
   const wk=Array.from({length:8},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+7*i);return{d,c:0}});
   for(const a of A){const h=a.history.find(h=>h.s==='applied');const d=parse(h?h.d:a.applied);if(!d)continue;const i=Math.floor((d-start)/(7*864e5));if(i>=0&&i<8)wk[i].c++}
   const goalW=Math.max(0,+S.settings.weeklyGoal||0);
-  const mx=Math.max(goalW,...wk.map(w=>w.c)),top=mx<=4?4:Math.ceil(mx/2)*2;
-  const W=880,H=190,L=30,B=24,T=16,Rp=6,pw=W-L-Rp,ph=H-B-T,bw=pw/8,y=v=>T+ph-(v/top)*ph;
-  let svg=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Applications submitted per week over the last 8 weeks: ${wk.map(w=>w.c).join(', ')}">`;
-  for(const g of [0,top/2,top])svg+=`<line class="gl" x1="${L}" x2="${W-Rp}" y1="${y(g)}" y2="${y(g)}"/><text x="${L-8}" y="${y(g)+4}" text-anchor="end">${g}</text>`;
-  wk.forEach((w,i)=>{const bwid=Math.min(56,bw*.56),x=L+bw*i+(bw-bwid)/2,h=ph*(w.c/top);
-    svg+=`<rect class="bar${i===7?' now':''}" x="${x}" y="${T+ph-h}" width="${bwid}" height="${h}" rx="2"/>`;
-    if(w.c)svg+=`<text class="val" x="${x+bwid/2}" y="${T+ph-h-5}" text-anchor="middle">${w.c}</text>`;
-    svg+=`<text x="${x+bwid/2}" y="${H-6}" text-anchor="middle">${i===7?'This week':w.d.toLocaleDateString('en-US',{month:'short',day:'numeric'})}</text>`});
-  if(goalW)svg+=`<line class="goal" x1="${L}" x2="${W-Rp}" y1="${y(goalW)}" y2="${y(goalW)}"/><text class="goal-l" x="${W-Rp}" y="${y(goalW)-6}" text-anchor="end">Goal ${goalW}/week</text>`;
-  svg+='</svg>';
+  UI.week={wk,goalW};const svg=weekSvg(880);
   const segs=[['saved','Saved'],['active','In progress'],['closed','Closed']];
   const tcol={saved:'var(--line-strong)',active:'var(--st-applied)',closed:'var(--st-rejected)'};
   const tmax=Math.max(1,...TRACKS.map(t=>A.filter(a=>a.track===t).length));
@@ -641,25 +669,26 @@ R.dashboard=()=>{
     return `<div class="trow" role="img" aria-label="${t}: ${c.saved} saved, ${c.active} in progress, ${c.closed} closed"><b>${t}</b><div class="seg" style="width:${Math.max(at.length?8:0,at.length/tmax*100)}%">${segs.map(([k])=>c[k]?`<span style="flex:${c[k]};background:${tcol[k]}"></span>`:'').join('')}</div><span class="num">${at.length}</span></div>`}).join('');
   const dG=+S.settings.dailyGoal||3,dDone=appliedOn(iso(TODAY)),Q=queueList();
   const wDone=appliedThisWeek(),wG=goalW||10;
-  const nFollow=followUps().length+staleApps().length;
-  const dueItems=items.filter(i=>!i.fu&&!i.stale&&i.n<=3),overdue=dueItems.filter(i=>i.n<0).length;
+  const due3=items.filter(i=>i.n<=3),overdue=due3.filter(i=>i.n<0&&!i.fu).length;
   const sc=(S.fetch&&S.fetch.savedClosed)||[];
+  const tile=(href,k,t,cls,sub,bar,tip)=>`<${href?`a href="${href}"`:'div'} class="tile"${tip?` title="${esc(tip)}"`:''}><span class="k">${k}</span><span class="t ${cls||''}">${t}</span>${bar||''}<span class="s">${sub}</span></${href?'a':'div'}>`;
+  const prog=(n,g)=>`<div class="prog ${n>=g?'done':''}"><span style="width:${Math.min(100,n/g*100)}%"></span></div>`;
   const today=`<div class="today" role="group" aria-label="Today">
-    <a href="#inbox"><span class="k">Apply today</span><span class="t mono">${dDone}/${dG}</span><div class="prog ${dDone>=dG?'done':''}" style="padding:0"><span style="width:${Math.min(100,dDone/dG*100)}%"></span></div><span class="go">${dDone>=dG?'Daily goal met · keep going →':`${Q.length} picks in today’s queue →`}</span></a>
-    <div><span class="k">Follow up</span><span class="t ${nFollow?'soon':''}">${nFollow||'None'}</span><span class="s">${nFollow?'Listed under Needs attention':'No quiet applications yet'}</span></div>
-    <div><span class="k">Due in 3 days</span><span class="t ${overdue?'hot':dueItems.length?'soon':''}">${dueItems.length||'None'}</span><span class="s">${overdue?`<span class="due hot">${overdue} overdue</span>`:'Deadlines and next steps'}</span></div>
-    <div><span class="k">This week</span><span class="t mono">${wDone}/${wG}</span><div class="prog ${wDone>=wG?'done':''}" style="padding:0"><span style="width:${Math.min(100,wDone/wG*100)}%"></span></div><span class="s">${wDone>=wG?'Weekly goal met':`${wG-wDone} more to reach your weekly goal`}</span></div>
+    ${tile('#inbox','Applied today',`<span class="mono">${dDone}/${dG}</span>`,'',dDone>=dG?'Daily goal met · keep going →':`<span class="go">${Q.length} picks in today’s queue →</span>`,prog(dDone,dG),'Applications you marked Applied today, against your daily goal.')}
+    ${tile('','This week',`<span class="mono">${wDone}/${wG}</span>`,'',wDone>=wG?'Weekly goal met':`${wG-wDone} more to reach your goal${toApply?` · ${toApply} saved to apply`:''}`,prog(wDone,wG),'Applications submitted since Monday, against your weekly goal.')}
+    ${tile('','Needs attention',due3.length||'None',overdue?'hot':due3.length?'soon':'',overdue?`<span class="due hot">${overdue} overdue</span>`:due3.length?'Follow-ups and items due within 3 days':'Nothing due within 3 days','','Follow-ups that are due, plus deadlines and next steps in the next 3 days.')}
+    ${tile('','Response rate',`<span class="mono">${pct(replied,applied)}</span>`,'',`${replied} of ${applied} applied replied`,'','Share of applications that got any reply: an assessment, interview, offer or rejection.')}
+    ${tile('','Interview rate',`<span class="mono">${pct(intv,applied)}</span>`,'',`${intv} interview${intv===1?'':'s'} · ${offers} offer${offers===1?'':'s'}`,'','Share of applications that reached an interview.')}
   </div>${sc.length?`<div class="notice">Posting closed since the last refresh: <b>${sc.map(esc).join(', ')}</b> moved from Saved to Closed.</div>`:''}`;
   const showTrack=replied>=5;
   return `<div style="display:flex;flex-direction:column;gap:16px">
   ${today}
-  <div class="kpis">${kpi('To apply',toApply,toApply?'saved, not submitted':`${best.length} top matches waiting`,'Applications you saved but have not submitted yet.')}${kpi('Applied',applied,active+' still active','Every application that reached the Applied stage, including ones later closed.')}${kpi('Response rate',pct(replied,applied),replied+' replies incl. rejections','Share of applications that got any reply: an assessment, interview, offer or rejection.')}${kpi('Interview rate',pct(intv,applied),intv+' reached interview','Share of applications that reached an interview.')}${kpi('Offers',offers,pct(offers,applied)+' of applications','Applications that reached an offer.')}</div>
   <div class="dash">
     <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>
     <section class="panel a-top"><h2>Today’s queue <small>“Apply now” picks: score ${topS}+, at most 1 missing skill</small></h2>${topPanel}</section>
     <section class="panel a-pipe" ${showTrack?'':'style="grid-column:1/-1"'}><h2>Pipeline <small>applications that reached each stage</small></h2><div class="funnel">${funnel}</div>${showTrack?'':`<p class="empty">A breakdown by track appears once you have 5 or more replies (now ${replied}).</p>`}</section>
     ${showTrack?`<section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k,l])=>`<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>`:''}
-    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks · dashed line is your weekly goal</small></h2>${svg}</section>
+    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks · dashed line is your weekly goal</small></h2><div id="weekChart" class="chartbox">${svg}</div></section>
   </div></div>`;
 };
 
@@ -683,6 +712,7 @@ function card(a){
     <div class="meta">${meta}</div>
     <select class="move" data-status-for="${a.id}" aria-label="Move ${esc(a.company)} to stage">${opts(STAGES,a.status)}</select></li>`;
 }
+const layoutCtl=v=>`<div class="segctl" role="group" aria-label="Layout"><a href="#board" ${v==='board'?'aria-current="true"':''}>Board</a><a href="#table" ${v==='table'?'aria-current="true"':''}>List</a></div>`;
 const COL_LIMIT=6;
 function colSort(s){
   if(s==='saved')return(x,y)=>(x.deadline||'9').localeCompare(y.deadline||'9')||y.priority-x.priority;
@@ -690,7 +720,8 @@ function colSort(s){
   if(s==='closed')return(x,y)=>(lastDate(y)||'').localeCompare(lastDate(x)||'');
   return(x,y)=>(x.nextDate||'9').localeCompare(y.nextDate||'9')||y.priority-x.priority}
 R.board=()=>{const A=filtered();const cols=['saved','applied','oa','interview','offer','closed'];
-  return `<div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?CLOSED.includes(a.status):a.status===s).sort(colSort(s));
+  const nA=A.filter(a=>!CLOSED.includes(a.status)).length;
+  return `<div class="toolbar" style="margin-bottom:10px"><span class="grow">${nA} active application${nA===1?'':'s'}</span>${layoutCtl('board')}</div><div class="board">${cols.map(s=>{const items=A.filter(a=>s==='closed'?CLOSED.includes(a.status):a.status===s).sort(colSort(s));
     const name=s==='closed'?'Closed':LABEL[s];
     if(s==='closed'&&!S.ui.closedOpen)return `<section class="col collapsed s-closed" data-drop="closed" aria-label="Closed, ${items.length} applications, collapsed"><h2><span class="dot"></span>Closed<span class="count">${items.length}</span></h2><button class="colbtn" type="button" data-action="closed-toggle">Show</button></section>`;
     const lim=UI.limits['col-'+s]||COL_LIMIT,vis=items.slice(0,lim);
@@ -717,7 +748,7 @@ R.table=()=>{const{key,dir}=S.ui.sort;
   const A0=(S.ui.showClosed?all:all.filter(a=>!CLOSED.includes(a.status))).sort((x,y)=>{const a=val(x),b=val(y);if(a===''&&b!=='')return 1;if(b===''&&a!=='')return -1;return(a>b?1:a<b?-1:0)*dir});
   const A=A0.slice(0,UI.tableLimit);
   const bar=`<div class="toolbar" style="margin-bottom:10px"><span class="grow">${A0.length} application${A0.length===1?'':'s'}${S.ui.showClosed?'':` · ${nClosed} closed hidden`} · sorted by ${esc((COLS.find(c=>c[0]===key)||COLS[3])[1].toLowerCase())}</span>
-    <label class="switch"><input type="checkbox" id="showClosed" ${S.ui.showClosed?'checked':''}> Show closed</label></div>`;
+    <label class="switch"><input type="checkbox" id="showClosed" ${S.ui.showClosed?'checked':''}> Show closed</label>${layoutCtl('table')}</div>`;
   if(!A.length)return bar+`<div class="panel"><p class="empty">No applications match. Clear the search or filters, turn on “Show closed”, or press N to add one.</p></div>`;
   const applied=a=>{if(!a.applied)return'<span class="sr-only">Not applied</span>—';const n=-daysFrom(a.applied);return `${fmt(a.applied)}<span class="na-s" style="display:block">${n<=0?'today':n+'d ago'}</span>`};
   return bar+`<div class="tablewrap"><table><thead><tr>${COLS.map(([k,l])=>`<th scope="col" aria-sort="${key===k?(dir>0?'ascending':'descending'):'none'}"><button type="button" data-sort="${k}">${l} ${key===k?`<span class="arr" aria-hidden="true">${dir>0?'↑':'↓'}</span>`:''}</button></th>`).join('')}</tr></thead><tbody>
@@ -753,8 +784,8 @@ R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
     <select id="lsort" aria-label="Sort listings"><option value="score"${S.ui.lsort!=='newest'?' selected':''}>Best match first</option><option value="newest"${S.ui.lsort==='newest'?' selected':''}>Newest first</option></select>
     <label class="switch"><input type="checkbox" id="hideNo" ${S.settings.hideNoSponsor?'checked':''}> Hide no-sponsorship</label>
     <button class="btn sm" type="button" data-action="refresh" ${refreshing?'disabled':''}>${refreshing?'Refreshing…':'Refresh now'}</button></div>
-    ${ex.length?`<details class="why exl"><summary>Filtered out this refresh: ${ex.reduce((s,e)=>s+e[1],0).toLocaleString('en-US')}</summary><div class="parts">${ex.map(([k,n])=>`<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}</div></details>`:''}`;
-  if(!L.length)return head+`<div class="panel" style="margin-top:12px"><p class="empty">No listings match. Refresh now, clear the filters, or widen the window in Preferences.</p></div>`;
+    <div class="toolbar" style="margin-top:6px;align-items:flex-start">${ex.length?`<details class="why exl"><summary>Not shown this refresh: ${ex.reduce((s,e)=>s+e[1],0).toLocaleString('en-US')}</summary><div class="parts">${ex.map(([k,n])=>`<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}</div></details>`:''}<span class="grow"></span>LEGEND_SLOT</div>`;
+  if(!L.length)return head.replace('LEGEND_SLOT','')+`<div class="panel" style="margin-top:12px"><p class="empty">No listings match. Refresh now, clear the filters, or widen the window in Preferences.</p></div>`;
   if(S.ui.lsort==='newest')L.sort((a,b)=>(!!a.dup-!!b.dup)||(b.posted||'').localeCompare(a.posted||'')||b.total-a.total);
   const topS=+S.settings.topScore||75,minS=+S.settings.minScore||55,open=S.ui.sec||{};
   const filtering=!!(S.ui.q||S.ui.track||S.ui.sponsor);
@@ -769,8 +800,8 @@ R.inbox=()=>{const t=(S.ui.q||'').toLowerCase().trim();
     ['more','More matches',`score ${minS}–${topS-1}`,rest.filter(l=>!l.dup&&!l.isNew&&l.total>=minS&&l.total<topS),false],
     ['low','Lower matches',`below ${minS}`,rest.filter(l=>!l.dup&&l.total<minS),false],
     ['dup','Already tracking','',rest.filter(l=>l.dup),false]].filter(g=>g[3].length);
-  const legend=`<div class="toolbar" style="margin-top:10px"><span class="act now">Apply now</span><span>score ${topS}+ and at most 1 missing skill</span><span class="act tailor">Tailor first</span><span>add the missing skills you truly have, then apply</span><span class="act low">Low priority</span><span>below ${minS} or no sponsorship</span></div>`;
-  return head+legend+`<div style="margin-top:12px">${queue}${Q.length?'<div style="height:12px"></div>':''}${groups.map(([k,title,hint,items,def])=>{
+  const legend=`<details class="info"><summary><span aria-hidden="true">ⓘ</span> What the labels mean</summary><div class="info-pop"><p><span class="act now">Apply now</span> score ${topS}+ and at most 1 missing skill</p><p><span class="act tailor">Tailor first</span> add the missing skills you truly have, then apply</p><p><span class="act low">Low priority</span> below ${minS} or no sponsorship</p><p class="sub">Score weights: role fit ${S.settings.weights.fit}, skills ${S.settings.weights.skills}, sponsorship ${S.settings.weights.sponsor}, recency ${S.settings.weights.recency}, degree ${S.settings.weights.degree}, location ${S.settings.weights.location} (change them in Preferences). Expand a listing to see its breakdown.</p></div></details>`;
+  return head.replace('LEGEND_SLOT',legend)+`<div style="margin-top:12px">${queue}${Q.length?'<div style="height:12px"></div>':''}${groups.map(([k,title,hint,items,def])=>{
     const isOpen=open[k]!==undefined?open[k]:def,lim=UI.limits['sec-'+k]||25;
     return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${k==='new'?'<span class="chip new">New</span>':''}${esc(title)} <span class="cnt">${items.length}</span>${hint?`<span class="hint">${esc(hint)}</span>`:''}<span class="car" aria-hidden="true">›</span></button>
       ${isOpen?items.slice(0,lim).map(lrow).join('')+(items.length>lim?`<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(25,items.length-lim)} more of ${items.length-lim}</button>`:''):''}</section>`}).join('')}</div>`};
@@ -785,10 +816,10 @@ function lrow(l){
   return `<article class="lrow" aria-label="${esc(l.company+', '+l.role+', score '+l.total)}">
     <span class="ring sm ${band(l.total)}" style="--p:${l.total}" title="Match score ${l.total} of 100"><span>${l.total}</span></span>
     <button class="lmain" type="button" data-expand="${l.id}" aria-expanded="${ex}">
-      <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span></span>
+      <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span><span class="xcar" aria-hidden="true">›</span><span class="sr-only">${ex?'Hide':'Show'} score details</span></span>
       ${todo}<span class="l2">${l.t?`<span>${esc(l.t)}</span>`:''}<span>${esc(loc||'')}</span>${l.posted?`<span>${ago(l.posted)}</span>`:''}${dlTag(l.deadline)}${h?`<span>${h}</span>`:''}${n?`<span>Skills ${m}/${n}</span>`:''}${flags}${l.dup?`<span class="pos">Tracking · ${LABEL[l.dup.status]}</span>`:''}</span>
     </button>
-    <span class="lacts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}" title="Save to your board">Track</button><button class="btn sm" type="button" data-appliedl="${l.id}" title="Add to your board as applied today">Applied</button>`}${link(l.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-dismiss="${l.id}" aria-label="Dismiss ${esc(l.company)}" title="Dismiss">✕</button></span>
+    <span class="lacts">${l.dup?`<button class="btn sm" type="button" data-open="${l.dup.id}">Open</button>`:`<button class="btn sm primary" type="button" data-trackl="${l.id}" title="Save to Applications (Saved)">Save</button><button class="btn sm" type="button" data-appliedl="${l.id}" title="Add to Applications as applied today">Applied</button>`}${link(l.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-dismiss="${l.id}" aria-label="Dismiss ${esc(l.company)}" title="Dismiss">✕</button></span>
     ${ex?`<div class="ldetail">${evidence(l)}${skillLine(l)}<div class="why"><div class="parts">${l.parts.map(p=>`<span>${WEIGHT_SHORT[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}${l.pen?`<span>No-sponsorship penalty <b>−${l.pen}</b></span>`:''}<span>Degree ${esc(l.degree||'—')}</span><span>Posted ${fmt(l.posted)}</span>${l.deadline?`<span>Deadline <b>${fmt(l.deadline)}</b></span>`:`<span>No deadline stated</span>`}</div></div></div>`:''}
   </article>`}
 
@@ -815,10 +846,12 @@ R.prefs=()=>{const st=S.settings,snaps=snapshots();
     <p class="empty">Name the base resume you use for each track, e.g. its file name. Keep one base resume per track and tailor it per posting.</p></section>
   <section class="panel"><h2>Your data <small>${S.apps.length} applications · ${S.listings.length} listings</small></h2>
     <p class="empty">${where}</p>
-    <label class="field"><span>Import or restore</span><textarea id="io" rows="6" placeholder="Paste a JSON export, or a CSV with columns like Company, Role, Status, Location, Link, Deadline"></textarea>
-    <span class="hint">Import adds new rows and skips duplicates (same company and role, or same link). Restore replaces everything with a JSON export.</span></label>
-    <div class="row"><button class="btn" type="button" data-action="export">Export JSON</button><button class="btn" type="button" data-action="import">Import</button><button class="btn" type="button" data-action="restore">Restore</button>
-      <span style="margin-left:auto"></span><button class="btn ghost" type="button" data-action="load-samples">Load example data</button><button class="btn ghost danger" type="button" data-action="clear-all">Clear all data</button></div>
+    <div class="row"><button class="btn" type="button" data-action="download">Download backup</button><button class="btn" type="button" data-action="pick-import">Import file…</button><button class="btn" type="button" data-action="pick-restore">Restore from file…</button></div>
+    <p class="hint" style="margin:0;font-size:12px;color:var(--faint)">Download saves everything as a .json file. Import adds rows from a .json backup or a .csv (columns like Company, Role, Status, Location, Link, Deadline) and skips duplicates. Restore replaces everything with a .json backup; you can undo it.</p>
+    <input type="file" id="fileImport" accept=".json,.csv,application/json,text/csv" hidden><input type="file" id="fileRestore" accept=".json,application/json" hidden>
+    <details class="why"><summary>Paste text instead</summary><div class="field" style="margin-top:8px"><textarea id="io" rows="5" aria-label="Paste JSON or CSV" placeholder="Paste a JSON backup, or CSV with a header row"></textarea>
+      <div class="row"><button class="btn sm" type="button" data-action="import">Import pasted</button><button class="btn sm" type="button" data-action="restore">Restore pasted</button><button class="btn sm ghost" type="button" data-action="export">Copy current data</button></div></div></details>
+    <div class="row" style="border-top:1px solid var(--line);padding-top:12px">${S.apps.some(a=>!a.sample)?'':'<button class="btn ghost" type="button" data-action="load-samples">Load example data</button>'}<span style="margin-left:auto"></span><button class="btn ghost danger" type="button" data-action="clear-all">Clear all data</button></div>
     ${S.dismissed.length?`<div class="row"><span class="empty">${S.dismissed.length} dismissed listing${S.dismissed.length===1?'':'s'} stay hidden when the feed refreshes.</span><button class="btn sm ghost" type="button" data-action="undismiss">Show them again</button></div>`:''}
     ${Store.mode==='file'?`<div class="field"><span>Backups on your computer</span><ul class="snaps" id="bkList"><li class="empty">Loading…</li></ul></div>`
       :snaps.length?`<div class="field"><span>Daily snapshots in this browser</span><ul class="snaps">${snaps.map(k=>`<li><span class="mono">${k.slice(-10)}</span><button class="btn sm ghost" type="button" data-snap="${esc(k)}">Restore</button></li>`).join('')}</ul></div>`:''}
@@ -831,16 +864,21 @@ async function loadBackups(){const el=$('#bkList');if(!el)return;
 /* ---------- render ---------- */
 function route(){const h=location.hash.slice(1);return VIEWS[h]?h:'dashboard'}
 function render(){const v=route();
-  document.querySelectorAll('[data-nav]').forEach(a=>a.dataset.nav===v?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current'));
+  const navKey=(v==='board'||v==='table')?'apps':v;if(navKey==='apps'&&S.ui.layout!==v){S.ui.layout=v;save()}
+  document.querySelectorAll('[data-nav]').forEach(a=>a.dataset.nav===navKey?a.setAttribute('aria-current','page'):a.removeAttribute('aria-current'));
+  $('#navApps').setAttribute('href','#'+(S.ui.layout==='table'?'table':'board'));
   $('#viewTitle').textContent=VIEWS[v][0];
   $('#viewSub').textContent=(filtersOn()&&(v==='board'||v==='table'))?`Showing ${filtered().length} of ${S.apps.length} applications · filters on`:VIEWS[v][1]();
   $('#tools').hidden=!['board','table','inbox'].includes(v);
   $('#clearF').hidden=!filtersOn();
-  $('#nBoard').textContent=S.apps.filter(a=>!CLOSED.includes(a.status)).length;
-  $('#nTable').textContent=S.apps.length;$('#nInbox').textContent=S.listings.length||'';
+  /* Badges count only what needs you: items due soon, active applications, and "Apply now" picks. */
+  const nAtt=attentionItems().filter(i=>i.n<=3).length,nAct=S.apps.filter(a=>!CLOSED.includes(a.status)).length,nNow=applyNowCount();
+  const badge=(id,n,tip)=>{const el=$(id);el.textContent=n||'';el.title=n?tip:'';el.classList.toggle('hot',id==='#nDash'&&n>0)};
+  badge('#nDash',nAtt,`${nAtt} item${nAtt===1?'':'s'} due within 3 days or waiting for a follow-up`);badge('#nApps',nAct,`${nAct} active application${nAct===1?'':'s'}`);badge('#nInbox',nNow,`${nNow} “Apply now” pick${nNow===1?'':'s'}`);
   $('#banner').hidden=!(S.apps.some(a=>a.sample)||S.listings.some(l=>l.sample));
   $('#view').innerHTML=R[v]();
   if(v==='prefs'&&Store.mode==='file')loadBackups();
+  if(v==='dashboard')fitChart();
 }
 function focusCard(id){const el=document.querySelector(`.card[data-id="${CSS.escape(id)}"]`);if(el)el.focus()}
 function toast(msg,undoable){const t=$('#toast');t.innerHTML=`<span>${esc(msg)}</span>${undoable?'<button type="button" class="tbtn" data-action="undo">Undo</button>':''}`;
@@ -856,22 +894,26 @@ function openDrawer(id){
   $('#drawer').innerHTML=`<form id="appForm" style="display:contents" novalidate>
     <div class="dhead"><div><h2 id="dTitle">${id?esc(a.company):'New application'}</h2>${id?`<div class="sub">${esc(a.role)}</div>`:''}</div><button class="btn ghost sm" type="button" data-action="close">Close</button></div>
     <div id="formErr" class="err" hidden role="alert"></div>
-    <div class="dgrid">
+    <section class="dsec" aria-labelledby="ds1"><h3 id="ds1">Basics</h3><div class="dgrid">
       ${f('company','Company *','text','','required autocomplete="off"')}${f('role','Role *','text','','required autocomplete="off"')}
       <label class="field"><span>Status</span><select id="f-status">${opts(STAGES,a.status)}</select></label>
       <label class="field" id="stdateWrap" hidden><span>Date of this change</span><input id="f-stdate" type="date" value="${iso(TODAY)}"></label>
       <label class="field"><span>Track</span><select id="f-track">${opts([['','—'],...TRACKS.map(t=>[t,t+' · '+TRACK_NAME[t]])],a.track)}</select></label>
       <label class="field"><span>Priority</span><select id="f-priority">${opts([['3','High'],['2','Medium'],['1','Low']],String(a.priority))}</select></label>
       <label class="field"><span>Visa sponsorship</span><select id="f-sponsor">${opts([['unknown','Unknown'],['yes','Sponsors'],['no','Does not sponsor']],a.sponsor)}</select></label>
-      ${f('location','Location')}
+      ${f('location','Location','text','full')}
       ${f('url','Posting link','url','full','placeholder="https://"')}
-      ${f('deadline','Deadline','date')}${f('applied','Date applied','date')}
-      ${f('nextText','Next step')}${f('nextDate','Next step date','date')}
-      ${f('followedUp','Last followed up','date')}${f('snoozeUntil','Snooze follow-up until','date')}
-      ${f('resume','Resume version','text','full')}
-      ${f('contact','Contact / referral','text','full')}
-      <label class="field full"><span>Notes</span><textarea id="f-notes" rows="4">${esc(a.notes)}</textarea></label>
-    </div>
+      ${f('resume','Resume version','text','full',`placeholder="${esc(resumeFor(a))} (base)"`)}
+    </div></section>
+    <section class="dsec" aria-labelledby="ds2"><h3 id="ds2">Dates and next step</h3><div class="dgrid">
+      ${f('deadline','Application deadline','date')}${f('applied','Date applied','date')}
+      ${f('nextText','Next step','text','','placeholder="e.g. Online assessment"')}${f('nextDate','Next step date','date')}
+      ${f('followedUp','Last followed up','date')}
+    </div></section>
+    <label class="field"><span>Notes</span><textarea id="f-notes" rows="4">${esc(a.notes)}</textarea></label>
+    <details class="dsec more" ${a.contact||a.snoozeUntil?'open':''}><summary>More: contact and follow-up snooze</summary><div class="dgrid" style="margin-top:10px">
+      ${f('contact','Contact / referral','text','full')}${f('snoozeUntil','Snooze follow-up until','date')}
+    </div></details>
     ${id?`<div class="field"><span>History <span class="hint">· edit a date to backfill when something happened</span></span><ul class="timeline" id="hist">${[...a.history.map((h,i)=>({k:'s',v:h.s,d:h.d,i})),...(a.followLog||[]).map((d,i)=>({k:'f',d,i:100+i}))].sort((x,y)=>x.d.localeCompare(y.d)||x.i-y.i).map(e=>e.k==='s'
       ?`<li data-s="${e.v}"><input type="date" value="${e.d}" aria-label="Date for ${LABEL[e.v]}">${stChip(e.v)}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove ${LABEL[e.v]} entry">Remove</button></li>`
       :`<li data-flog><input type="date" value="${e.d}" aria-label="Follow-up date">${'<span class="chip fu">✓ Followed up</span>'}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove follow-up entry">Remove</button></li>`).join('')}</ul></div>`:''}
@@ -997,9 +1039,14 @@ document.addEventListener('click',e=>{
       let n=0;const poll=setInterval(async()=>{n++;const l=await Store.latest();
         if(l&&l.fetch&&l.fetch.at!==before){clearInterval(poll);refreshing=false;applyExternal(l,l.fetch.error?'Refresh failed: '+l.fetch.error:`Refreshed: ${l.fetch.matched} listings, ${l.fetch.new||0} new${l.fetch.removed?`, ${l.fetch.removed} closed removed`:''}${(l.fetch.savedClosed||[]).length?`; posting closed: ${l.fetch.savedClosed.join(', ')}`:''}`)}
         else if(n>60){clearInterval(poll);refreshing=false;render();toast('The refresh is taking longer than usual. It will appear when it finishes.')}},3000);return}
+    if(k==='download'){try{const blob=new Blob([JSON.stringify(snapshotData(),null,2)],{type:'application/json'});const u=URL.createObjectURL(blob);
+        const a2=document.createElement('a');a2.href=u;a2.download=`internship-tracker-backup-${iso(TODAY)}.json`;document.body.appendChild(a2);a2.click();a2.remove();setTimeout(()=>URL.revokeObjectURL(u),2000);toast('Backup downloaded')}
+      catch(_){toast('This browser blocked the download. Use “Paste text instead” → Copy current data.')}return}
+    if(k==='pick-import'){$('#fileImport').value='';return $('#fileImport').click()}
+    if(k==='pick-restore'){$('#fileRestore').value='';return $('#fileRestore').click()}
     if(k==='export'){const j=JSON.stringify(snapshotData(),null,2);$('#io').value=j;$('#io').select();
-      const fall=()=>toast('Export is in the box. Copy it and keep it somewhere safe.');
-      try{navigator.clipboard.writeText(j).then(()=>toast('Exported and copied to clipboard'),fall)}catch(_){fall()}return}
+      const fall=()=>toast('The data is in the box. Copy it and keep it somewhere safe.');
+      try{navigator.clipboard.writeText(j).then(()=>toast('Copied to clipboard'),fall)}catch(_){fall()}return}
     if(k==='import'){try{importText($('#io').value)}catch(err){toast('Could not read that. Check it is valid JSON or CSV.')}return}
     if(k==='restore'){try{const d=JSON.parse($('#io').value);if(!d||!Array.isArray(d.apps))throw 0;restoreFrom(d,'Restored from export')}catch(err){toast('Restore needs a JSON export from this tracker.')}return}
     if(k==='delete'){if(!confirmDel){confirmDel=true;act.textContent='Click again to delete';return}
@@ -1027,6 +1074,10 @@ document.addEventListener('click',e=>{
   if(t.closest('#addBtn'))openDrawer(null);
 });
 document.addEventListener('change',e=>{const t=e.target;
+  if((t.id==='fileImport'||t.id==='fileRestore')&&t.files&&t.files[0]){const f=t.files[0];
+    if(f.size>20*1024*1024)return toast('That file is larger than 20 MB.');
+    f.text().then(txt=>{if(t.id==='fileImport'){try{importText(txt)}catch(_){toast('Could not read that file. Use a .json backup or a .csv with a header row.')}}
+      else{try{const d=JSON.parse(txt);if(!d||!Array.isArray(d.apps))throw 0;restoreFrom(d,`Restored from ${f.name}`)}catch(_){toast('Restore needs a .json backup from this tracker.')}}}).catch(()=>toast('Could not open that file.'));return}
   if(t.id==='f-status'){$('#stdateWrap').hidden=t.value===origStatus;return}
   if(t.dataset.statusFor){const a=S.apps.find(x=>x.id===t.dataset.statusFor);if(!a)return;checkpoint();moveTo(a,t.value);save();render();if(t.classList.contains('move'))focusCard(a.id);return toast(`${a.company} → ${LABEL[a.status]}`,true)}
   if(t.id==='hideNo'||t.id==='p-hide'){S.settings.hideNoSponsor=t.checked;save();if(t.id==='hideNo')render();else toast(t.checked?'Listings without sponsorship are hidden':'Listings without sponsorship are shown');return}
@@ -1075,6 +1126,7 @@ document.addEventListener('drop',e=>{const col=e.target.closest&&e.target.closes
   const st=col.dataset.drop==='closed'?(CLOSED.includes(a.status)?a.status:'rejected'):col.dataset.drop;
   if(st===a.status)return render();checkpoint();moveTo(a,st);save();render();toast(`${a.company} → ${LABEL[a.status]}`,true)});
 window.addEventListener('hashchange',()=>{closeDrawer();render()});
+let rzT;window.addEventListener('resize',()=>{clearTimeout(rzT);rzT=setTimeout(()=>{if(route()==='dashboard')fitChart()},120)});
 function tick(){const n=new Date();n.setHours(0,0,0,0);if(+n!==+TODAY){TODAY=n;takeDailySnapshot();if($('#drawer').hidden)render()}}
 setInterval(tick,60000);setInterval(()=>{if(!document.hidden)checkRemote()},90000);document.addEventListener('visibilitychange',()=>{if(!document.hidden){tick();checkRemote()}});
 function applyTheme(m){const r=document.documentElement;if(m==='light'||m==='dark')r.setAttribute('data-theme',m);else r.removeAttribute('data-theme');
