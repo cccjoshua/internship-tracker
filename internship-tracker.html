@@ -253,6 +253,23 @@ td.na .na-row{display:flex;align-items:center;justify-content:space-between;gap:
 .stagef button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 .stagef button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .stagef .c{font-family:var(--f-mono);font-size:11.5px;opacity:.8;margin-left:4px}
+/* list sections */
+.tsecs{display:flex;flex-direction:column;gap:14px}
+.tsec{display:flex;flex-direction:column;gap:8px}
+.tsec-h{all:unset;cursor:pointer;display:flex;align-items:baseline;gap:10px;padding:2px 2px;font-size:14px;font-weight:600}
+.tsec-h:disabled{cursor:default}
+.tsec-h:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
+.tsec-h .cnt{font-family:var(--f-mono);font-weight:500;font-size:12.5px;color:var(--faint)}
+.tsec-h .hint{font-weight:400;font-size:12.5px;color:var(--faint)}
+.tsec-h .car{color:var(--faint);transition:transform .15s;align-self:center}
+.tsec-h[aria-expanded="true"] .car{transform:rotate(90deg)}
+.tsec.s-todo .tablewrap{border-color:color-mix(in srgb,var(--accent) 35%,var(--line))}
+.tsec .tablewrap{max-height:none}
+.tsec-empty{padding:14px 16px;background:var(--surface);border:1px dashed var(--line);border-radius:var(--r)}
+td.sc-c{width:56px}
+td.acts-c{width:1%;white-space:nowrap}
+td.acts-c .mini{justify-content:flex-end;flex-wrap:nowrap}
+td .na-s{display:block}
 /* layout toggle */
 .segctl{display:inline-flex;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
 .segctl a{padding:4px 12px;font-size:12.5px;font-weight:500;color:var(--muted);text-decoration:none}
@@ -502,12 +519,12 @@ function sampleListings(){const l=o=>Object.assign({id:uid(),degree:'BS/MS',spon
   l({company:'Fieldnote Labs',role:'Machine Learning Intern',location:'San Francisco, CA',posted:rel(-20),degree:'MS'}),
   l({company:'Pelican Logistics',role:'Business Intelligence Engineer Internship – 2027',location:'Seattle, WA',posted:rel(-6)}),
 ]}
-const defaultUi=()=>({q:'',track:'',sponsor:'',sort:{key:'action',dir:1}});
+const defaultUi=()=>({q:'',track:'',sponsor:'',stage:'open'});
 function fresh(){return{v:SCHEMA,apps:sampleApps(),listings:sampleListings(),dismissed:[],settings:JSON.parse(JSON.stringify(DEFAULTS)),ui:defaultUi()}}
 function migrate(d){d=d||{};
   const s={v:SCHEMA,apps:Array.isArray(d.apps)?d.apps:[],listings:Array.isArray(d.listings)?d.listings:[],dismissed:Array.isArray(d.dismissed)?d.dismissed.slice(-3000):[],
     settings:Object.assign({},DEFAULTS,d.settings,{weights:Object.assign({},DEFAULTS.weights,(((d.settings||{}).weights)||{}).skills!==undefined?d.settings.weights:{})}),ui:Object.assign(defaultUi(),d.ui),fetch:d.fetch||null};
-  if(!['company','status','applied','action','resume','sponsor'].includes((s.ui.sort||{}).key))s.ui.sort={key:'action',dir:1};
+  if(!s.ui.sorts){const o=s.ui.sort||{};s.ui.sorts={active:['company','status','applied','action','resume','sponsor'].includes(o.key)?o:{key:'action',dir:1}}}delete s.ui.sort;
   if(!STAGE_F[s.ui.stage])s.ui.stage=s.ui.showClosed?'all':'open';delete s.ui.showClosed;
   s.apps=s.apps.filter(a=>a&&a.company).map(a=>{const b=blankApp(a);b.url=safeUrl(b.url);if(!LABEL[b.status])b.status='saved';b.priority=Math.min(3,Math.max(1,+b.priority||2));
     if(!['yes','no','unknown'].includes(b.sponsor))b.sponsor='unknown';
@@ -680,7 +697,7 @@ R.dashboard=()=>{
   const urg=i=>i.missed||(i.n<0&&!i.fu)?'u-hot':(i.fu||i.saved||i.n<=3)?'u-soon':'';
   const acts=i=>i.fu?`<span class="mini"><button class="btn sm" type="button" data-fu="done" data-id="${i.a.id}">Followed up</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Snooze 7d</button></span>`
     :i.missed?`<span class="mini"><span class="due hot">${dueText(i.n)}</span><button class="btn sm" type="button" data-missed="${i.a.id}">Mark missed</button></span>`
-    :i.saved?`<span class="mini"><button class="btn sm primary" type="button" data-applied-app="${i.a.id}">Applied ✓</button><button class="btn sm" type="button" data-drop="${i.a.id}" title="Not applying: move to Closed (Withdrawn)">Drop</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Keep 7d</button></span>`
+    :i.saved?`<span class="mini"><button class="btn sm primary" type="button" data-applied-app="${i.a.id}">Applied ✓</button><button class="btn sm" type="button" data-skip-app="${i.a.id}" title="You decided not to apply: moves to Closed (Withdrawn); Undo is available">Not applying</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Keep 7d</button></span>`
     :i.stale?`<span class="mini"><button class="btn sm" type="button" data-ghost="${i.a.id}">Close as no response</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Keep</button></span>`
     :`<span class="due ${dueCls(i.n)}">${dueText(i.n)}</span>`;
   const shown=UI.attnAll?items:items.slice(0,5);
@@ -781,23 +798,52 @@ function nextAction(a){const fu=+S.settings.followUpDays||14,sd=+S.settings.stal
   if(a.status==='offer')return{t:'Respond to offer',s:'add the reply deadline as next step',c:'soon',r:2};
   return{t:'Add the next step',s:`${LABEL[a.status]} · ${ago(lastDate(a))}`,c:'soon',r:5}}
 const vis=s=>s==='yes'?'<span class="vis yes" title="Sponsors visa / CPT-OPT friendly" aria-label="Sponsors visa">✓</span>':s==='no'?'<span class="vis no" title="No sponsorship" aria-label="No sponsorship">✕</span>':'<span class="sr-only">Unknown</span>';
-const COLS=[['company','Company · Role'],['status','Status'],['applied','Applied'],['action','Next action'],['resume','Resume'],['sponsor','Visa']];
-R.table=()=>{const{key,dir}=S.ui.sort;
-  const val=a=>key==='status'?ORDER[a.status]:key==='action'?nextAction(a).r*10-a.priority:key==='sponsor'?({yes:0,no:1,unknown:2})[a.sponsor]:String(a[key]||'').toLowerCase();
-  const all=filtered(),stage=STAGE_F[S.ui.stage]?S.ui.stage:'open';
-  const A0=all.filter(STAGE_F[stage][1]).sort((x,y)=>{const a=val(x),b=val(y);if(a===''&&b!=='')return 1;if(b===''&&a!=='')return -1;return(a>b?1:a<b?-1:0)*dir});
-  const A=A0.slice(0,UI.tableLimit);
-  const bar=`<div class="toolbar" style="margin-bottom:10px"><div class="stagef" role="group" aria-label="Show stage">${Object.entries(STAGE_F).map(([k,[l,f]])=>`<button type="button" data-stage="${k}" aria-pressed="${k===stage}">${l}<span class="c">${all.filter(f).length}</span></button>`).join('')}</div>
-    <span class="grow" style="font-size:12.5px;color:var(--faint)">sorted by ${esc((COLS.find(c=>c[0]===key)||COLS[3])[1].toLowerCase())}</span>${layoutCtl('table')}</div>`;
-  if(!A.length)return bar+`<div class="panel"><p class="empty">${stage==='todo'?'Nothing saved. Save listings from New listings or the dashboard queue.':`No applications in “${STAGE_F[stage][0]}”${filtersOn()?' with these filters':''}. Try another stage${filtersOn()?' or clear the filters':''}, or press N to add one.`}</p></div>`;
-  const applied=a=>{if(!a.applied)return'<span class="sr-only">Not applied</span>—';const n=-daysFrom(a.applied);return `${fmt(a.applied)}<span class="na-s" style="display:block">${n<=0?'today':n+'d ago'}</span>`};
-  return bar+`<div class="tablewrap"><table><thead><tr>${COLS.map(([k,l])=>`<th scope="col" aria-sort="${key===k?(dir>0?'ascending':'descending'):'none'}"><button type="button" data-sort="${k}">${l} ${key===k?`<span class="arr" aria-hidden="true">${dir>0?'↑':'↓'}</span>`:''}</button></th>`).join('')}</tr></thead><tbody>
-  ${A.map(a=>{const na=nextAction(a);return `<tr data-open="${a.id}" class="${CLOSED.includes(a.status)?'closed':''}"><td class="co ${urgency(a)}"><button type="button" data-open="${a.id}">${esc(a.company)}</button><span class="sub2">${a.track?`<span class="chip tag">${a.track}</span>`:''}${esc(a.role)}</span></td>
-  <td><select class="stsel s-${a.status}" data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES,a.status)}</select></td>
-  <td class="dt">${applied(a)}</td>
-  <td class="na"><div class="na-row"><div><span class="na-t ${na.c}">${esc(na.t)}</span><span class="na-s">${esc(na.s)}</span></div>${a.status==='saved'?appliedBtn(a,'btn sm'):''}</div></td>
-  <td class="rs" title="${esc(a.resume||resumeFor(a))}">${a.resume?esc(a.resume):`<span style="color:var(--faint)">${esc(resumeFor(a))} (base)</span>`}</td><td class="vi">${vis(a.sponsor)}</td></tr>`}).join('')}
-  </tbody></table>${A0.length>A.length?`<button class="more" type="button" data-action="table-more" style="display:block;width:100%;box-sizing:border-box">Show ${Math.min(25,A0.length-A.length)} more of ${A0.length-A.length}</button>`:''}</div>`};
+/* Applications › List: one page, separate sections, because Saved and Applied rows need different columns. */
+const TSEC={
+  todo:{title:'To apply',hint:'saved, not submitted yet',filter:a=>a.status==='saved',def:{key:'deadline',dir:1},
+    cols:[['company','Company · Role'],['score','Score'],['deadline','Deadline'],['saved','Saved'],['resume','Resume'],['',' ']],
+    empty:'Nothing saved. Press Save on a listing in New listings or the dashboard queue.'},
+  active:{title:'In progress',hint:'applied, waiting or interviewing',filter:a=>['applied','oa','interview','offer'].includes(a.status),def:{key:'action',dir:1},
+    cols:[['company','Company · Role'],['status','Status'],['applied','Applied'],['action','Next action'],['resume','Resume'],['sponsor','Visa']],
+    empty:'No applications in progress yet.'},
+  closed:{title:'Closed',hint:'rejected, withdrawn, no response, posting closed',filter:a=>CLOSED.includes(a.status),def:{key:'closed',dir:-1},
+    cols:[['company','Company · Role'],['status','Status'],['applied','Applied'],['closed','Closed on'],['resume','Resume']],
+    empty:'Nothing closed.'}};
+const STAGE_SECS={open:['todo','active'],todo:['todo'],active:['active'],closed:['closed'],all:['todo','active','closed']};
+function sortVal(a,key){
+  switch(key){case'status':return ORDER[a.status];case'action':return nextAction(a).r*10-a.priority;case'sponsor':return({yes:0,no:1,unknown:2})[a.sponsor];
+    case'score':return typeof a.score==='number'?-a.score:'';case'deadline':return a.deadline||'';case'saved':return savedOn(a);
+    case'closed':return lastDate(a)||'';case'resume':return(a.resume||resumeFor(a)).toLowerCase();default:return String(a[key]||'').toLowerCase()}}
+function sortRows(rows,{key,dir}){return rows.sort((x,y)=>{const a=sortVal(x,key),b=sortVal(y,key);if(a===''&&b!=='')return 1;if(b===''&&a!=='')return -1;
+  const c=(a>b?1:a<b?-1:0)*dir;return c||(sortVal(x,'score')===''?0:sortVal(x,'score')-(sortVal(y,'score')||0))||savedOn(x).localeCompare(savedOn(y))})}
+const appliedCell=a=>{if(!a.applied)return'—';const n=-daysFrom(a.applied);return `${fmt(a.applied)}<span class="na-s">${n<=0?'today':n+'d ago'}</span>`};
+const resumeCell=a=>`<td class="rs" title="${esc(a.resume||resumeFor(a))}">${a.resume?esc(a.resume):`<span style="color:var(--faint)">${esc(resumeFor(a))} (base)</span>`}</td>`;
+const coCell=a=>`<td class="co ${urgency(a)}"><button type="button" data-open="${a.id}">${esc(a.company)}</button><span class="sub2">${a.track?`<span class="chip tag">${a.track}</span>`:''}${esc(a.role)}</span></td>`;
+const stCell=a=>`<td><select class="stsel s-${a.status}" data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES,a.status)}</select></td>`;
+function rowFor(k,a){
+  if(k==='todo'){const n=daysFrom(a.deadline),d=savedDays(a),old=d>=(+S.settings.savedStaleDays||7);
+    return `<tr data-open="${a.id}">${coCell(a)}
+      <td class="sc-c">${typeof a.score==='number'?`<span class="ring sm ${band(a.score)}" style="--p:${a.score}" title="Match score ${a.score} when saved"><span>${a.score}</span></span>`:'<span class="na-s">—</span>'}</td>
+      <td class="dt">${n===null?'<span class="na-s">not listed</span>':`<span class="${n<0?'due hot':n<=3?'due hot':n<=7?'due soon':''}">${fmt(a.deadline)}</span><span class="na-s">${n<0?'passed':dueText(n).toLowerCase()}</span>`}</td>
+      <td class="dt">${fmt(savedOn(a))}<span class="na-s ${old?'due soon':''}">${d===0?'today':d+'d ago'}</span></td>
+      ${resumeCell(a)}
+      <td class="acts-c"><div class="mini">${appliedBtn(a)}${link(a.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-skip-app="${a.id}" title="You decided not to apply: moves to Closed (Withdrawn); Undo is available">Not applying</button></div></td></tr>`}
+  if(k==='active'){const na=nextAction(a);
+    return `<tr data-open="${a.id}">${coCell(a)}${stCell(a)}<td class="dt">${appliedCell(a)}</td>
+      <td class="na"><span class="na-t ${na.c}">${esc(na.t)}</span><span class="na-s">${esc(na.s)}</span></td>${resumeCell(a)}<td class="vi">${vis(a.sponsor)}</td></tr>`}
+  return `<tr data-open="${a.id}" class="closed">${coCell(a)}${stCell(a)}<td class="dt">${appliedCell(a)}</td><td class="dt">${fmt(lastDate(a))}</td>${resumeCell(a)}</tr>`}
+R.table=()=>{const all=filtered(),stage=STAGE_F[S.ui.stage]?S.ui.stage:'open';
+  const bar=`<div class="toolbar" style="margin-bottom:12px"><div class="stagef" role="group" aria-label="Show stage">${Object.entries(STAGE_F).map(([k,[l,f]])=>`<button type="button" data-stage="${k}" aria-pressed="${k===stage}">${l}<span class="c">${all.filter(f).length}</span></button>`).join('')}</div>
+    <span class="grow"></span>${layoutCtl('table')}</div>`;
+  const secs=STAGE_SECS[stage],single=secs.length===1;
+  return bar+`<div class="tsecs">${secs.map(k=>{const T=TSEC[k],sort=(S.ui.sorts||{})[k]||T.def,rows=sortRows(all.filter(T.filter),sort);
+    const open=single||(S.ui.tsec||{})[k]!==undefined?(single||S.ui.tsec[k]):k!=='closed',lim=UI.limits['tsec-'+k]||25,vis2=rows.slice(0,lim);
+    const head=`<button class="tsec-h" type="button" data-tsec="${k}" aria-expanded="${open}" ${single?'disabled':''}><span class="tsec-t">${T.title}</span><span class="cnt">${rows.length}</span><span class="hint">${T.hint}</span>${single?'':'<span class="car" aria-hidden="true">›</span>'}</button>`;
+    if(!open)return `<section class="tsec s-${k}" aria-label="${T.title}">${head}</section>`;
+    const table=rows.length?`<div class="tablewrap"><table class="t-${k}"><thead><tr>${T.cols.map(([c,l])=>c?`<th scope="col" aria-sort="${sort.key===c?(sort.dir>0?'ascending':'descending'):'none'}"><button type="button" data-sort="${k}:${c}">${l} ${sort.key===c?`<span class="arr" aria-hidden="true">${sort.dir>0?'↑':'↓'}</span>`:''}</button></th>`:`<th scope="col"><span class="sr-only">Actions</span></th>`).join('')}</tr></thead>
+      <tbody>${vis2.map(a=>rowFor(k,a)).join('')}</tbody></table>${rows.length>lim?`<button class="more" type="button" data-more="tsec-${k}" style="display:block;width:100%;box-sizing:border-box">Show ${Math.min(25,rows.length-lim)} more of ${rows.length-lim}</button>`:''}</div>`
+      :`<p class="empty tsec-empty">${filtersOn()?'Nothing here with these filters.':T.empty}</p>`;
+    return `<section class="tsec s-${k}" aria-label="${T.title}">${head}${table}</section>`}).join('')}</div>`};
 
 function evidence(l){
   const h=l.h1b===null||l.h1b===undefined?(l.source==='simplify'?'No H-1B record found for this employer':''):`${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS FY2023)`;
@@ -855,7 +901,7 @@ function srow(a){
       <span class="l1"><b>${esc(a.company)}</b><span class="role">${esc(a.role)}</span><span class="chip st s-saved">Saved</span></span>
       <span class="l2">${a.track?`<span>${esc(a.track)}</span>`:''}${a.location?`<span>${esc(a.location.split('; ')[0])}</span>`:''}${savedMeta(a).map(x=>x.startsWith('<span class="dl')?x:`<span>${x}</span>`).join('')}${a.sponsor==='yes'?'<span class="pos">Sponsors visa</span>':a.sponsor==='no'?'<span class="neg">No sponsorship</span>':''}</span>
     </button>
-    <span class="lacts">${appliedBtn(a)}${link(a.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-drop="${a.id}" title="Not applying: move to Closed (Withdrawn)">Drop</button></span>
+    <span class="lacts">${appliedBtn(a)}${link(a.url,'Posting ↗')}<button class="btn sm ghost" type="button" data-skip-app="${a.id}" title="You decided not to apply: moves to Closed (Withdrawn); Undo is available">Not applying</button></span>
   </article>`}
 function lrow(l){
   const sk=l.skills||{},m=(sk.matched||[]).length,n=m+(sk.missing||[]).length,ex=UI.expanded.has(l.id);
@@ -1073,8 +1119,8 @@ document.addEventListener('click',e=>{
   const aa=t.closest('[data-applied-app]');
   if(aa){const a=S.apps.find(x=>x.id===aa.dataset.appliedApp);if(!a)return;checkpoint();setStatus(a,'applied');a.snoozeUntil='';save();render();
     const n=appliedOn(iso(TODAY)),g=+S.settings.dailyGoal||3;return toast(`${a.company} marked Applied · ${n}/${g} today${n===g?' · daily goal met':''}`,true)}
-  const dr=t.closest('[data-drop]');
-  if(dr){const a=S.apps.find(x=>x.id===dr.dataset.drop);if(!a)return;checkpoint();setStatus(a,'withdrawn');a.notes=((a.notes||'')+` Dropped from Saved on ${fmt(iso(TODAY))}.`).trim();save();render();return toast(`${a.company} dropped (Closed · Withdrawn)`,true)}
+  const dr=t.closest('[data-skip-app]');
+  if(dr){const a=S.apps.find(x=>x.id===dr.dataset.skipApp);if(!a)return;checkpoint();setStatus(a,'withdrawn');a.notes=((a.notes||'')+` Decided not to apply on ${fmt(iso(TODAY))}.`).trim();save();render();return toast(`${a.company}: not applying · moved to Closed`,true)}
   const sf=t.closest('[data-stage]');if(sf){S.ui.stage=sf.dataset.stage;UI.tableLimit=25;save();render();const b=document.querySelector(`[data-stage="${sf.dataset.stage}"]`);if(b)b.focus();return}
   const act=t.closest('[data-action]');
   if(act){const k=act.dataset.action;
@@ -1130,7 +1176,9 @@ document.addEventListener('click',e=>{
   const dm=t.closest('[data-dismiss]');
   if(dm){checkpoint();const l=S.listings.find(x=>x.id===dm.dataset.dismiss);S.listings=S.listings.filter(x=>x!==l);if(l&&!S.dismissed.includes(listingKey(l)))S.dismissed.push(listingKey(l));save();render();return toast(`${l?l.company:'Listing'} dismissed`,true)}
   const th=t.closest('[data-sort]');
-  if(th){const k=th.dataset.sort;S.ui.sort=S.ui.sort.key===k?{key:k,dir:-S.ui.sort.dir}:{key:k,dir:1};save();render();const b=document.querySelector(`[data-sort="${k}"]`);if(b)b.focus();return}
+  if(th){const[sec,k]=th.dataset.sort.split(':'),cur=(S.ui.sorts||{})[sec]||TSEC[sec].def;
+    S.ui.sorts=Object.assign({},S.ui.sorts,{[sec]:cur.key===k?{key:k,dir:-cur.dir}:{key:k,dir:k==='closed'?-1:1}});save();render();const b=document.querySelector(`[data-sort="${th.dataset.sort}"]`);if(b)b.focus();return}
+  const ts=t.closest('[data-tsec]');if(ts){const k=ts.dataset.tsec;S.ui.tsec=Object.assign({},S.ui.tsec,{[k]:ts.getAttribute('aria-expanded')!=='true'});save();render();const b=document.querySelector(`[data-tsec="${k}"]`);if(b)b.focus();return}
   const op=t.closest('[data-open]');if(op)return openDrawer(op.dataset.open);
   if(t.id==='scrim')return closeDrawer();
   if(t.closest('#addBtn'))openDrawer(null);
