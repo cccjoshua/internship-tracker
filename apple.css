@@ -548,3 +548,39 @@ dialog::backdrop{background:rgba(0,0,0,.2);-webkit-backdrop-filter:none;backdrop
 .tmatch li .what b,.todo li .what b{font-weight:590}
 .panel-foot{gap:4px}
 @media (max-width:1080px){.dash,.dash:not(:has(.a-track)){grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "att" "pipe" "track" "week"}.dash:not(:has(.a-track)) .a-pipe{grid-column:auto;grid-row:auto}}
+
+/* New listings: two-fact rows, one status line, docked preview pane (Mail-style) on wide windows */
+.inbox-head{gap:8px 12px;align-items:center}
+.inbox-head p{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;color:var(--muted)}
+.inbox-head p>b{color:var(--ink);font-weight:600}
+.inbox-head .exl summary{font-size:12px;color:var(--muted);cursor:pointer;list-style:none}
+.inbox-head .exl summary::-webkit-details-marker{display:none}
+.inbox-head .exl summary:hover{color:var(--accent-text)}
+.inbox-head .exl[open] .parts{position:absolute;z-index:5;margin-top:6px;padding:10px 12px;border-radius:10px;background:var(--surface);box-shadow:0 0 0 .5px var(--line),0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:4px;font-size:12px}
+.inbox-head .exl{position:relative}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.lrow{padding:8px 14px;gap:2px 12px;min-height:52px}
+.lmain .l1 b{font-weight:590}
+.lmain .l2{gap:0 6px;color:var(--muted);font-size:12px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+.lmain .l2>*{overflow:hidden;text-overflow:ellipsis}
+.lmain .l2 .dot{color:var(--faint)}
+.lmain .l2 .neg{color:var(--bad);font-weight:590}
+.lacts{grid-template-columns:auto 28px;gap:2px}
+.lacts .s-main .btn{min-width:72px}
+.lsec-h{padding:10px 14px}
+.add-if{margin:6px 0 4px;font-size:12px;color:var(--muted)}
+.add-if b{color:var(--ink);font-weight:590}
+.chip.miss{background:var(--fill);color:var(--muted)}
+.pk-parts .fp .fbar,.fp .fbar{height:6px;background:var(--fill)}
+.fp .fbar span{background:var(--tint)}
+.pk-empty{padding:40px 24px;text-align:center;color:var(--muted)}
+.pk-empty p{margin:4px 0}.pk-empty b{color:var(--ink)}
+@media (min-width:1100px){
+  body.dock{--dockw:min(400px,32vw)}
+  body.dock main{margin-right:var(--dockw);padding-right:24px}
+  body.dock .peek{top:0;right:0;bottom:0;width:var(--dockw);border-radius:0;box-shadow:none;border-left:.5px solid var(--line);animation:none;z-index:5;background:var(--surface)}
+  body.dock .scrim{display:none}
+}
+@media (min-width:1100px){body.dock:has(#stubBanner) .peek{top:30px}}
+.peek .sk .chip.v-yes{background:var(--fill);color:var(--ink)}

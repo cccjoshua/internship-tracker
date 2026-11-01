@@ -407,7 +407,7 @@ const VIEWS = {
   dashboard: ['Dashboard', () => TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })],
   board: ['Applications', () => 'Drag cards between stages, or focus one and press Shift + arrow keys'],
   table: ['Applications', () => 'Select a company to edit; select a column to sort'],
-  inbox: ['New listings', () => 'Ranked by priority (freshness, target roles, skills, sponsorship signals) · fit and eligibility come from each job’s analysis'],
+  inbox: ['New listings', () => 'Ranked by priority: freshness, role fit, skills and sponsorship signals. Select one to see why.'],
   settings: ['Settings', () => 'How the tracker scores, refreshes and reminds you · your data', () => backCrumb()],
 };
 /* Settings, Profile and Documents remember the page you came from, so a "← Back to …" link returns you there. */
@@ -699,7 +699,7 @@ function evidence(l) {
 function skillLine(l) {
   const m = l.matched || [], x = l.missing || [];
   if (!m.length && !x.length) return l.source === 'simplify' ? `<div class="sk empty">${l.textRead ? 'No specific tools named in the posting' : 'Posting text could not be read; skill match counted as neutral'}</div>` : '';
-  return `<div class="sk"><span class="sk-l">Skills ${m.length}/${m.length + x.length}</span>${m.map((s) => `<span class="chip v-yes">${esc(s)}</span>`).join('')}${x.map((s) => `<span class="chip miss" title="Not in your skills (Settings)">${esc(s)}</span>`).join('')}</div>`;
+  return `${x.length ? `<p class="add-if">Could add if true: <b>${x.slice(0, 6).map(esc).join(', ')}</b>. Add them to your resume only if you really have them.</p>` : ''}<div class="sk"><span class="sk-l">Skills ${m.length}/${m.length + x.length}</span>${m.map((s) => `<span class="chip v-yes">${esc(s)}</span>`).join('')}${x.map((s) => `<span class="chip miss" title="Not in your skills (Settings)">${esc(s)}</span>`).join('')}</div>`;
 }
 function refreshMessage(f) {
   if (!f) return '';
@@ -739,25 +739,19 @@ R.inbox = () => {
   L = L.slice().sort((a, b) => (!!a.dup - !!b.dup) || relCmp(a, b) || b.total - a.total);
   if (S.ui.lsort === 'newest') L.sort((a, b) => (!!a.dup - !!b.dup) || relCmp(a, b) || (b.posted || '').localeCompare(a.posted || '') || b.total - a.total);
   const ex = F.fetch && F.fetch.excluded ? Object.entries(F.fetch.excluded).sort((a, b) => b[1] - a[1]) : [];
-  const head = `<div class="inbox-head"><p><b>${L.length}</b> listing${L.length === 1 ? '' : 's'} ranked by priority${hidden ? ` · ${hidden} hidden without sponsorship` : ''}<br><span class="sub">${fetchSummary()}</span></p>
-    <select id="lsort" aria-label="Sort listings"><option value="score"${S.ui.lsort !== 'newest' ? ' selected' : ''}>Highest priority first</option><option value="newest"${S.ui.lsort === 'newest' ? ' selected' : ''}>Newest first</option></select>
-    <label class="switch"><input type="checkbox" id="hideNo" ${S.settings.hideNoSponsor ? 'checked' : ''}> Hide no-sponsorship</label>
-    <button class="btn sm${UI.select ? ' primary' : ''}" type="button" data-action="select-mode" aria-pressed="${UI.select}" title="Save or dismiss several listings at once">${UI.select ? 'Done selecting' : 'Select several'}</button>
-    <button class="btn sm" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh now'}</button></div>
-    <div class="toolbar" style="margin-top:6px;align-items:flex-start">${ex.length ? `<details class="why exl"><summary>Not shown this refresh: ${ex.reduce((s, e) => s + e[1], 0).toLocaleString('en-US')}</summary><div class="parts">${ex.map(([k, n]) => `<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}</div></details>` : ''}<span class="grow"></span>LEGEND_SLOT</div>`;
+  const exN = ex.reduce((s, e) => s + e[1], 0);
+  /* One status line: count · refresh state · a quiet refresh button, and a single View menu for sort, filters and selection. */
+  const head = `<div class="inbox-head" role="group" aria-label="Listings">
+    <p><b>${L.length}</b> listing${L.length === 1 ? '' : 's'}${hidden ? ` · ${hidden} without sponsorship hidden` : ''} · <span class="sub">${fetchSummary()}</span>
+      <button class="btn icon sm plain" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''} aria-label="${refreshing ? 'Refreshing' : 'Refresh listings now'}" title="${refreshing ? 'Refreshing…' : 'Refresh now'}"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" class="${refreshing ? 'spin' : ''}"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5V5h-2.5"/></svg></button>
+      ${exN ? `<details class="why exl"><summary>${exN.toLocaleString('en-US')} filtered out</summary><div class="parts">${ex.map(([k, n]) => `<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}<p class="sub">Search them with ${MOD} K, then “Search hidden listings”.</p></div></details>` : ''}</p>
+    ${UI.select ? '' : `<button class="btn sm" type="button" data-action="view-menu" aria-haspopup="menu">View: ${S.ui.lsort === 'newest' ? 'Newest' : 'Priority'}${S.settings.hideNoSponsor ? ' · sponsorship only' : ''} <span aria-hidden="true">▾</span></button>`}</div>`;
   const A = appsMatchingFilters();
   const appsSec = A.length ? `<section class="lsec" aria-label="Matching applications"><div class="lsec-h"><span>In your Applications</span> <span class="cnt">${A.length}</span><span class="hint">saved or in progress · they no longer appear as new listings</span><a class="btn sm ghost" href="#table" style="margin-left:auto">Open Applications →</a></div>${A.slice(0, 10).map(srow).join('')}${A.length > 10 ? `<a class="more" href="#table">See all ${A.length} in Applications</a>` : ''}</section>` : '';
-  if (!L.length && A.length) return head.replace('LEGEND_SLOT', '') + `<div style="margin-top:12px">${appsSec}<p class="empty" style="margin:12px 4px">No new listings match. Only the applications above do.</p></div>`;
-  if (!L.length) return head.replace('LEGEND_SLOT', '') + `<div class="panel" style="margin-top:12px"><p class="empty">${filtersOn() ? `Nothing matches${S.ui.q ? ` “${esc(S.ui.q.trim())}”` : ''}. Search looks at company, role, location, track, skills and sponsorship; every word has to match.` : 'No listings yet. Refresh now, or widen the window in Settings.'}</p>${filtersOn() ? '<div class="row"><button class="btn sm" type="button" data-action="clear-filters">Clear search and filters</button></div>' : ''}</div>`;
+  if (!L.length && A.length) return head + `<div style="margin-top:12px">${appsSec}<p class="empty" style="margin:12px 4px">No new listings match. Only the applications above do.</p></div>`;
+  if (!L.length) return head + `<div class="panel" style="margin-top:12px"><p class="empty">${filtersOn() ? `Nothing matches${S.ui.q ? ` “${esc(S.ui.q.trim())}”` : ''}. Search looks at company, role, location, track, skills and sponsorship; every word has to match.` : 'No listings yet. Refresh now, or widen the window in Settings.'}</p>${filtersOn() ? '<div class="row"><button class="btn sm" type="button" data-action="clear-filters">Clear search and filters</button></div>' : ''}</div>`;
   const topS = +S.settings.topScore || 75, minS = +S.settings.minScore || 55, open = S.ui.sec || {};
-  const Q = filtersOn() ? [] : queueList(), qids = new Set(Q.filter((x) => x.kind === 'listing').map((x) => x.id)), rest = L.filter((l) => !qids.has(l.id)), moreSaved = qMoreSaved(Q);
-  const Lq = new Map(L.map((l) => [l.id, l]));
-  const goal = +S.settings.dailyGoal || 3, done = appliedOn(iso(TODAY));
-  const queue = Q.length ? `<section class="lsec queue" aria-label="Today's queue"><div class="lsec-h"><span>Today’s queue</span><span class="hint">deadlines first, then what you saved, then new picks</span>
-      <span style="margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:500"><span class="hint">Applied today</span> <b class="mono">${done}/${goal}</b><span class="prog ${done >= goal ? 'done' : ''}" style="width:90px"><span style="width:${Math.min(100, done / goal * 100)}%"></span></span></span></div>
-      ${Q.map((x, i) => { const g = x.soon === 0 ? 'soon' : x.kind; const prev = i ? (Q[i - 1].soon === 0 ? 'soon' : Q[i - 1].kind) : '';
-        const n = Q.filter((y) => (y.soon === 0 ? 'soon' : y.kind) === g).length;
-        return (g !== prev ? `<div class="qgrp">${{ soon: 'Deadline within 7 days', app: 'Saved · prepare, then apply', listing: 'Today’s best new picks' }[g]} <span class="cnt">${n}</span></div>` : '') + (x.kind === 'app' ? srow(x.a) : lrow(Lq.get(x.id) || x.l)); }).join('')}${moreSaved ? `<button class="more" type="button" data-action="show-saved">${plural(moreSaved, 'more saved application')} →</button>` : ''}</section>` : '';
+  const rest = L;
   const fOn = filtersOn();
   const groups = fOn ? [['results', 'Results', [S.ui.q ? `“${S.ui.q.trim()}”` : '', S.ui.track ? TRACK_NAME[S.ui.track] || S.ui.track : '', S.ui.sponsor ? SPONSOR[S.ui.sponsor] : ''].filter(Boolean).join(' · '), L, true]] : [
     ['new', 'New since the last refresh', '', rest.filter((l) => !l.dup && l.isNew && l.total >= minS), true],
@@ -765,25 +759,23 @@ R.inbox = () => {
     ['more', 'Worth a look', `priority ${minS}–${topS - 1}`, rest.filter((l) => !l.dup && !l.isNew && l.total >= minS && l.total < topS), false],
     ['low', 'Lower priority', `below ${minS}`, rest.filter((l) => !l.dup && l.total < minS), false],
     ['dup', 'Already tracking', '', rest.filter((l) => l.dup), false]].filter((g) => g[3].length);
-  const w = S.settings.weights;
-  const legend = `<details class="info"><summary><span aria-hidden="true">ⓘ</span> What the labels mean</summary><div class="info-pop"><p><span class="act now">Apply now</span> score ${topS}+ and at most 1 missing skill</p><p><span class="act tailor">Tailor first</span> add the missing skills you truly have, then apply</p><p><span class="act low">Low priority</span> below ${minS} or no sponsorship</p><p class="sub">Score weights: role fit ${w.fit}, skills ${w.skills}, sponsorship ${w.sponsor}, recency ${w.recency}, degree ${w.degree}, location ${w.location} (change them in Settings). Expand a listing to see its breakdown.</p></div></details>`;
   const vis = [];
-  const body = `<div style="margin-top:12px">${appsSec}${A.length ? '<div style="height:12px"></div>' : ''}${queue}${Q.length ? '<div style="height:12px"></div>' : ''}${groups.map(([k, title, hint, items, def]) => {
+  const body = `<div style="margin-top:12px">${appsSec}${A.length ? '<div style="height:12px"></div>' : ''}${groups.map(([k, title, hint, items, def]) => {
     const isOpen = k === 'results' || (open[k] !== undefined ? open[k] : def), lim = UI.limits['sec-' + k] || (k === 'results' ? 50 : 25);
     if (isOpen) vis.push(...items.slice(0, lim).filter((l) => !l.dup));
     if (k === 'results') return `<section class="lsec" aria-label="Search results"><div class="lsec-h"><span>${plural(items.length, 'result')}</span><span class="hint">${esc(hint)}${items.some((l) => l.dup) ? ' · already-tracked jobs last' : ''}</span><button class="btn sm ghost" type="button" data-action="clear-filters" style="margin-left:auto">Clear search</button></div>
       ${items.slice(0, lim).map(lrow).join('')}${items.length > lim ? `<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(50, items.length - lim)} more of ${items.length - lim}</button>` : ''}</section>`;
-    return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${k === 'new' ? '<span class="chip new">New</span>' : ''}${esc(title)} <span class="cnt">${items.length}</span>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}<span class="car" aria-hidden="true">›</span></button>
+    return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${esc(title)} <span class="cnt">${items.length}</span>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}<span class="car" aria-hidden="true">›</span></button>
       ${isOpen ? items.slice(0, lim).map(lrow).join('') + (items.length > lim ? `<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(25, items.length - lim)} more of ${items.length - lim}</button>` : '') : ''}</section>`;
   }).join('')}</div>`;
-  UI.visibleIds = [...Q.filter((x) => x.kind === 'listing'), ...vis].map((l) => l.id);
+  UI.visibleIds = vis.map((l) => l.id);
   const n = UI.selected.size;
   const nv = (UI.visibleIds || []).length;
   const selbar = UI.select ? `<div class="selbar" role="region" aria-label="Bulk actions"><span class="grow"><b>${n ? plural(n, 'listing') + ' selected' : 'Select listings'}</b><span class="hint">${n ? 'Shift+click selects a range' : 'Click rows or checkboxes · Shift+click for a range · Esc to finish'}</span></span>
     <button class="btn sm ghost" type="button" data-action="sel-all" ${nv && n < nv ? '' : 'disabled'}>Select all ${nv} shown</button><button class="btn sm ghost" type="button" data-action="sel-none" ${n ? '' : 'disabled'}>Clear</button>
     <span class="selsep" aria-hidden="true"></span>
-    <button class="btn sm primary" type="button" data-action="sel-track" ${n ? '' : 'disabled'}>Save${n ? ' ' + n : ''}</button><button class="btn sm" type="button" data-action="sel-dismiss" ${n ? '' : 'disabled'}>Not interested…</button><button class="btn sm ghost" type="button" data-action="select-mode">Done</button></div>` : '';
-  return head.replace('LEGEND_SLOT', legend) + body + selbar;
+    <button class="btn sm tint" type="button" data-action="sel-track" ${n ? '' : 'disabled'}>Save${n ? ' ' + n : ''}</button><button class="btn sm" type="button" data-action="sel-dismiss" ${n ? '' : 'disabled'}>Not interested…</button><button class="btn sm ghost" type="button" data-action="select-mode">Done</button></div>` : '';
+  return head + body + selbar;
 };
 /* Rows share one shape: title / next step / facts on the left; on the right exactly one primary action
    and a "More" menu with everything else. Clicking the row opens the preview panel (no hover-only buttons). */
@@ -799,34 +791,41 @@ function primaryFor(ref, cls = 'btn sm') {
   return `<a class="${cls}" href="${jobHref(a.id)}" title="Job page: analysis, resume and cover letter">Open</a>`;
 }
 const peekCls = (ref) => UI.peek === ref ? ' peeking' : '';
-/* A saved application inside today's queue. */
+/* List rows (DESIGN.md §6): company · role, then at most two facts that change what you do.
+   Everything else (resume version, skills, H-1B, kit progress, "add if true") lives in the preview pane. */
+const firstLoc = (s) => { const locs = (s || '').split('; ').filter(Boolean); return locs.length ? locs[0] + (locs.length > 1 ? ` +${locs.length - 1}` : '') : ''; };
+/* A saved or in-progress application shown among listings (search results). */
 function srow(a) {
-  const sp = a.sponsor === 'yes' ? '<span class="pos">Sponsors visa</span>' : a.sponsor === 'no' ? '<span class="neg">No sponsorship</span>' : '', ref = 'a:' + a.id;
+  const ref = 'a:' + a.id;
+  const facts = [a.status === 'saved' ? `Saved ${savedAgo(a)}` : esc(LABEL[a.status]), a.deadline && daysFrom(a.deadline) !== null && daysFrom(a.deadline) <= 7 ? dlTag(a.deadline) : esc(firstLoc(a.location))].filter(Boolean);
   return `<article class="lrow qsaved${UI.select ? ' sel' : ''}${peekCls(ref)}" data-ref="${ref}" aria-label="${esc(a.company + ', ' + a.role + ', ' + LABEL[a.status])}">
     ${UI.select ? '<span></span>' : ''}${savedBadge(a)}
     <button class="lmain" type="button" data-peek="${ref}" aria-controls="peek" aria-expanded="${UI.peek === ref}">
       <span class="l1"><b>${esc(a.company)}</b><span class="role">${esc(a.role)}</span></span>
-      <span class="l2">${a.status === 'saved' ? `<span class="act saved">Saved ${savedAgo(a)}</span>` : stChip(a.status)}<span>Resume: <span class="rv">${esc(a.resume || resumeFor(a))}</span></span>${kitLine(a, true)}</span>
-      <span class="l3">${a.track ? `<span>${esc(a.track)}</span>` : ''}${a.location ? `<span>${esc(a.location.split('; ')[0])}</span>` : ''}${a.deadline ? dlTag(a.deadline) : ''}${sp}</span>
+      <span class="l2">${facts.join('<span class="dot" aria-hidden="true">·</span>')}</span>
     </button>
     ${acts(primaryFor(ref), ref, a.company)}
   </article>`;
 }
+/* The one fact that most changes the decision for a listing, if any. */
+function decisive(l) {
+  const [ak] = action(l);
+  if (l.dup) return `<span>Tracking · ${esc(LABEL[l.dup.status])}</span>`;
+  if (ak === 'blocked') return `<span class="neg" title="${esc(((eligOf(l) || {}).blockers || []).join('; '))}">Not eligible</span>`;
+  const n = daysFrom(l.deadline);
+  if (n !== null && n <= 7) return dlTag(l.deadline);
+  if ((l.flags || []).includes('No sponsorship')) return '<span class="neg">No sponsorship</span>';
+  return '';
+}
 function lrow(l) {
-  const m = (l.matched || []).length, n = m + (l.missing || []).length;
-  const locs = (l.location || '').split('; '), loc = locs.length > 2 ? locs.slice(0, 2).join('; ') + ` +${locs.length - 2}` : l.location;
-  const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B`;
-  const flags = (l.flags || []).filter((f) => f !== 'Text not read').map((f) => `<span class="${f === 'No sponsorship' ? 'neg' : 'pos'}">${esc(f)}</span>`).join('');
-  const [ak, al] = action(l), miss = (l.missing || []).slice(0, 3);
-  const todo = l.dup ? `<span class="l2"><span class="act low">Tracking · ${LABEL[l.dup.status]}</span>${kitLine(l.dup)}</span>`
-    : `<span class="l2"><span class="act ${ak}" ${ak === 'blocked' ? `title="${esc(((eligOf(l) || {}).blockers || []).join('; '))}"` : ''}>${al}</span><span>Resume: <span class="rv">${esc(resumeFor(l))}</span></span>${miss.length ? `<span class="add" title="Skills in the posting you have not ticked in Settings. Add them to your resume only if they are true.">Add if true: ${miss.map(esc).join(', ')}${(l.missing || []).length > 3 ? ' …' : ''}</span>` : ''}${kitLine(l)}</span>`;
   const sel = UI.select && !l.dup, picked = sel && UI.selected.has(l.id), ref = l.dup ? 'a:' + l.dup.id : 'l:' + l.id;
-  return `<article class="lrow${UI.select ? ' sel' : ''}${picked ? ' picked' : ''}${peekCls(ref)}" data-ref="${esc(ref)}" aria-label="${esc(l.company + ', ' + l.role + ', score ' + l.total)}">
+  const facts = [l.isNew && !l.dup ? '<span class="new-t">New</span>' : '', decisive(l), `<span>${esc(firstLoc(l.location))}</span>`, l.posted ? `<span>${ago(l.posted)}</span>` : ''].filter(Boolean).slice(0, 3);
+  return `<article class="lrow${UI.select ? ' sel' : ''}${picked ? ' picked' : ''}${peekCls(ref)}" data-ref="${esc(ref)}" aria-label="${esc(l.company + ', ' + l.role + ', priority ' + l.total)}">
     ${UI.select ? (sel ? `<input type="checkbox" data-pick="${esc(l.id)}" ${picked ? 'checked' : ''} aria-label="Select ${esc(l.company)}">` : '<span></span>') : ''}
     ${ring(l.total)}
     <button class="lmain" type="button" ${sel ? `data-picktoggle="${esc(l.id)}" aria-pressed="${picked}"` : `data-peek="${esc(ref)}" aria-controls="peek" aria-expanded="${UI.peek === ref}"`}>
       <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span></span>
-      ${todo}<span class="l3">${l.t ? `<span>${esc(l.t)}</span>` : ''}<span>${esc(loc || '')}</span>${l.posted ? `<span>${ago(l.posted)}</span>` : ''}${l.deadline ? dlTag(l.deadline) : ''}${h ? `<span>${h}</span>` : ''}${n ? `<span>Skills ${m}/${n}</span>` : ''}${flags}</span>
+      <span class="l2">${facts.join('<span class="dot" aria-hidden="true">·</span>')}</span>
     </button>
     ${acts(l.dup ? primaryFor(ref) : primaryFor('l:' + l.id), l.dup ? ref : 'l:' + l.id, l.company)}
   </article>`;
@@ -877,7 +876,7 @@ function closePeek(restore = true) {
 /* Click outside the preview closes it (as with a macOS popover). Clicks that open or switch the preview, and clicks in
    menus, dialogs, the edit drawer or a toast, leave it to their own handlers. */
 document.addEventListener('pointerdown', (e) => {
-  if (!UI.peek || e.button !== 0) return;
+  if (!UI.peek || e.button !== 0 || docked()) return;
   const t = e.target;
   if (!(t instanceof Element) || !document.contains(t)) return;
   if (t.closest('#peek, .lrow, [data-peek], dialog, #drawer, #scrim, .toast, .menu, [role="menu"], .selbar')) return;
@@ -902,10 +901,18 @@ function peekAnalysis(key) {
   fetch('api/job?key=' + encodeURIComponent(key), { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((d) => { PK.cache.set(key, { job: d && d.job }); if (UI.peek) renderPeek(); }).catch(() => PK.cache.set(key, {}));
   return PK.cache.get(key);
 }
+/* On New listings with a wide window the preview is a docked pane (like Mail): always there, empty until you pick a row. */
+const DOCK_MIN = 1100;
+const docked = () => route() === 'inbox' && window.innerWidth >= DOCK_MIN && !UI.select;
 function renderPeek() {
-  const el = $('#peek'), it = peekItem();
-  document.body.classList.toggle('peek-open', !!it);
-  if (!it) { el.hidden = true; el.innerHTML = ''; if (UI.peek) UI.peek = null; return; }
+  const el = $('#peek'), it = peekItem(), dock = docked();
+  document.body.classList.toggle('peek-open', !!it && !dock);
+  document.body.classList.toggle('dock', dock);
+  if (!it) {
+    if (UI.peek) UI.peek = null;
+    if (dock) { el.hidden = false; el.innerHTML = `<div class="pk-empty"><p><b>No listing selected</b></p><p class="sub">Select a listing to see why it ranks where it does, what to add to your resume, and its progress. ${'<span class="kbd">J</span> <span class="kbd">K</span>'} move through the list.</p></div>`; return; }
+    el.hidden = true; el.innerHTML = ''; return;
+  }
   const { a, l } = it, x = a || l, ref = UI.peek, key = listingKey({ url: x.url, company: x.company, role: x.role }), k = KIT[key] || {};
   const dl = x.deadline, sp = (a ? a.sponsor : l.sponsor), id = a ? a.id : l.id;
   const meta = [x.track || (l && l.t) ? `<span class="chip tag">${esc(x.track || l.t)}</span>` : '', x.location ? `<span>${esc(x.location.split('; ').slice(0, 2).join('; '))}${x.location.split('; ').length > 2 ? ' +' + (x.location.split('; ').length - 2) : ''}</span>` : '',
@@ -913,7 +920,7 @@ function renderPeek() {
   const secondary = a ? (a.status === 'saved' ? `<button class="btn sm" type="button" data-applied-app="${a.id}">Mark applied</button>` : `<button class="btn sm" type="button" data-pkm="edit">Edit details</button>`)
     : `<button class="btn sm" type="button" data-appliedl="${esc(l.id)}" title="Adds it as Applied today">I already applied</button>`;
   const steps = [['Analyze', k.analyzed ? 'done' : ''], ['Resume', k.resume === 'ai' || k.resumeExported ? 'done' : k.resume ? 'part' : ''], ['Cover letter', k.letter === 'ai' || k.letterExported ? 'done' : k.letter ? 'part' : ''], ['Applied', a && reached(a, 'applied') ? 'done' : '']];
-  const parts = l ? `<div class="pk-parts">${l.parts.map((p) => { const v = p.max ? p.pts / p.max : 0; return `<div class="fp"><span class="fp-l">${WEIGHT_LABEL[p.k]}</span><span class="fbar"><span style="width:${Math.round(v * 100)}%;background:${v >= 0.8 ? 'var(--score-hi)' : v >= 0.5 ? 'var(--score-mid)' : 'var(--bad)'}"></span></span><span class="num fp-n">${Math.round(p.pts)}/${Math.round(p.max)}</span></div>`; }).join('')}${l.pen ? `<div class="fp"><span class="fp-l">No-sponsorship penalty</span><span></span><span class="num fp-n neg">−${l.pen}</span></div>` : ''}</div>` : '';
+  const parts = l ? `<div class="pk-parts">${l.parts.map((p) => { const v = p.max ? p.pts / p.max : 0; return `<div class="fp"><span class="fp-l">${WEIGHT_LABEL[p.k]}</span><span class="fbar"><span style="width:${Math.round(v * 100)}%"></span></span><span class="num fp-n">${Math.round(p.pts)}/${Math.round(p.max)}</span></div>`; }).join('')}${l.pen ? `<div class="fp"><span class="fp-l">No-sponsorship penalty</span><span></span><span class="num fp-n neg">−${l.pen}</span></div>` : ''}</div>` : '';
   const an = k.analyzed ? peekAnalysis(key) : null, A = an && an.job && an.job.analysis;
   const ai = !k.analyzed ? `<p class="sub">Not analyzed yet. The job page reads the posting with Claude: who it is for, sponsorship, keywords and a fit score.</p>`
     : !A ? `<p class="sub">${an && an.loading ? 'Loading…' : 'Analysis not available.'}</p>`
@@ -922,7 +929,7 @@ function renderPeek() {
         ${A.timing && (A.timing.term || A.timing.deadline) ? `<dt>Timing</dt><dd>${esc([A.timing.term, A.timing.deadline ? 'apply by ' + fmt(A.timing.deadline) : ''].filter(Boolean).join(' · '))}</dd>` : ''}
         ${(A.requiredSkills || []).length ? `<dt>Required</dt><dd>${esc(A.requiredSkills.slice(0, 8).join(', '))}</dd>` : ''}</dl>`;
   el.innerHTML = `<div class="pk-head"><div class="pk-t"><h2 id="pkTitle" tabindex="-1">${esc(x.company)}</h2><p>${esc(x.role)}</p></div>
-      <button class="btn icon ghost" type="button" data-pkclose aria-label="Close preview" title="Close (Esc)">✕</button></div>
+      ${dock ? '' : '<button class="btn icon ghost" type="button" data-pkclose aria-label="Close preview" title="Close (Esc)">✕</button>'}</div>
     <div class="pk-meta">${meta}</div>
     <div class="pk-acts">${primaryFor(ref, 'btn')}${secondary}${safeUrl(x.url) ? link(x.url, 'Posting ↗', 'btn ghost') : ''}${moreBtn(ref, x.company).replace('btn sm ghost icon', 'btn ghost icon')}</div>
     <a class="pk-open" href="${jobHref(id)}"><span><b>Open the job page</b><span class="sub">Analyze the posting, tailor the resume, write the cover letter, apply</span></span><span aria-hidden="true">→</span></a>
@@ -930,7 +937,7 @@ function renderPeek() {
     <section class="pk-sec"><h3>${l ? `Listing priority ${l.total}` : typeof a.score === 'number' ? `Listing priority ${a.score} when saved` : 'Priority'}</h3>${l ? `${parts}${evidence(l)}${skillLine(l)}` : `<p class="sub">Added by hand, so there is no listing score.</p>`}</section>
     <section class="pk-sec"><h3>Claude’s analysis</h3>${ai}</section>
     ${a && a.notes ? `<section class="pk-sec"><h3>Notes</h3><p class="pk-notes">${esc(a.notes)}</p></section>` : ''}
-    <p class="pk-keys"><span class="kbd">J</span> <span class="kbd">K</span> next / previous · <span class="kbd">Esc</span> close</p>`;
+    <p class="pk-keys"><span class="kbd">J</span> <span class="kbd">K</span> next / previous · <span class="kbd">Esc</span> ${dock ? 'clear' : 'close'}</p>`;
   el.hidden = false;
 }
 
@@ -1482,6 +1489,17 @@ document.addEventListener('click', (e) => {
     if (k === 'force-dates') { forceDates = true; return $('#appForm').requestSubmit(); }
     if (k === 'clear-filters') { S.ui.q = ''; S.ui.track = ''; S.ui.sponsor = ''; $('#q').value = ''; $('#fTrack').value = ''; $('#fSponsor').value = ''; save(); render(); return; }
     if (k === 'theme') return cycleTheme();
+    if (k === 'view-menu') {
+      const on = (b) => (b ? '✓ ' : '\u2003 ');
+      return menuAt(t.closest('[data-action]'), 'View', [
+        { value: 'score', label: on(S.ui.lsort !== 'newest') + 'Highest priority first' }, { value: 'newest', label: on(S.ui.lsort === 'newest') + 'Newest first' },
+        { value: 'hide', label: on(S.settings.hideNoSponsor) + 'Hide listings without sponsorship', sep: true },
+        { value: 'select', label: '\u2003 Select several…', hint: 'save or dismiss many at once', sep: true }], (v) => {
+        if (v === 'score' || v === 'newest') { S.ui.lsort = v; save(); return render(); }
+        if (v === 'hide') { S.settings.hideNoSponsor = !S.settings.hideNoSponsor; save(); render(); return toast(S.settings.hideNoSponsor ? 'Listings without sponsorship are hidden' : 'Showing all listings'); }
+        if (v === 'select') { UI.select = true; UI.lastPick = null; UI.peek = null; return render(); }
+      });
+    }
     if (k === 'select-mode') { UI.select = !UI.select; UI.lastPick = null; if (!UI.select) UI.selected.clear(); else UI.peek = null; return render(); }
     if (k === 'sel-all') { for (const id of UI.visibleIds || []) UI.selected.add(id); return render(); }
     if (k === 'sel-none') { UI.selected.clear(); return render(); }
@@ -1610,7 +1628,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && UI.peek && !inText) { e.preventDefault(); return closePeek(); }
   if (e.key === 'Escape' && UI.select && !inText) { e.preventDefault(); UI.select = false; UI.selected.clear(); return render(); }
   if (e.target.closest('input,textarea,select')) return;
-  if (UI.peek && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'j' || e.key === 'k')) { e.preventDefault(); return peekStep(e.key === 'j' ? 1 : -1); }
+  if ((UI.peek || docked()) && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'j' || e.key === 'k')) { e.preventDefault(); return peekStep(e.key === 'j' ? 1 : -1); }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(); }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const c = e.target.closest('.card');
@@ -1652,7 +1670,7 @@ document.addEventListener('drop', (e) => {
   showMenu(e.clientX, e.clientY, `Close ${a.company} as…`, CLOSE_REASONS.map(([value, label, hint]) => ({ value, label, hint })), move);
 });
 window.addEventListener('hashchange', () => { closeDrawer(); render(); });
-let rzT; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if (route() === 'dashboard') fitChart(); }, 120); });
+let rzT, wasDock = null; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(() => { if (route() === 'dashboard') fitChart(); const d = docked(); if (d !== wasDock) { wasDock = d; renderPeek(); } }, 120); });
 function tick() { const n = new Date(); n.setHours(0, 0, 0, 0); if (+n !== +TODAY) { TODAY = n; takeDailySnapshot(); UI.cache = null; if ($('#drawer').hidden) render(); } notifyCheck(); }
 setInterval(tick, 60000);
 setInterval(() => { if (!document.hidden) checkRemote(); }, 90000);
