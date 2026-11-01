@@ -1,0 +1,36 @@
+# Runs the offline test suites: no secrets, no paid API calls, no live job data (network calls are stubbed).
+name: tests
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.8", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Python tests
+        run: python -m unittest discover -s tests
+      - name: JavaScript tests
+        run: node --test tests/core.test.js tests/regressions.test.js tests/fixtures.test.js
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Install Playwright (Chromium)
+        run: npm ci && npx playwright install --with-deps chromium
+      - name: Browser end-to-end flow (stubbed Claude, synthetic data)
+        run: tests/e2e/run.sh
+      - name: Chrome extension page-reader fixtures
+        run: node tests/ext/extract.test.js

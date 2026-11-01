@@ -61,3 +61,56 @@ test('daysBetween handles DST and bad input', () => {
   assert.equal(C.daysBetween('2026-03-07', '2026-03-09'), 2);
   assert.equal(C.daysBetween('', '2026-03-09'), null);
 });
+
+/* ---------- fit and keyword score ---------- */
+const PROFILE = {
+  preferences: { degreePursuing: 'Master', degreesHeld: ['Bachelor'], graduation: '2028-05', yearsExperience: 0.25, needsSponsorship: true, regions: ['United States'] },
+  skills: [{ label: 'Languages', value: 'Python, SQL (T-SQL), C/C++, C#' }, { label: 'Data', value: 'pandas, Tableau' }],
+  experience: [{ id: 'dw', tech: 'JavaScript, .NET, Microsoft SQL Server' }],
+  notYet: ['Power BI', 'A/B testing'],
+};
+const SETTINGS = { targets: ['DA', 'DS'], places: ['TX', 'Remote'], mySkills: [] };
+
+test('fit: skills match through aliases and implications, never through "do not claim"', () => {
+  const a = { requiredSkills: ['SQL', 'Python', 'Power BI'], preferredSkills: ['JS', 'PostgreSQL'], audience: { degreeLevels: ['Bachelor', 'Master'] }, sponsorship: { status: 'cpt_opt_ok' }, location: { workMode: 'onsite', places: ['Austin, TX'] } };
+  const r = C.fit(PROFILE, a, { settings: SETTINGS, role: 'Data Analyst Intern' });
+  assert.deepEqual(r.skills.reqHit, ['SQL', 'Python']);
+  assert.deepEqual(r.skills.reqMiss, ['Power BI']);
+  assert.deepEqual(r.skills.optHit, ['JS']);
+  assert.deepEqual(r.flagged, ['Power BI']);
+  assert.equal(r.track, 'DA');
+  assert.equal(r.parts.find((p) => p.k === 'location').v, 1);
+  assert.ok(r.total > 70 && r.total <= 100, r.total);
+});
+
+test('fit: citizenship and PhD-only postings are capped and explained', () => {
+  const r = C.fit(PROFILE, { audience: { degreeLevels: ['PhD'] }, sponsorship: { status: 'citizens_only' } }, { settings: SETTINGS, role: 'Data Scientist Intern' });
+  assert.ok(r.total <= 35);
+  assert.ok(r.blockers.some((b) => /citizenship/.test(b)) && r.blockers.some((b) => /PhD/.test(b)));
+});
+
+test('fit: graduation window outside your date is a blocker', () => {
+  const r = C.fit(PROFILE, { audience: { degreeLevels: ['Master'], gradFrom: '2026-12', gradTo: '2027-06' } }, { settings: SETTINGS, role: 'Data Analyst Intern' });
+  assert.ok(r.blockers.some((b) => /Graduation window/.test(b)));
+  assert.ok(r.parts.find((p) => p.k === 'education').v < 0.5);
+});
+
+test('keywordScore: weighted coverage with word boundaries', () => {
+  const kws = [{ term: 'SQL', importance: 3 }, { term: 'Java', importance: 1 }, { term: 'Machine Learning', importance: 2 }, { term: 'C++', importance: 1 }];
+  const r = C.keywordScore('Wrote T-SQL queries in JavaScript; trained ML models in C/C++.', kws);
+  assert.deepEqual(r.hit.map((k) => k.term), ['SQL', 'Machine Learning', 'C++']); // "C/C++" counts as C++; "JavaScript" is not Java
+  assert.deepEqual(r.miss.map((k) => k.term), ['Java']);
+  assert.equal(r.score, Math.round(6 / 7 * 100));
+});
+
+test('factCheck flags numbers, unclaimable tools and inflated verbs that the cited facts do not support', () => {
+  const S = C.skillSet({ skills: [{ value: 'Python, SQL (T-SQL)' }], notYet: ['Power BI'] }, {});
+  assert.deepEqual(C.factCheck('Built SQL reports for 1,200 users across 3 teams', 'Built SQL reports used by 1200 users in 3 teams', S), []);
+  assert.deepEqual(C.factCheck('Cut load time 40% with Python', 'Sped up loads with Python scripts', S), ['Number 40 not in the cited facts']);
+  const r = C.factCheck('Led Power BI and Kafka dashboard work in 2025', 'Contributed to dashboard work', S);
+  assert.ok(r.includes('Power BI is on your Do-not-claim list'));
+  assert.ok(r.includes('Kafka is not in your Profile'));
+  assert.ok(r.some((x) => x.includes('“Led”')));
+  assert.deepEqual(C.factCheck('Led a 4-person team', 'Led a team of 4 students', S), []); // years and supported verbs are fine
+  assert.deepEqual(C.factCheck('Used R&D data in Go', 'R&D data', S), []);                 // one- and two-letter names are skipped
+});

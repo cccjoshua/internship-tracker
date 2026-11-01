@@ -17,12 +17,18 @@ Files (all in the data folder, which is git-ignored):
                  one per day and removed after 60 days.
 - cache/         downloaded feed, H-1B index and posting-text cache.
 
+- profile.json    your Profile: the only source of facts for resumes and match scores.
+- ai/, resumes/, letters/, exports/, secrets.json   Claude API results, resume and cover letter drafts, exported files and
+                 the API key (see ai.py). Never served as files.
+
 Also serves /calendar.ics (deadlines, next steps and interviews) for a calendar
 subscription. Listens on 127.0.0.1 only and refuses cross-origin writes.
+When started by launchd it exits after its own code changes, so KeepAlive restarts it with the new code.
 Uses only the Python standard library (Python 3.8+).
 """
 import argparse
 import datetime as dt
+import hashlib
 import http.server
 import json
 import os
@@ -34,34 +40,45 @@ import tempfile
 import threading
 import time
 import traceback
+import urllib.parse
 import webbrowser
 
+import ai
+import clips
 import fetcher
+import resume_export
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PAGE = "internship-tracker.html"
-STATIC = {"/core.js": ("core.js", "text/javascript; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8")}
+STATIC = {"/core.js": ("core.js", "text/javascript; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+          "/studio.js": ("studio.js", "text/javascript; charset=utf-8"),
+          "/base.css": ("base.css", "text/css; charset=utf-8"), "/apple.css": ("apple.css", "text/css; charset=utf-8")}
 FONT = re.compile(r"^/fonts/([a-z0-9-]+\.woff2)$")
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 BACKUP_EVERY = dt.timedelta(minutes=30)
 KEEP_ALL_DAYS = 3
 KEEP_MAX_DAYS = 60
 MAX_BODY = 20 * 1024 * 1024  # 20 MB
 BACKUP_NAME = re.compile(r"^tracker-\d{4}-\d{2}-\d{2}(-\d{6})?\.json$")
 LOCK = threading.Lock()           # tracker.json
+PROFILE_LOCK = threading.Lock()   # profile.json
 LISTINGS_LOCK = threading.Lock()  # listings.json
 FETCH_LOCK = threading.Lock()     # one refresh at a time
 
-DATA_DIR = STATE = LISTINGS = BACKUPS = ""
+DATA_DIR = STATE = LISTINGS = BACKUPS = PROFILE = ""
 
 
 def configure(data_dir):
-    """Point the server (and the fetcher's cache) at a data folder."""
-    global DATA_DIR, STATE, LISTINGS, BACKUPS
+    """Point the server (and the fetcher's cache and the AI module) at a data folder."""
+    global DATA_DIR, STATE, LISTINGS, BACKUPS, PROFILE
     DATA_DIR = os.path.abspath(data_dir)
     STATE = os.path.join(DATA_DIR, "tracker.json")
     LISTINGS = os.path.join(DATA_DIR, "listings.json")
     BACKUPS = os.path.join(DATA_DIR, "backups")
+    PROFILE = os.path.join(DATA_DIR, "profile.json")
     fetcher.CACHE = os.path.join(DATA_DIR, "cache")
+    ai.configure(DATA_DIR)
+    clips.configure(DATA_DIR)
 
 
 configure(os.environ.get("IAT_DATA_DIR") or os.path.join(ROOT, "data"))
@@ -171,6 +188,24 @@ def backup(force=False):
 
 
 # ---------------------------------------------------------------- refresh
+def with_profile_filters(user):
+    """The refresh gates follow Profile → What you are looking for (term, regions, degree levels) when set."""
+    try:
+        pref = (load_profile() or {}).get("preferences") or {}
+    except Exception:
+        pref = {}
+    settings = dict((user or {}).get("settings") or {})
+    if pref.get("terms") and not settings.get("terms"):
+        settings["terms"] = [t.strip() for t in str(pref["terms"]).split(",") if t.strip()]
+    if pref.get("regions") and not settings.get("regions"):
+        settings["regions"] = list(pref["regions"])
+    deg = {"Bachelor": "Bachelor's", "Master": "Master's", "PhD": "PhD", "MBA": "MBA"}
+    if pref.get("degreePursuing") and not settings.get("degreeLevels"):
+        levels = {deg.get(pref["degreePursuing"], pref["degreePursuing"])} | {deg.get(d, d) for d in pref.get("degreesHeld") or []}
+        settings["degreeLevels"] = sorted(levels | {"Bachelor's", "Master's"} if "Master's" in levels else levels)
+    return dict(user or {}, settings=settings)
+
+
 def run_fetch():
     """Download and describe listings, then write listings.json. Never writes tracker.json."""
     if not FETCH_LOCK.acquire(blocking=False):
@@ -182,7 +217,7 @@ def run_fetch():
             user = {}
         before = load_listings()
         try:
-            result = fetcher.refresh(user, before, log=lambda m: print(m, flush=True))
+            result = fetcher.refresh(with_profile_filters(user), before, log=lambda m: print(m, flush=True))
             error = None
         except Exception as e:
             print(traceback.format_exc(), flush=True)
@@ -213,9 +248,25 @@ def scheduler():
                 due = elapsed >= dt.timedelta(hours=max(0.5, hours))
             if due:
                 run_fetch()
+            ai.check_changes(log=lambda m: print(m, flush=True))  # once a day: did analyzed postings change or close? (no AI calls)
         except Exception:
             print(traceback.format_exc(), flush=True)
         time.sleep(300)
+
+
+def import_h1b(data, filename):
+    """Load a USCIS H-1B Employer Data Hub file and update every listing's H-1B count right away."""
+    meta = fetcher.import_h1b(data, filename)
+    h1b = fetcher.H1B(lambda m: None)
+    with LISTINGS_LOCK:
+        cur = load_listings()
+        for l in cur.get("listings") or []:
+            l["h1b"] = h1b.lookup(l.get("company"))
+        if cur.get("fetch"):
+            cur["fetch"]["h1b"] = meta["label"]
+        cur["lrev"] = int(cur.get("lrev", 0) or 0) + 1
+        _write(LISTINGS, cur)
+    return meta
 
 
 # ---------------------------------------------------------------- calendar
@@ -291,6 +342,76 @@ def calendar(state, now=None):
     return "\r\n".join(_fold(l) for l in lines) + "\r\n"
 
 
+# ---------------------------------------------------------------- profile
+class Corrupt(Exception):
+    """A data file exists but cannot be read. It is kept (and copied aside) and never overwritten."""
+
+
+def quarantine(path):
+    """Copy an unreadable data file to backups/corrupt/ once, so a restore can never lose it."""
+    d = os.path.join(BACKUPS, "corrupt")
+    os.makedirs(d, exist_ok=True)
+    dst = os.path.join(d, f"{os.path.basename(path)}.{dt.datetime.now():%Y-%m-%d-%H%M%S}")
+    if not any(n.startswith(os.path.basename(path) + ".") and os.path.getsize(os.path.join(d, n)) == os.path.getsize(path) for n in os.listdir(d)):
+        shutil.copy2(path, dst)
+    return dst
+
+
+def read_checked(path):
+    """None when the file does not exist; Corrupt when it exists but is not valid JSON."""
+    try:
+        return _read(path)
+    except (OSError, ValueError) as e:
+        if os.path.exists(path):
+            quarantine(path)
+            raise Corrupt(f"{os.path.basename(path)} could not be read ({e}). It was left untouched and copied to data/backups/corrupt/. Restore a backup in Settings → Data, or fix the file.")
+        return None
+
+
+def load_profile():
+    try:
+        return _read(PROFILE)
+    except (OSError, ValueError):
+        return None
+
+
+def save_profile(data, base):
+    """Revision-checked save; keeps a copy of the previous version in backups/profile/ (at most one per 30 minutes)."""
+    with PROFILE_LOCK:
+        try:
+            cur = read_checked(PROFILE) or {}
+        except Corrupt as e:
+            raise ai.AIError(str(e), 503)
+        rev = int(cur.get("rev", 0) or 0)
+        try:
+            base = None if base is None else int(base)
+        except (TypeError, ValueError):
+            raise ai.AIError("Invalid baseRev.")
+        if base is not None and base != rev:
+            return False, cur
+        if cur:
+            d = os.path.join(BACKUPS, "profile")
+            os.makedirs(d, exist_ok=True)
+            names = sorted(n for n in os.listdir(d) if n.endswith(".json"))
+            stamp = dt.datetime.now()
+            last = names[-1] if names else ""
+            if not last or stamp - dt.datetime.strptime(last[8:-5], "%Y-%m-%d-%H%M%S") >= BACKUP_EVERY:
+                shutil.copy2(PROFILE, os.path.join(d, f"profile-{stamp:%Y-%m-%d-%H%M%S}.json"))
+                for old in names[:-59]:  # keep 60
+                    os.remove(os.path.join(d, old))
+        data["rev"] = rev + 1
+        data["updatedAt"] = dt.datetime.now().isoformat(timespec="seconds")
+        _write(PROFILE, data)
+        return True, data
+
+
+def job_meta(body):
+    m = {k: str(body.get(k) or "")[:500] for k in ("key", "company", "role", "url", "location")}
+    if not m["key"]:
+        raise ai.AIError("Missing job key.")
+    return m
+
+
 # ---------------------------------------------------------------- HTTP
 class Handler(http.server.BaseHTTPRequestHandler):
     server_version = "InternshipTracker"
@@ -303,6 +424,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
+        self._cors()
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -323,19 +445,149 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _path(self):
         return self.path.split("?", 1)[0].split("#", 1)[0]
 
+    def _host_ok(self):
+        """Answer only requests addressed to this machine by name. Blocks DNS rebinding: a website whose domain
+        re-resolves to 127.0.0.1 would otherwise be "same origin" and could read your profile or spend API credit."""
+        port = self.server.server_address[1]
+        return (self.headers.get("Host") or "").lower() in {f"{h}:{port}" for h in LOCAL_HOSTS}
+
+    def _blocked(self):
+        if self._host_ok():
+            return False
+        body = b'{"error": "Unknown host. Open the tracker at http://127.0.0.1 or http://localhost."}'
+        self.send_response(421)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+        return True
+
+    def _length(self):
+        try:
+            return int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return -1
+
     def _same_origin(self):
         return self.headers.get("Origin") in (None, f"http://{self.headers.get('Host')}")
+
+    # ---- Chrome extension ("clips"): the tracker page or an installed extension may call these; other websites may not.
+    def _ext_origin(self):
+        o = self.headers.get("Origin")
+        return o is None or o == f"http://{self.headers.get('Host')}" or bool(re.match(r"^chrome-extension://[a-p]{32}$", o or ""))
+
+    def _cors(self):
+        o = self.headers.get("Origin") or ""
+        if o.startswith("chrome-extension://"):
+            self.send_header("Access-Control-Allow-Origin", o)
+            self.send_header("Vary", "Origin")
+
+    def do_OPTIONS(self):
+        if self._blocked():
+            return
+        if self._path().startswith("/api/clip") and self._ext_origin():
+            self.send_response(204); self._cors()
+            self.send_header("Access-Control-Allow-Methods", "GET, POST")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-IAT-Client")
+            self.send_header("Content-Length", "0"); self.end_headers()
+            return
+        self.send_response(403); self.send_header("Content-Length", "0"); self.end_headers()
+
+    def _clip(self, method, path):
+        """Returns True when handled."""
+        ext = {("GET", "/api/clip/ping"), ("POST", "/api/clip/check"), ("POST", "/api/clip")}
+        page = {("GET", "/api/clips"), ("POST", "/api/clips/ack")}
+        if (method, path) not in ext | page:
+            return False
+        if not (self._ext_origin() if (method, path) in ext else self._same_origin()):
+            self._json(403, {"error": "Not allowed from this origin."})
+            return True
+        try:
+            if path == "/api/clip/ping":
+                st = ai.status()
+                return self._json(200, {"ok": True, "app": "Internship Tracker", "claude": bool(st.get("configured")), "tracks": ["SWE", "DE", "DA", "DS", "BIE"]}) or True
+            if path == "/api/clips":
+                return self._json(200, {"pending": clips.pending()}) or True
+            b = self._body(200 * 1024)
+            if path == "/api/clips/ack":
+                # "added": clips the page turned into applications; removed only once tracker.json has them.
+                # "skipped": duplicates the page chose not to add.
+                try:
+                    saved = {a.get("id") for a in (read_checked(STATE) or {}).get("apps") or []}
+                except Corrupt as e:
+                    return self._json(503, {"error": str(e)}) or True
+                n = clips.ack(b.get("added") or [], saved) + clips.ack(b.get("skipped") or [])
+                n += clips.ack(b.get("ids") or [], saved)  # older pages
+                return self._json(200, {"removed": n}) or True
+            state = load_state() or {}
+            if path == "/api/clip/check":
+                url = clips.canonical_url(b.get("url") or "")
+                tr = fetcher.infer_track(str(b.get("role") or ""))
+                return self._json(200, {"match": clips.find(state, url, str(b.get("company") or ""), str(b.get("role") or "")), "url": url,
+                                        "track": tr if tr in ("SWE", "DE", "DA", "DS", "BIE") else ""}) or True
+            try:
+                c, dup = clips.add(b, state)
+            except ValueError as e:
+                return self._json(400, {"error": str(e)}) or True
+            if dup:
+                return self._json(409, {"error": "Already in your tracker.", "match": dup}) or True
+            desc = str(b.get("description") or "")
+            if c["hasText"]:
+                meta = {"key": c["key"], "company": c["company"], "role": c["role"], "url": c["url"]}
+                try:
+                    rec = ai.ensure_text(meta, pasted=desc)
+                    rec["textSource"] = "extension"; ai.save_job(c["key"], rec)
+                except Exception as e:  # the clip still counts; analysis can fetch or take pasted text later
+                    print("clip text not stored:", e)
+                if b.get("analyze") and ai.status().get("configured"):
+                    threading.Thread(target=self._analyze_clip, args=(meta,), daemon=True).start()
+            host = self.headers.get("Host") or "127.0.0.1:8765"
+            return self._json(200, {"ok": True, "clip": {k: c[k] for k in ("id", "company", "role", "track", "status", "sponsor", "url")}, "open": f"http://{host}/#job/{c['id']}"}) or True
+        except ai.AIError as e:
+            return self._json(e.code, {"error": str(e)}) or True
+
+    @staticmethod
+    def _analyze_clip(meta):
+        try:
+            ai.analyze(meta)
+        except Exception as e:
+            print("clip analysis failed:", e)
 
     def do_HEAD(self):
         self.do_GET()
 
     def do_GET(self):
+        if self._blocked():
+            return
         path = self._path()
+        if self._clip("GET", path):
+            return
         try:
             if path == "/api/state":
-                return self._json(200, load_state())
+                try:
+                    return self._json(200, read_checked(STATE))
+                except Corrupt as e:
+                    return self._json(503, {"error": str(e), "corrupt": True})
             if path == "/api/listings":
                 return self._json(200, load_listings())
+            if path == "/api/profile":
+                try:
+                    return self._json(200, read_checked(PROFILE))
+                except Corrupt as e:
+                    return self._json(503, {"error": str(e), "corrupt": True})
+            if path == "/api/ai/status":
+                return self._json(200, ai.status())
+            if path == "/api/studio/index":
+                return self._json(200, ai.studio_index())
+            if path == "/api/studio/docs":
+                return self._json(200, ai.studio_docs())
+            if path == "/api/job":
+                q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                key = (q.get("key") or [""])[0]
+                if not key:
+                    return self._json(400, {"error": "Missing key."})
+                return self._json(200, {"job": ai.load_job(key), "resume": ai.load_resume(key), "letter": ai.load_resume(key, "letter")})
             if path == "/api/backups":
                 out = []
                 for name in list_backups():
@@ -364,7 +616,137 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._file(os.path.join(ROOT, "fonts", m.group(1)), "font/woff2", cache=True)
         return self._json(404, {"error": "Not found."})  # never data/, scripts or anything else
 
+    def _body(self, limit=MAX_BODY):
+        length = self._length()
+        if length <= 0 or length > limit:
+            raise ai.AIError("Body is empty or too large.", 413)
+        try:
+            data = json.loads(self.rfile.read(length).decode("utf-8"))
+        except ValueError as e:
+            raise ai.AIError(f"Invalid JSON: {e}")
+        if not isinstance(data, dict):
+            raise ai.AIError("Expected a JSON object.")
+        return data
+
+    def _studio(self, method, path):
+        """Profile, Claude API and resume endpoints. Returns True when handled."""
+        routes = {("PUT", "/api/profile"), ("PUT", "/api/resume"), ("POST", "/api/ai/key"), ("POST", "/api/ai/config"), ("POST", "/api/ai/verify"),
+                  ("POST", "/api/job/text"), ("POST", "/api/ai/analyze"), ("POST", "/api/ai/tailor"), ("POST", "/api/ai/rewrite"), ("POST", "/api/ai/cover"), ("PUT", "/api/letter"), ("POST", "/api/ai/claude-check"), ("POST", "/api/h1b"),
+                  ("POST", "/api/resume/fit"), ("POST", "/api/export")}
+        if (method, path) not in routes:
+            return False
+        if not self._same_origin():
+            self._json(403, {"error": "Cross-origin requests are not allowed."})
+            return True
+        try:
+            if path == "/api/h1b":  # raw file upload
+                length = self._length()
+                if length <= 0 or length > 80 * 1024 * 1024:
+                    raise ai.AIError("The file is empty or larger than 80 MB.", 413)
+                try:
+                    meta = import_h1b(self.rfile.read(length), urllib.parse.unquote(self.headers.get("X-Filename") or ""))
+                except ValueError as e:
+                    raise ai.AIError(f"Could not read that file: {e}.")
+                return self._json(200, {"ok": True, "h1b": meta, "status": ai.status()}) or True
+            b = self._body()
+            if path == "/api/ai/claude-check":
+                ai.claude_code(refresh=True)
+                return self._json(200, ai.status()) or True
+            if path == "/api/profile":
+                p = b.get("profile")
+                if not isinstance(p, dict):
+                    raise ai.AIError("Expected a profile object.")
+                ok, out = save_profile(p, b.get("baseRev"))
+                return self._json(200 if ok else 409, {"ok": ok, "rev": out.get("rev"), "updatedAt": out.get("updatedAt"), "profile": None if ok else out}) or True
+            if path == "/api/ai/key":
+                ai.set_key(b.get("key") or "")
+                return self._json(200, ai.status()) or True
+            if path == "/api/ai/config":
+                ai.set_config(b)
+                return self._json(200, ai.status()) or True
+            if path == "/api/ai/verify":
+                ids = ai.verify_key()
+                return self._json(200, {"ok": True, "models": ids}) or True
+            if path == "/api/job/text":
+                rec = ai.ensure_text(job_meta(b), b.get("text"), bool(b.get("refetch")))
+                return self._json(200, {"job": rec}) or True
+            if path == "/api/ai/analyze":
+                rec, row = ai.analyze(job_meta(b), b.get("text"), bool(b.get("refetch")))
+                return self._json(200, {"job": rec, "usage": row, "status": ai.status()}) or True
+            if path == "/api/ai/tailor":
+                profile = load_profile()
+                if not profile:
+                    raise ai.AIError("Fill in your Profile first: it is the only source of facts for the resume.", 409)
+                track = str(b.get("track") or "SWE")
+                lead = ((profile.get("tracks") or {}).get(track) or {}).get("leadWith", "")
+                result, row = ai.tailor(job_meta(b), profile, track, lead, str(b.get("instructions") or ""), profile.get("resumeRules") or [],
+                                        str(profile.get("resumeActivities") or "auto"), str(b.get("baseline") or "")[:8000])
+                return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
+            if path == "/api/ai/rewrite":
+                result, row = ai.rewrite(job_meta(b), str(b.get("bullet") or ""), [str(x) for x in b.get("sources") or []][:8],
+                                         [str(x) for x in b.get("keywords") or []], str(b.get("instruction") or ""), str(b.get("context") or ""),
+                                         "paragraph" if b.get("kind") == "paragraph" else "bullet")
+                return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
+            if path == "/api/ai/cover":
+                profile = load_profile()
+                if not profile:
+                    raise ai.AIError("Fill in your Profile first: it is the only source of facts for the letter.", 409)
+                g = lambda k: str(b.get(k) or "")
+                result, row = ai.cover(job_meta(b), profile, g("track") or "SWE", g("resumeText"), g("recipient"), g("why"), g("emphasis"), g("availability"), g("instructions"))
+                return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
+            if path in ("/api/resume", "/api/letter"):
+                if not isinstance(b.get("resume"), dict):
+                    raise ai.AIError("Expected a document object.")
+                kind = "letter" if path == "/api/letter" else "resume"
+                try:
+                    doc = ai.save_resume(job_meta(b), b["resume"], str(b.get("label") or ""), str(b.get("by") or "you"), b.get("notes"), kind=kind,
+                                         base=b.get("baseUpdatedAt"), keep_current=bool(b.get("keepCurrent")),
+                                         reviewed=b.get("reviewed") if isinstance(b.get("reviewed"), bool) else None)
+                except ai.DocConflict as e:
+                    return self._json(409, {"error": str(e), "resume": e.doc}) or True
+                return self._json(200, {"ok": True, "resume": doc}) or True
+            if path == "/api/resume/fit":
+                return self._json(200, resume_export.render(b.get("resume") or {})) or True
+            if path == "/api/export":
+                model, fmt = b.get("resume") or {}, b.get("format")
+                if fmt not in ("docx", "pdf"):
+                    raise ai.AIError("Format must be docx or pdf.")
+                if fmt == "pdf":
+                    bad = resume_export.unsupported_chars(model)
+                    if bad:
+                        raise ai.AIError("The PDF export uses the standard Times/Helvetica fonts, which cannot show "
+                                         + " ".join(bad[:12]) + (" …" if len(bad) > 12 else "")
+                                         + ". Export .docx (it keeps every character), or write those words in Latin letters.", 422)
+                data = resume_export.to_docx(model) if fmt == "docx" else resume_export.to_pdf(model)
+                name = resume_export.safe_name(b.get("filename") or "Resume")
+                kind = "letter" if b.get("kind") == "letter" else "resume"
+                key = str(b.get("key") or "")
+                # The download keeps your chosen name; the copy kept in data/exports is unique per job, kind and content,
+                # so two jobs at one company (or two versions) never overwrite each other.
+                tag = "-".join(x for x in (ai.job_hash(key)[:6] if key else "", kind, hashlib.sha1(data).hexdigest()[:6]) if x)
+                rel = f"{name}__{tag}.{fmt}"
+                out = os.path.join(DATA_DIR, "exports", rel)
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                with open(out, "wb") as f:
+                    f.write(data)
+                if key:
+                    ai.record_export(key, kind, fmt, rel)
+                ctype = "application/pdf" if fmt == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                self._send(200, data, ctype, {"Content-Disposition": f'attachment; filename="{name}.{fmt}"; filename*=UTF-8\'\'{urllib.parse.quote(name + "." + fmt)}',
+                                              "X-Saved-To": "data/exports/" + urllib.parse.quote(rel)})
+                return True
+        except ai.AIError as e:
+            self._json(e.code, {"error": str(e)})
+        except Exception as e:  # never leave the page hanging
+            print(traceback.format_exc(), flush=True)
+            self._json(500, {"error": f"Server error: {e}"})
+        return True
+
     def do_POST(self):
+        if self._blocked():
+            return
+        if self._clip("POST", self._path()) or self._studio("POST", self._path()):
+            return
         if self._path() != "/api/fetch":
             return self._json(404, {"error": "Not found."})
         if not self._same_origin():
@@ -377,11 +759,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         return self._json(202, {"started": True})
 
     def do_PUT(self):
+        if self._blocked():
+            return
+        if self._studio("PUT", self._path()):
+            return
         if self._path() != "/api/state":
             return self._json(404, {"error": "Not found."})
         if not self._same_origin():
             return self._json(403, {"error": "Cross-origin writes are not allowed."})
-        length = int(self.headers.get("Content-Length") or 0)
+        length = self._length()
         if length <= 0 or length > MAX_BODY:
             return self._json(413, {"error": "Body is empty or too large."})
         try:
@@ -391,13 +777,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except ValueError as e:
             return self._json(400, {"error": f"Invalid data: {e}"})
         base = data.pop("baseRev", None)
+        try:
+            base = None if base is None else int(base)
+        except (TypeError, ValueError):
+            return self._json(400, {"error": "Invalid baseRev."})
         data.pop("listings", None)  # listings live in listings.json
         data.pop("fetch", None)
         with LOCK:
             try:
-                current = load_state() or {}
-            except (OSError, ValueError):
-                current = {}
+                current = read_checked(STATE) or {}
+            except Corrupt as e:
+                return self._json(503, {"error": str(e)})
             rev = int(current.get("rev", 0) or 0)
             if base is not None and int(base) != rev:
                 return self._json(409, {"error": "Changed in another tab.", "rev": rev, "state": current})
@@ -414,6 +804,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+
+
+CODE = ("server.py", "ai.py", "clips.py", "fetcher.py", "resume_export.py", "fontmetrics.py")
+
+
+def code_watcher():
+    """Under launchd (KeepAlive), exit when the server's own code changes so launchd restarts it with the new code."""
+    stamp = lambda: tuple(os.path.getmtime(os.path.join(ROOT, f)) for f in CODE if os.path.exists(os.path.join(ROOT, f)))
+    first = stamp()
+    while True:
+        time.sleep(5)
+        try:
+            if stamp() != first:
+                time.sleep(2)  # let a multi-file update finish
+                print("Code changed; exiting so launchd restarts the server with it.", flush=True)
+                os._exit(0)
+        except OSError:
+            pass
 
 
 def main():
@@ -437,6 +845,8 @@ def main():
             threading.Timer(0.6, lambda: webbrowser.open(url)).start()
         if not args.no_fetch:
             threading.Thread(target=scheduler, daemon=True).start()
+        if os.getppid() == 1 or os.environ.get("IAT_RELOAD") == "1":  # started by launchd
+            threading.Thread(target=code_watcher, daemon=True).start()
         try:
             httpd.serve_forever()
         except KeyboardInterrupt:

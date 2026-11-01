@@ -21,7 +21,7 @@ const fmt = (s) => { const p = parse(s); if (!p) return '—'; const o = { month
 const maxDate = (x, y) => (!y || (x && x > y)) ? x : y;
 const ago = (s) => { const n = -daysFrom(s); return n <= 0 ? 'today' : n === 1 ? 'yesterday' : n + ' days ago'; };
 const dueText = (n) => n < 0 ? `${-n}d overdue` : n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : `In ${n} days`;
-const dueCls = (n) => n < 0 ? 'hot' : n <= 3 ? 'soon' : '';
+const dueCls = (n) => n <= 1 ? 'hot' : n <= 3 ? 'soon' : '';
 const plural = (n, w, p) => `${n} ${n === 1 ? w : (p || w + 's')}`;
 
 /* ---------- links ---------- */
@@ -37,7 +37,7 @@ const CLOSED = ['rejected', 'withdrawn', 'missed', 'ghosted', 'expired'];
 const FLOW = ['saved', 'applied', 'oa', 'interview', 'offer'];
 const TRACKS = ['SWE', 'DE', 'DA', 'DS', 'BIE'];
 const TRACK_NAME = { SWE: 'Software Eng.', DE: 'Data Eng.', DA: 'Data Analyst', DS: 'Data Science', BIE: 'BI Engineer', Quant: 'Quant', Other: 'Other' };
-const SPONSOR = { yes: 'Sponsors visa', no: 'No sponsorship', unknown: 'Sponsorship ?' };
+const SPONSOR = { yes: 'Sponsorship: yes', no: 'Sponsorship: no', unknown: 'Sponsorship: not stated' };
 const DEFAULTS = C.DEFAULTS;
 const WEIGHT_LABEL = { fit: 'Role fit', skills: 'Skill match', sponsor: 'Sponsorship evidence', recency: 'Recency', degree: 'Degree', location: 'Preferred location' };
 const WEIGHT_HINT = { fit: 'title matches a target track', skills: 'posting skills on your resume', sponsor: 'H-1B history, CPT/OPT wording', recency: 'halves every few days', degree: 'Master’s listed', location: 'one of your preferred places' };
@@ -130,7 +130,7 @@ function migrate(d) {
     delete b.contact;
     if (typeof b.score !== 'number' && typeof b.matchScore === 'number') b.score = b.matchScore;
     delete b.matchScore;
-    if (typeof b.score !== 'number') { const m = /Match score (\d{1,3}) when tracked/.exec(b.notes || ''); if (m) b.score = +m[1]; }
+    if (typeof b.score !== 'number') { const m = /(?:Match score|Listing priority) (\d{1,3}) when tracked/.exec(b.notes || ''); if (m) b.score = +m[1]; }
     return b;
   });
   if (ds.onboarded === undefined && (s.apps.length || legacy.length)) s.settings.onboarded = true;
@@ -168,6 +168,10 @@ const Store = {
     if (this.mode !== 'file') { setSaved('Saved in this browser only', true); return; }
     this.queued = d; clearTimeout(this.t); setSaved('Saving…'); this.t = setTimeout(() => this.flush(), 300);
   },
+  /* Resolves once nothing is queued or in flight (or after 10 s). */
+  async settled() {
+    for (let i = 0; i < 100 && (this.busy || this.queued); i++) { if (this.queued && !this.busy) this.flush(); await new Promise((r) => setTimeout(r, 100)); }
+  },
   async flush() {
     if (this.busy || !this.queued) return;
     const d = this.queued; this.queued = null; this.busy = true; const backup = this.destructive; this.destructive = false;
@@ -197,7 +201,7 @@ const Store = {
     if (this.queued && this.tries < 5) this.flush();
   },
 };
-function setSaved(t, warn) { const el = $('#saveState'); el.textContent = t; el.classList.toggle('warn', !!warn); }
+function setSaved(t, warn) { const el = $('#saveState'); el.textContent = t; el.title = t; el.classList.toggle('warn', !!warn); }
 let S, F = normFeed({}), pendingExt = null;
 function save(destructive) { Store.save(userData(), destructive); }
 function adoptUser(d, o) { const ui = S ? S.ui : null; S = migrate(d); if (o && o.keepUi && ui) S.ui = ui; }
@@ -235,10 +239,44 @@ if (bc) bc.onmessage = async (e) => {
   if (e.data.lrev > F.lrev) applyFeed(await Store.latestFeed());
 };
 window.addEventListener('storage', (e) => { if (e.key !== KEY || !e.newValue || Store.mode === 'file') return; try { applyExternal(JSON.parse(e.newValue), 'Updated from another tab'); } catch (_) { /* ignore */ } });
+/* Jobs sent from the Chrome extension wait on the server until this page adds them (one step, with Undo). */
+let clipping = false;
+async function ingestClips() {
+  if (Store.mode !== 'file' || clipping || !S) return;
+  clipping = true;
+  try {
+    const r = await fetch('api/clips', { cache: 'no-store' }); if (!r.ok) return;
+    const list = (await r.json()).pending || []; if (!list.length) return;
+    const added = [], skipped = [];
+    for (const c of list) {
+      if (S.apps.some((a) => a.id === c.id)) continue;            // already added: the ack below confirms it once saved
+      if (findDup(c.company, c.role, c.url)) { skipped.push(c.id); continue; }
+      if (!added.length) checkpoint();
+      const d = (c.at || '').slice(0, 10) || iso(TODAY);
+      const a = blankApp({ id: c.id, company: c.company, role: c.role, track: c.track || inferTrack(c.role), location: c.location, url: safeUrl(c.url), posted: c.posted, deadline: c.deadline,
+        sponsor: c.sponsor || 'unknown', source: c.source || '', notes: [c.source ? `Added from ${c.source} with the Chrome extension.` : 'Added with the Chrome extension.', c.pay ? `Pay: ${c.pay}.` : '', c.workMode ? `Work mode: ${c.workMode}.` : '', c.notes].filter(Boolean).join(' '),
+        history: [{ s: 'saved', d }] });
+      if (c.status === 'applied') setStatus(a, 'applied');
+      S.apps.push(a); added.push(a);
+    }
+    if (added.length) {
+      UI.scoredRev++; save(); render();
+      toast(added.length > 1 ? `${added.length} jobs added from Chrome` : `${added[0].company} added from Chrome · ${added[0].status === 'applied' ? 'Applied' : 'Saved'}`, true);
+      await Store.settled();
+    }
+    /* The server removes an added clip from its queue only after tracker.json contains it, so a failed save never loses it. */
+    const ids = list.map((c) => c.id).filter((id) => S.apps.some((a) => a.id === id));
+    await fetch('api/clips/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ added: ids, skipped }) });
+    loadKit();
+  } catch (_) { /* server offline: try again on the next check */ } finally { clipping = false; }
+}
 async function checkRemote() {
   if (Store.mode !== 'file') return;
+  ingestClips();
   if (!Store.busy && !Store.queued) { const l = await Store.latest(); if (l && (+l.rev || 0) > Store.rev) applyExternal(l, 'Updated from another tab'); }
   const f = await Store.latestFeed(); if (f && (+f.lrev || 0) > F.lrev) applyFeed(f, refreshMessage(f.fetch));
+  const was = JSON.stringify(KIT); await loadKit();
+  if (JSON.stringify(KIT) !== was && ['inbox', 'dashboard'].includes(route()) && $('#drawer').hidden) render();
 }
 function takeDailySnapshot() {
   try {
@@ -272,18 +310,27 @@ function moveTo(a, s) {
 }
 const reached = (a, s) => a.history.some((h) => h.s === s) || a.status === s;
 const norm = (s) => (s || '').toLowerCase().replace(/\b(summer|fall|winter|spring|internship|intern|co-?op)\b|\b20\d\d\b/g, '').replace(/[^a-z0-9]/g, '');
+/* Same as norm() but keeps season and year: "Intern (Summer 2026)" and "(Summer 2027)" are different jobs. */
+const normStrict = (s) => (s || '').toLowerCase().replace(/\b(internship|intern|co-?op)\b/g, '').replace(/[^a-z0-9]/g, '');
+/* A duplicate is the same link, or the same company and title (season and year included) when one side has no link.
+   Two different links with the same title are different requisitions, not duplicates. */
 function findDup(company, role, url, exceptId) {
-  const k = norm(company) + '|' + norm(role), u = urlKey(url);
-  return S.apps.find((a) => a.id !== exceptId && ((norm(a.company) + '|' + norm(a.role)) === k || (u && urlKey(a.url) === u)));
+  const k = norm(company) + '|' + normStrict(role), u = urlKey(url);
+  return S.apps.find((a) => {
+    if (a.id === exceptId) return false;
+    const au = urlKey(a.url);
+    if (u && au) return u === au;
+    return (norm(a.company) + '|' + normStrict(a.role)) === k;
+  });
 }
 const inferTrack = (role) => { const t = C.inferTrack(role); return TRACKS.includes(t) ? t : ''; };
 /* Every listing scored under the current settings (cached until data or settings change). */
-const UI = { expanded: new Set(), limits: {}, attnAll: false, tableLimit: 25, scoredRev: 0, cache: null, select: false, selected: new Set(), closedNotice: null, editGoal: null, baseline: null };
+const UI = { expanded: new Set(), limits: {}, attnAll: false, tableLimit: 25, scoredRev: 0, cache: null, select: false, selected: new Set(), closedNotice: null, editGoal: null, baseline: null, peek: null, lastPick: null };
 function scored() {
   const key = UI.scoredRev + '|' + iso(TODAY) + '|' + JSON.stringify(S.settings) + '|' + S.apps.length + '|' + S.dismissed.length + '|' + S.manualListings.length;
   if (UI.cache && UI.cache.key === key) return UI.cache.list;
   const dis = new Set(S.dismissed), today = iso(TODAY);
-  const list = [...S.manualListings, ...F.listings].filter((l) => !dis.has(listingKey(l)) && !dis.has('k:' + norm(l.company) + '|' + norm(l.role))).map((l) => {
+  const list = [...S.manualListings, ...F.listings].filter((l) => !dis.has(listingKey(l)) && (urlKey(l.url) || !dis.has('k:' + norm(l.company) + '|' + norm(l.role)))).map((l) => {
     const sc = C.score(l, S.settings, today);
     return Object.assign({}, l, sc, { t: sc.track, sponsor: sc.sponsor, dup: findDup(l.company, l.role, l.url) });
   });
@@ -291,7 +338,17 @@ function scored() {
   return list;
 }
 const visibleListings = () => scored().filter((l) => !(S.settings.hideNoSponsor && l.sponsor === 'no'));
-const action = (l) => C.action(l, S.settings);
+/* Listing priority label (Apply now / Tailor first / Low priority). An analyzed posting that fails an eligibility check
+   (studio.js computes it from your Profile) is "Not eligible", whatever its priority score. */
+const eligOf = (x) => (HOOKS.verdictOf ? HOOKS.verdictOf(x) : null);
+const action = (l) => { const v = eligOf(l); return v && v.verdict === 'blocked' ? ['blocked', 'Not eligible'] : C.action(l, S.settings); };
+/* Search: every word must appear somewhere in the item (any order), case and punctuation ignored, so
+   "dallas tx", "python", "c++" and "data engineer" all work. */
+const sNorm = (s) => ' ' + String(s || '').toLowerCase().replace(/[^a-z0-9+#]+/g, ' ').replace(/\s+/g, ' ').trim() + ' ';
+const qTokens = (q) => sNorm(q).trim().split(' ').filter(Boolean);
+const qMatch = (hay, toks) => toks.every((t) => hay.includes(t));
+const listingHay = (l) => sNorm([l.company, l.role, l.location, l.t, TRACK_NAME[l.t], l.category, l.term, l.degree, ...(l.degrees || []), ...(l.matched || []), ...(l.missing || []), ...(l.skillsFound || []),
+  ...(l.flags || []), l.sponsor === 'yes' ? 'sponsors visa sponsorship' : l.sponsor === 'no' ? 'no sponsorship' : '', l.isNew ? 'new' : '', l.dup ? 'tracking ' + LABEL[l.dup.status] : ''].join(' '));
 function filtered() {
   const { q, track, sponsor } = S.ui; const t = (q || '').toLowerCase().trim();
   return S.apps.filter((a) => (!t || [a.company, a.role, a.location, a.notes, ...(a.contacts || []).map((c) => c.name + ' ' + c.title), ...(a.rounds || []).map((r) => r.kind + ' ' + r.with + ' ' + r.notes)].join(' ').toLowerCase().includes(t)) && (!track || a.track === track) && (!sponsor || a.sponsor === sponsor));
@@ -306,7 +363,7 @@ const resumeFor = (l) => (S.settings.resumes || DEFAULTS.resumes)[l.t || l.track
 const appliedOn = (d) => S.apps.filter((a) => a.history.some((h) => h.s === 'applied' && h.d === d)).length;
 function weekStart() { const s = new Date(TODAY); s.setDate(s.getDate() - ((s.getDay() + 6) % 7)); return s; }
 function appliedThisWeek() { const from = iso(weekStart()); return S.apps.filter((a) => a.history.some((h) => h.s === 'applied' && h.d >= from && h.d <= iso(TODAY))).length; }
-/* Saved applications: you chose to apply. They lead today's queue (Joshua's saved workflow). */
+/* Saved applications: you chose to apply. They lead today's queue (the saved workflow). */
 const savedOn = (a) => { const h = a.history.find((x) => x.s === 'saved'); return h ? h.d : (a.history[0] || {}).d || iso(TODAY); };
 const savedDays = (a) => Math.max(0, -daysFrom(savedOn(a)));
 const savedApps = () => S.apps.filter((a) => a.status === 'saved');
@@ -314,7 +371,7 @@ const savedApps = () => S.apps.filter((a) => a.status === 'saved');
 function soonDl(x) { const n = daysFrom(x.deadline); return n !== null && n >= 0 && n <= 7 ? 0 : 1; }
 /* Saved applications not applied to yet, most urgent first: deadline, then score, then the longest waiting. */
 function savedQueue() {
-  return savedApps().filter((a) => !(a.deadline && daysFrom(a.deadline) < 0))
+  return savedApps().filter((a) => !(a.deadline && daysFrom(a.deadline) < 0) && !snoozed(a))
     .sort((x, y) => soonDl(x) - soonDl(y) || (x.deadline && soonDl(x) === 0 ? x.deadline.localeCompare(y.deadline) : 0) || (y.score ?? -1) - (x.score ?? -1) || savedOn(x).localeCompare(savedOn(y)));
 }
 function listingPicks() { return visibleListings().filter((l) => !l.dup && action(l)[0] === 'now').sort((a, b) => soonDl(a) - soonDl(b) || b.total - a.total); }
@@ -337,21 +394,46 @@ const prio = (p) => `<span class="prio" role="img" aria-label="Priority ${p} of 
 const opts = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('');
 const link = (u, txt, cls = 'btn sm ghost') => { u = safeUrl(u); return u ? `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${txt}</a>` : ''; };
 const eff = (now) => now ? '<span class="eff now" title="Takes effect as soon as you change it">Instant</span>' : '<span class="eff later" title="Takes effect from the next listings refresh">Next refresh</span>';
-const ring = (n) => `<span class="ring sm ${band(n)}" style="--p:${n}" title="Match score ${n} of 100"><span>${n}</span></span>`;
+const ring = (n) => `<span class="ring sm ${band(n)}" style="--p:${n}" title="Listing priority ${n} of 100 (what to look at first; not your fit)"><span>${n}</span></span>`;
 
 /* ---------- views ---------- */
 const VIEWS = {
   dashboard: ['Dashboard', () => TODAY.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })],
   board: ['Applications', () => 'Drag cards between stages, or focus one and press Shift + arrow keys'],
   table: ['Applications', () => 'Select a company to edit; select a column to sort'],
-  inbox: ['New listings', () => 'Ranked by your scoring rules'],
-  settings: ['Settings', () => 'Scoring, reminders, calendar and your data'],
+  inbox: ['New listings', () => 'Ranked by priority (freshness, target roles, skills, sponsorship signals) · fit and eligibility come from each job’s analysis'],
+  settings: ['Settings', () => 'How the tracker scores, refreshes and reminds you · your data', () => backCrumb()],
 };
+/* Settings, Profile and Documents remember the page you came from, so a "← Back to …" link returns you there. */
+function backCrumb() {
+  const h = UI.backTo; if (!h) return null;
+  const v = h.slice(1).split('/')[0], name = UI.backName || (VIEWS[v] || [''])[0];
+  return name ? [h, 'Back to ' + name] : null;
+}
 const R = {};
+/* Extension points for studio.js (Profile, Job details, Resume studio). */
+const HOOKS = { afterRender: [], settings: null, jobNav: null, verdictOf: null };
 
-const savedBadge = (a) => typeof a.score === 'number' ? `<span class="ring sm ${band(a.score)}" style="--p:${a.score}" title="Match score ${a.score} when saved"><span>${a.score}</span></span>` : `<span class="qbadge" title="Saved by you" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2.5h8v11l-4-3-4 3z"/></svg></span>`;
+/* Per-job progress from the server (analysis, resume, cover letter), so rows show how far each application is. */
+let KIT = {};
+async function loadKit() { if (Store.mode !== 'file') return; try { const r = await fetch('api/studio/index', { cache: 'no-store' }); if (r.ok) KIT = await r.json(); } catch (_) { /* offline: rows just show no progress */ } }
+const kitOf = (x) => KIT[listingKey({ url: x.url, company: x.company, role: x.role })] || null;
+/* The next step for an application you saved, and where it lives on the job page. */
+function nextStep(x) {
+  const k = kitOf(x);
+  if (!k || !k.analyzed) return ['Prepare', 'overview', 'Analyze the posting, then build the resume'];
+  if (!k.resume) return ['Resume', 'resume', 'Build the resume for this job'];
+  return ['Apply', 'apply', 'Resume ready: download it and apply'];
+}
+function kitLine(x, always) {
+  const k = kitOf(x) || {};
+  if (!always && !k.analyzed && !k.resume && !k.letter) return '';
+  const st = [['Analyzed', k.analyzed], [k.resume === 'ai' ? 'Tailored resume' : k.resume ? 'Master resume' : 'Resume', !!k.resume], ['Letter', !!k.letter]];
+  return `<span class="kit" title="Application kit: ${st.map(([l, on]) => `${l} ${on ? 'done' : 'not yet'}`).join(', ')}">${st.map(([l, on]) => `<i class="${on ? 'on' : ''}">${l}</i>`).join('')}</span>`;
+}
+const savedBadge = (a) => typeof a.score === 'number' ? `<span class="ring sm ${band(a.score)}" style="--p:${a.score}" title="Listing priority ${a.score} when saved"><span>${a.score}</span></span>` : `<span class="qbadge" title="Saved by you" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2.5h8v11l-4-3-4 3z"/></svg></span>`;
 const savedAgo = (a) => { const d = savedDays(a); return d === 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'; };
-const dlTag = (d) => { const n = daysFrom(d); return n === null ? '' : `<span class="dl ${n < 0 ? 'hot' : n <= 7 ? 'soon' : ''}" title="Application deadline">${n < 0 ? 'Deadline passed' : 'Deadline ' + fmt(d)}${n >= 0 && n <= 7 ? ' · ' + dueText(n).toLowerCase() : ''}</span>`; };
+const dlTag = (d) => { const n = daysFrom(d); return n === null ? '' : `<span class="dl ${n <= 1 ? 'hot' : n <= 7 ? 'soon' : ''}" title="Application deadline">${n < 0 ? 'Deadline passed' : 'Deadline ' + fmt(d)}${n >= 0 && n <= 7 ? ' · ' + dueText(n).toLowerCase() : ''}</span>`; };
 const appliedBtn = (a, cls = 'btn sm primary') => `<button class="${cls}" type="button" data-applied-app="${a.id}" title="Mark as applied today">Applied ✓</button>`;
 const skipBtn = (a) => `<button class="btn sm ghost" type="button" data-skip-app="${a.id}" title="You decided not to apply: moves to Closed (Withdrawn); Undo is available">Not applying</button>`;
 const visIcon = (s) => s === 'yes' ? '<span class="vis yes" title="Sponsors visa / CPT-OPT friendly" aria-label="Sponsors visa">✓</span>' : s === 'no' ? '<span class="vis no" title="No sponsorship" aria-label="No sponsorship">✕</span>' : '<span class="sr">Unknown</span>';
@@ -384,22 +466,22 @@ R.dashboard = () => {
   const smallNote = small ? ` · <span class="small" title="With fewer than ${SMALL} applications one reply moves this by ${Math.round(100 / applied)} points">small sample</span>` : '';
   const items = attentionItems();
   const urg = (i) => i.missed || (i.n < 0 && !i.fu) ? 'u-hot' : (i.fu || i.saved || i.n <= 3) ? 'u-soon' : '';
-  const acts = (i) => i.fu ? `<span class="mini"><button class="btn sm" type="button" data-fu="done" data-id="${i.a.id}">Followed up</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Snooze 7d</button></span>`
+  const attActs = (i) => i.fu ? `<span class="mini"><button class="btn sm" type="button" data-fu="done" data-id="${i.a.id}">Followed up</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Snooze 7d</button></span>`
     : i.missed ? `<span class="mini"><span class="due hot">${dueText(i.n)}</span><button class="btn sm" type="button" data-missed="${i.a.id}">Mark missed</button></span>`
       : i.saved ? `<span class="mini">${appliedBtn(i.a)}<button class="btn sm" type="button" data-skip-app="${i.a.id}" title="You decided not to apply: moves to Closed (Withdrawn); Undo is available">Not applying</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Keep 7d</button></span>`
         : i.stale ? `<span class="mini"><button class="btn sm" type="button" data-ghost="${i.a.id}">Close as no response</button><button class="btn sm ghost" type="button" data-fu="snooze" data-id="${i.a.id}">Keep</button></span>`
           : `<span class="due ${dueCls(i.n)}">${dueText(i.n)}</span>`;
   const shown = UI.attnAll ? items : items.slice(0, 5);
-  const todo = items.length ? `<ul class="todo">${shown.map((i) => `<li class="${urg(i)}"><span class="kind">${i.kind}</span><button class="what" type="button" data-open="${i.a.id}"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></button>${acts(i)}</li>`).join('')}</ul>
+  const todo = items.length ? `<ul class="todo">${shown.map((i) => `<li class="${urg(i)}"><span class="kind">${i.kind}</span><button class="what" type="button" data-peek="a:${i.a.id}" aria-controls="peek"><b>${esc(i.a.company)}</b><span>${esc(i.text)} · ${esc(i.a.role)}</span></button>${attActs(i)}</li>`).join('')}</ul>
     ${items.length > 5 ? `<div class="panel-foot"><button class="btn sm ghost" type="button" data-action="attn-all">${UI.attnAll ? 'Show fewer' : `Show all ${items.length}`}</button></div>` : ''}` : `<p class="empty">Nothing due in the next 7 days.</p>`;
   const topS = +S.settings.topScore || 75;
   const best = visibleListings().filter((l) => !l.dup && l.total >= topS);
   const picks = queueList(), moreSaved = qMoreSaved(picks);
   const qli = (x) => x.kind === 'app'
-    ? `<li class="qsaved">${savedBadge(x.a)}<button class="what" type="button" data-open="${x.a.id}"><b>${esc(x.a.company)} <span class="chip st s-saved">Saved</span></b><span>${esc(x.a.role)} · ${x.a.deadline ? `<span class="due ${dueCls(daysFrom(x.a.deadline))}">Apply by ${fmt(x.a.deadline)}</span>` : `Saved ${savedAgo(x.a)}`} · Resume: ${esc(x.a.resume || resumeFor(x.a))}</span></button><span class="mini">${appliedBtn(x.a)}${link(x.a.url, 'Posting ↗')}</span></li>`
-    : `<li>${ring(x.l.total)}<a class="what" href="#inbox" data-goto="${esc(x.l.id)}"><b>${esc(x.l.company)}</b><span>${x.l.isNew ? '<span class="chip new">New</span> ' : ''}${esc(x.l.role)}${x.l.deadline ? ' · ' + dlTag(x.l.deadline) : ''} · Resume: ${esc(resumeFor(x.l))}</span></a><span class="mini"><button class="btn sm primary" type="button" data-trackl="${esc(x.l.id)}" title="Save to Applications">Save</button><button class="btn sm" type="button" data-appliedl="${esc(x.l.id)}" title="Add as applied today">Applied ✓</button></span></li>`;
+    ? `<li class="qsaved${peekCls('a:' + x.a.id)}" data-ref="a:${x.a.id}">${savedBadge(x.a)}<button class="what" type="button" data-peek="a:${x.a.id}" aria-controls="peek"><b>${esc(x.a.company)} <span class="chip st s-saved">Saved</span></b><span>${esc(x.a.role)} · ${x.a.deadline ? `<span class="due ${dueCls(daysFrom(x.a.deadline))}">Apply by ${fmt(x.a.deadline)}</span>` : `Saved ${savedAgo(x.a)}`}</span></button>${acts(primaryFor('a:' + x.a.id), 'a:' + x.a.id, x.a.company)}</li>`
+    : `<li class="${peekCls('l:' + x.l.id)}" data-ref="l:${esc(x.l.id)}">${ring(x.l.total)}<button class="what" type="button" data-peek="l:${esc(x.l.id)}" aria-controls="peek"><b>${esc(x.l.company)}</b><span>${x.l.isNew ? '<span class="chip new">New</span> ' : ''}${esc(x.l.role)}${x.l.deadline ? ' · ' + dlTag(x.l.deadline) : ''}</span></button>${acts(primaryFor('l:' + x.l.id), 'l:' + x.l.id, x.l.company)}</li>`;
   const topPanel = picks.length ? `<ul class="tmatch">${picks.slice(0, 6).map(qli).join('')}</ul>
-    <div class="panel-foot">${moreSaved ? `<button class="btn sm ghost" type="button" data-action="show-saved">${moreSaved} more saved →</button>` : ''}<a class="btn sm ghost" href="#inbox">All new listings · ${best.length} top matches →</a></div>`
+    <div class="panel-foot">${moreSaved ? `<button class="btn sm ghost" type="button" data-action="show-saved">${moreSaved} more saved →</button>` : ''}<a class="btn sm ghost" href="#inbox">All new listings · ${best.length} top priority →</a></div>`
     : `<p class="empty">Nothing queued. Save listings you want to apply to, or check New listings after the next refresh.</p>`;
   const fst = [['applied', 'Applied'], ['oa', 'Assessment'], ['interview', 'Interview'], ['offer', 'Offer']];
   const fc = fst.map(([s]) => A.filter((a) => reached(a, s)).length), base = Math.max(fc[0], 1);
@@ -437,7 +519,7 @@ R.dashboard = () => {
   ${today}
   <div class="dash">
     <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>
-    <section class="panel a-top"><h2>Today’s queue <small>your saved applications first, then “Apply now” picks</small></h2>${topPanel}</section>
+    <section class="panel a-top"><h2>Today’s queue <small>deadlines first, then what you saved, then new picks</small></h2>${topPanel}</section>
     <section class="panel a-pipe" ${showTrack ? '' : 'style="grid-column:1/-1"'}><h2>Pipeline <small>applications that reached each stage · n = ${applied}</small></h2><div class="funnel">${funnel}</div>${sampleHint}${showTrack ? '' : `<p class="empty">A breakdown by track appears once you have 5 or more replies (now ${replied}).</p>`}</section>
     ${showTrack ? `<section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k, l]) => `<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>` : ''}
     <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks · dashed line is your weekly goal</small></h2><div id="weekChart" class="chartbox">${weekSvg(880)}</div></section>
@@ -485,16 +567,16 @@ function card(a) {
     <div class="role">${esc(a.role)}</div>
     <div class="chips">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${a.sponsor !== 'unknown' ? spChip(a.sponsor) : ''}${CLOSED.includes(a.status) ? stChip(a.status) : ''}</div>
     <div class="meta">${meta}</div>
-    ${a.status === 'saved' ? `<div class="qacts">${appliedBtn(a, 'btn sm')}${link(a.url, 'Posting ↗')}</div>` : ''}
+    ${a.status === 'saved' ? `<div class="qacts">${primaryFor('a:' + a.id)}${moreBtn('a:' + a.id, a.company)}</div>` : ''}
     <select class="move" data-status-for="${a.id}" aria-label="Move ${esc(a.company)} to stage">${opts(STAGES, a.status)}</select></li>`;
 }
 const COL_LIMIT = 6;
 function colSort(s) {
   if (s === 'saved') return (x, y) => (x.deadline || '9').localeCompare(y.deadline || '9') || y.priority - x.priority;
-  if (s === 'applied') return (x, y) => quietDays(y) - quietDays(x) || y.priority - x.priority; // longest silence first
+  if (s === 'applied') return (x, y) => (y.applied || lastDate(y) || '').localeCompare(x.applied || lastDate(x) || '') || y.priority - x.priority; // newest first; follow-ups are flagged on the card and in Needs attention
   if (s === 'closed') return (x, y) => (lastDate(y) || '').localeCompare(lastDate(x) || '');
   const nxt = (a) => [a.nextDate, ...upcomingRounds(a).map((r) => r.date)].filter(Boolean).sort()[0] || '9';
-  return (x, y) => nxt(x).localeCompare(nxt(y)) || y.priority - x.priority;
+  return (x, y) => nxt(x).localeCompare(nxt(y)) || (lastDate(y) || '').localeCompare(lastDate(x) || '') || y.priority - x.priority;
 }
 const layoutCtl = (v) => `<div class="segctl" role="group" aria-label="Layout"><a href="#board" ${v === 'board' ? 'aria-current="true"' : ''}>Board</a><a href="#table" ${v === 'table' ? 'aria-current="true"' : ''}>List</a></div>`;
 R.board = () => {
@@ -573,7 +655,7 @@ function rowFor(k, a) {
       <td class="dt">${n === null ? '<span class="na-s">not listed</span>' : `<span class="${n <= 3 ? 'due hot' : n <= 7 ? 'due soon' : ''}">${fmt(a.deadline)}</span><span class="na-s">${n < 0 ? 'passed' : dueText(n).toLowerCase()}</span>`}</td>
       <td class="dt">${fmt(savedOn(a))}<span class="na-s ${old ? 'due soon' : ''}">${d === 0 ? 'today' : d + 'd ago'}</span></td>
       ${resumeCell(a)}
-      <td class="acts-c"><div class="mini">${appliedBtn(a)}${link(a.url, 'Posting ↗')}${skipBtn(a)}</div></td></tr>`;
+      <td class="acts-c"><div class="lacts">${primaryFor('a:' + a.id)}${moreBtn('a:' + a.id, a.company)}</div></td></tr>`;
   }
   if (k === 'active') {
     const na = nextAction(a);
@@ -600,8 +682,9 @@ R.table = () => {
   }).join('')}</div>`;
 };
 
+const h1bLabel = () => (F.fetch && F.fetch.h1b) || 'FY2023';
 function evidence(l) {
-  const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record found for this employer' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS FY2023)`;
+  const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record found for this employer' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS ${h1bLabel()})`;
   const fl = (l.flags || []).map((f) => `<span class="chip ${f === 'CPT/OPT friendly' ? 'v-yes' : f === 'No sponsorship' ? 'v-no' : 'tag'}">${esc(f)}${f === 'No sponsorship' && l.pen ? ` −${l.pen}` : ''}</span>`).join('');
   return h || fl ? `<div class="ev"><span>${esc(h)}</span>${fl}</div>` : '';
 }
@@ -622,6 +705,17 @@ function fetchSummary() {
   return `Refreshed ${t(at)}${at.toDateString() !== new Date().toDateString() ? ' ' + fmt(iso(at)) : ''}${f.new ? ` · ${f.new} new` : ''}${f.removed ? ` · ${f.removed} closed or expired removed` : ''} · next about ${t(next)}${f.error ? ` · <span class="due hot">last refresh failed: ${esc(f.error)}</span>` : ''}`;
 }
 let refreshing = false;
+/* Open applications matching the listing filters. Saved jobs leave New listings, so without this a filter such as
+   "Sponsors visa" would look empty while matching jobs sit in Applications. */
+function appsMatchingFilters() {
+  if (!filtersOn()) return [];
+  const toks = qTokens((S.ui.q || '').toLowerCase().trim());
+  return S.apps.filter((a) => !CLOSED.includes(a.status)
+    && (!S.ui.sponsor || (a.sponsor || 'unknown') === S.ui.sponsor)
+    && (!S.ui.track || a.track === S.ui.track)
+    && (!toks.length || qMatch(sNorm([a.company, a.role, a.location, a.track, TRACK_NAME[a.track], a.notes, a.sponsor === 'yes' ? 'sponsors visa sponsorship' : a.sponsor === 'no' ? 'no sponsorship' : ''].join(' ')), toks)))
+    .sort((x, y) => FLOW.indexOf(x.status) - FLOW.indexOf(y.status) || (x.company || '').localeCompare(y.company || ''));
+}
 R.inbox = () => {
   const t = (S.ui.q || '').toLowerCase().trim();
   let L = scored();
@@ -629,79 +723,211 @@ R.inbox = () => {
   if (S.settings.hideNoSponsor) L = L.filter((l) => l.sponsor !== 'no');
   if (S.ui.sponsor) L = L.filter((l) => l.sponsor === S.ui.sponsor);
   if (S.ui.track) L = L.filter((l) => l.t === S.ui.track);
-  if (t) L = L.filter((l) => (l.company + ' ' + l.role + ' ' + l.location).toLowerCase().includes(t));
-  L = L.slice().sort((a, b) => (!!a.dup - !!b.dup) || b.total - a.total);
-  if (S.ui.lsort === 'newest') L.sort((a, b) => (!!a.dup - !!b.dup) || (b.posted || '').localeCompare(a.posted || '') || b.total - a.total);
+  if (t) {
+    const toks = qTokens(t), ph = sNorm(t), rel = (l) => { const cr = sNorm(l.company + ' ' + l.role); return cr.includes(ph) ? 3 : qMatch(cr, toks) ? 2 : qMatch(sNorm(l.company + ' ' + l.role + ' ' + l.location), toks) ? 1 : 0; };
+    L = L.filter((l) => qMatch(listingHay(l), toks)); L.forEach((l) => { l._rel = rel(l); });
+  }
+  const relCmp = (a, b) => t ? (b._rel || 0) - (a._rel || 0) : 0;
+  L = L.slice().sort((a, b) => (!!a.dup - !!b.dup) || relCmp(a, b) || b.total - a.total);
+  if (S.ui.lsort === 'newest') L.sort((a, b) => (!!a.dup - !!b.dup) || relCmp(a, b) || (b.posted || '').localeCompare(a.posted || '') || b.total - a.total);
   const ex = F.fetch && F.fetch.excluded ? Object.entries(F.fetch.excluded).sort((a, b) => b[1] - a[1]) : [];
-  const head = `<div class="inbox-head"><p><b>${L.length}</b> listing${L.length === 1 ? '' : 's'} ranked by fit${hidden ? ` · ${hidden} hidden without sponsorship` : ''}<br><span class="sub">${fetchSummary()}</span></p>
-    <select id="lsort" aria-label="Sort listings"><option value="score"${S.ui.lsort !== 'newest' ? ' selected' : ''}>Best match first</option><option value="newest"${S.ui.lsort === 'newest' ? ' selected' : ''}>Newest first</option></select>
+  const head = `<div class="inbox-head"><p><b>${L.length}</b> listing${L.length === 1 ? '' : 's'} ranked by priority${hidden ? ` · ${hidden} hidden without sponsorship` : ''}<br><span class="sub">${fetchSummary()}</span></p>
+    <select id="lsort" aria-label="Sort listings"><option value="score"${S.ui.lsort !== 'newest' ? ' selected' : ''}>Highest priority first</option><option value="newest"${S.ui.lsort === 'newest' ? ' selected' : ''}>Newest first</option></select>
     <label class="switch"><input type="checkbox" id="hideNo" ${S.settings.hideNoSponsor ? 'checked' : ''}> Hide no-sponsorship</label>
-    <button class="btn sm${UI.select ? ' primary' : ''}" type="button" data-action="select-mode" aria-pressed="${UI.select}">${UI.select ? 'Done selecting' : 'Select'}</button>
+    <button class="btn sm${UI.select ? ' primary' : ''}" type="button" data-action="select-mode" aria-pressed="${UI.select}" title="Save or dismiss several listings at once">${UI.select ? 'Done selecting' : 'Select several'}</button>
     <button class="btn sm" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh now'}</button></div>
     <div class="toolbar" style="margin-top:6px;align-items:flex-start">${ex.length ? `<details class="why exl"><summary>Not shown this refresh: ${ex.reduce((s, e) => s + e[1], 0).toLocaleString('en-US')}</summary><div class="parts">${ex.map(([k, n]) => `<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}</div></details>` : ''}<span class="grow"></span>LEGEND_SLOT</div>`;
-  if (!L.length) return head.replace('LEGEND_SLOT', '') + `<div class="panel" style="margin-top:12px"><p class="empty">No listings match. Refresh now, clear the filters, or widen the window in Settings.</p></div>`;
+  const A = appsMatchingFilters();
+  const appsSec = A.length ? `<section class="lsec" aria-label="Matching applications"><div class="lsec-h"><span>In your Applications</span> <span class="cnt">${A.length}</span><span class="hint">saved or in progress · they no longer appear as new listings</span><a class="btn sm ghost" href="#table" style="margin-left:auto">Open Applications →</a></div>${A.slice(0, 10).map(srow).join('')}${A.length > 10 ? `<a class="more" href="#table">See all ${A.length} in Applications</a>` : ''}</section>` : '';
+  if (!L.length && A.length) return head.replace('LEGEND_SLOT', '') + `<div style="margin-top:12px">${appsSec}<p class="empty" style="margin:12px 4px">No new listings match. Only the applications above do.</p></div>`;
+  if (!L.length) return head.replace('LEGEND_SLOT', '') + `<div class="panel" style="margin-top:12px"><p class="empty">${filtersOn() ? `Nothing matches${S.ui.q ? ` “${esc(S.ui.q.trim())}”` : ''}. Search looks at company, role, location, track, skills and sponsorship; every word has to match.` : 'No listings yet. Refresh now, or widen the window in Settings.'}</p>${filtersOn() ? '<div class="row"><button class="btn sm" type="button" data-action="clear-filters">Clear search and filters</button></div>' : ''}</div>`;
   const topS = +S.settings.topScore || 75, minS = +S.settings.minScore || 55, open = S.ui.sec || {};
   const Q = filtersOn() ? [] : queueList(), qids = new Set(Q.filter((x) => x.kind === 'listing').map((x) => x.id)), rest = L.filter((l) => !qids.has(l.id)), moreSaved = qMoreSaved(Q);
   const Lq = new Map(L.map((l) => [l.id, l]));
   const goal = +S.settings.dailyGoal || 3, done = appliedOn(iso(TODAY));
-  const queue = Q.length ? `<section class="lsec queue" aria-label="Today's queue"><div class="lsec-h"><span>Today’s queue</span><span class="hint">your saved applications first, then “Apply now” picks · open the posting, apply, then press Applied ✓</span>
+  const queue = Q.length ? `<section class="lsec queue" aria-label="Today's queue"><div class="lsec-h"><span>Today’s queue</span><span class="hint">deadlines first, then what you saved, then new picks</span>
       <span style="margin-left:auto;display:flex;align-items:center;gap:8px;font-weight:500"><span class="hint">Applied today</span> <b class="mono">${done}/${goal}</b><span class="prog ${done >= goal ? 'done' : ''}" style="width:90px"><span style="width:${Math.min(100, done / goal * 100)}%"></span></span></span></div>
-      ${Q.map((x) => x.kind === 'app' ? srow(x.a) : lrow(Lq.get(x.id) || x.l)).join('')}${moreSaved ? `<button class="more" type="button" data-action="show-saved">${plural(moreSaved, 'more saved application')} →</button>` : ''}</section>` : '';
-  const groups = [
+      ${Q.map((x, i) => { const g = x.soon === 0 ? 'soon' : x.kind; const prev = i ? (Q[i - 1].soon === 0 ? 'soon' : Q[i - 1].kind) : '';
+        const n = Q.filter((y) => (y.soon === 0 ? 'soon' : y.kind) === g).length;
+        return (g !== prev ? `<div class="qgrp">${{ soon: 'Deadline within 7 days', app: 'Saved · prepare, then apply', listing: 'Today’s best new picks' }[g]} <span class="cnt">${n}</span></div>` : '') + (x.kind === 'app' ? srow(x.a) : lrow(Lq.get(x.id) || x.l)); }).join('')}${moreSaved ? `<button class="more" type="button" data-action="show-saved">${plural(moreSaved, 'more saved application')} →</button>` : ''}</section>` : '';
+  const fOn = filtersOn();
+  const groups = fOn ? [['results', 'Results', [S.ui.q ? `“${S.ui.q.trim()}”` : '', S.ui.track ? TRACK_NAME[S.ui.track] || S.ui.track : '', S.ui.sponsor ? SPONSOR[S.ui.sponsor] : ''].filter(Boolean).join(' · '), L, true]] : [
     ['new', 'New since the last refresh', '', rest.filter((l) => !l.dup && l.isNew && l.total >= minS), true],
-    ['top', 'Top matches', `score ${topS}+`, rest.filter((l) => !l.dup && !l.isNew && l.total >= topS), true],
-    ['more', 'More matches', `score ${minS}–${topS - 1}`, rest.filter((l) => !l.dup && !l.isNew && l.total >= minS && l.total < topS), false],
-    ['low', 'Lower matches', `below ${minS}`, rest.filter((l) => !l.dup && l.total < minS), false],
+    ['top', 'Top priority', `priority ${topS}+`, rest.filter((l) => !l.dup && !l.isNew && l.total >= topS), true],
+    ['more', 'Worth a look', `priority ${minS}–${topS - 1}`, rest.filter((l) => !l.dup && !l.isNew && l.total >= minS && l.total < topS), false],
+    ['low', 'Lower priority', `below ${minS}`, rest.filter((l) => !l.dup && l.total < minS), false],
     ['dup', 'Already tracking', '', rest.filter((l) => l.dup), false]].filter((g) => g[3].length);
   const w = S.settings.weights;
   const legend = `<details class="info"><summary><span aria-hidden="true">ⓘ</span> What the labels mean</summary><div class="info-pop"><p><span class="act now">Apply now</span> score ${topS}+ and at most 1 missing skill</p><p><span class="act tailor">Tailor first</span> add the missing skills you truly have, then apply</p><p><span class="act low">Low priority</span> below ${minS} or no sponsorship</p><p class="sub">Score weights: role fit ${w.fit}, skills ${w.skills}, sponsorship ${w.sponsor}, recency ${w.recency}, degree ${w.degree}, location ${w.location} (change them in Settings). Expand a listing to see its breakdown.</p></div></details>`;
   const vis = [];
-  const body = `<div style="margin-top:12px">${queue}${Q.length ? '<div style="height:12px"></div>' : ''}${groups.map(([k, title, hint, items, def]) => {
-    const isOpen = open[k] !== undefined ? open[k] : def, lim = UI.limits['sec-' + k] || 25;
+  const body = `<div style="margin-top:12px">${appsSec}${A.length ? '<div style="height:12px"></div>' : ''}${queue}${Q.length ? '<div style="height:12px"></div>' : ''}${groups.map(([k, title, hint, items, def]) => {
+    const isOpen = k === 'results' || (open[k] !== undefined ? open[k] : def), lim = UI.limits['sec-' + k] || (k === 'results' ? 50 : 25);
     if (isOpen) vis.push(...items.slice(0, lim).filter((l) => !l.dup));
+    if (k === 'results') return `<section class="lsec" aria-label="Search results"><div class="lsec-h"><span>${plural(items.length, 'result')}</span><span class="hint">${esc(hint)}${items.some((l) => l.dup) ? ' · already-tracked jobs last' : ''}</span><button class="btn sm ghost" type="button" data-action="clear-filters" style="margin-left:auto">Clear search</button></div>
+      ${items.slice(0, lim).map(lrow).join('')}${items.length > lim ? `<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(50, items.length - lim)} more of ${items.length - lim}</button>` : ''}</section>`;
     return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${k === 'new' ? '<span class="chip new">New</span>' : ''}${esc(title)} <span class="cnt">${items.length}</span>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}<span class="car" aria-hidden="true">›</span></button>
       ${isOpen ? items.slice(0, lim).map(lrow).join('') + (items.length > lim ? `<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(25, items.length - lim)} more of ${items.length - lim}</button>` : '') : ''}</section>`;
   }).join('')}</div>`;
   UI.visibleIds = [...Q.filter((x) => x.kind === 'listing'), ...vis].map((l) => l.id);
   const n = UI.selected.size;
-  const selbar = UI.select ? `<div class="selbar" role="region" aria-label="Selected listings"><span class="grow">${n ? plural(n, 'listing') + ' selected' : 'Select listings with the checkboxes'}</span>
-    <button class="btn sm ghost" type="button" data-action="sel-all">Select all shown</button><button class="btn sm ghost" type="button" data-action="sel-none" ${n ? '' : 'disabled'}>Clear</button>
-    <button class="btn sm primary" type="button" data-action="sel-track" ${n ? '' : 'disabled'}>Save</button><button class="btn sm" type="button" data-action="sel-dismiss" ${n ? '' : 'disabled'}>Dismiss…</button></div>` : '';
+  const nv = (UI.visibleIds || []).length;
+  const selbar = UI.select ? `<div class="selbar" role="region" aria-label="Bulk actions"><span class="grow"><b>${n ? plural(n, 'listing') + ' selected' : 'Select listings'}</b><span class="hint">${n ? 'Shift+click selects a range' : 'Click rows or checkboxes · Shift+click for a range · Esc to finish'}</span></span>
+    <button class="btn sm ghost" type="button" data-action="sel-all" ${nv && n < nv ? '' : 'disabled'}>Select all ${nv} shown</button><button class="btn sm ghost" type="button" data-action="sel-none" ${n ? '' : 'disabled'}>Clear</button>
+    <span class="selsep" aria-hidden="true"></span>
+    <button class="btn sm primary" type="button" data-action="sel-track" ${n ? '' : 'disabled'}>Save${n ? ' ' + n : ''}</button><button class="btn sm" type="button" data-action="sel-dismiss" ${n ? '' : 'disabled'}>Not interested…</button><button class="btn sm ghost" type="button" data-action="select-mode">Done</button></div>` : '';
   return head.replace('LEGEND_SLOT', legend) + body + selbar;
 };
+/* Rows share one shape: title / next step / facts on the left; on the right exactly one primary action
+   and a "More" menu with everything else. Clicking the row opens the preview panel (no hover-only buttons). */
+const jobHref = (id, step) => `#job/${esc(encodeURIComponent(id))}${step && step !== 'overview' ? '/' + step : ''}`;
+const moreBtn = (ref, name) => `<button class="btn sm ghost icon more-btn" type="button" data-rowmenu="${esc(ref)}" aria-haspopup="menu" aria-label="More actions for ${esc(name)}" title="More actions"><svg aria-hidden="true" viewBox="0 0 16 16" fill="currentColor"><circle cx="3.5" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="12.5" cy="8" r="1.4"/></svg></button>`;
+const acts = (primary, ref, name) => `<span class="lacts"><span class="s-main">${primary}</span>${moreBtn(ref, name)}</span>`;
+/* The one main action for a row or the preview panel. */
+function primaryFor(ref, cls = 'btn sm') {
+  const [k, id] = ref.split(':');
+  if (k === 'l') return `<button class="${cls} primary" type="button" data-trackl="${esc(id)}" title="Save to your applications. Undo is available.">Save</button>`;
+  const a = S.apps.find((x) => x.id === id); if (!a) return '';
+  if (a.status === 'saved') { const [nl, step, tip] = nextStep(a); return `<a class="${cls} primary" href="${jobHref(a.id, step)}" title="${esc(tip)}">${nl} →</a>`; }
+  return `<a class="${cls}" href="${jobHref(a.id)}" title="Job page: analysis, resume and cover letter">Open</a>`;
+}
+const peekCls = (ref) => UI.peek === ref ? ' peeking' : '';
 /* A saved application inside today's queue. */
 function srow(a) {
-  return `<article class="lrow qsaved${UI.select ? ' sel' : ''}" aria-label="${esc(a.company + ', ' + a.role + ', saved')}">
+  const sp = a.sponsor === 'yes' ? '<span class="pos">Sponsors visa</span>' : a.sponsor === 'no' ? '<span class="neg">No sponsorship</span>' : '', ref = 'a:' + a.id;
+  return `<article class="lrow qsaved${UI.select ? ' sel' : ''}${peekCls(ref)}" data-ref="${ref}" aria-label="${esc(a.company + ', ' + a.role + ', ' + LABEL[a.status])}">
     ${UI.select ? '<span></span>' : ''}${savedBadge(a)}
-    <button class="lmain" type="button" data-open="${a.id}" title="Open to edit">
-      <span class="l1"><b>${esc(a.company)}</b><span class="role">${esc(a.role)}</span><span class="chip st s-saved">Saved</span></span>
-      <span class="l2">${a.track ? `<span>${esc(a.track)}</span>` : ''}${a.location ? `<span>${esc(a.location.split('; ')[0])}</span>` : ''}<span>Saved ${savedAgo(a)}</span>${a.deadline ? dlTag(a.deadline) : ''}<span>Resume: <span class="rv">${esc(a.resume || resumeFor(a))}</span></span>${a.sponsor === 'yes' ? '<span class="pos">Sponsors visa</span>' : a.sponsor === 'no' ? '<span class="neg">No sponsorship</span>' : ''}</span>
+    <button class="lmain" type="button" data-peek="${ref}" aria-controls="peek" aria-expanded="${UI.peek === ref}">
+      <span class="l1"><b>${esc(a.company)}</b><span class="role">${esc(a.role)}</span></span>
+      <span class="l2">${a.status === 'saved' ? `<span class="act saved">Saved ${savedAgo(a)}</span>` : stChip(a.status)}<span>Resume: <span class="rv">${esc(a.resume || resumeFor(a))}</span></span>${kitLine(a, true)}</span>
+      <span class="l3">${a.track ? `<span>${esc(a.track)}</span>` : ''}${a.location ? `<span>${esc(a.location.split('; ')[0])}</span>` : ''}${a.deadline ? dlTag(a.deadline) : ''}${sp}</span>
     </button>
-    <span class="lacts">${appliedBtn(a)}${link(a.url, 'Posting ↗')}${skipBtn(a)}</span>
+    ${acts(primaryFor(ref), ref, a.company)}
   </article>`;
 }
 function lrow(l) {
-  const m = (l.matched || []).length, n = m + (l.missing || []).length, ex = UI.expanded.has(l.id);
+  const m = (l.matched || []).length, n = m + (l.missing || []).length;
   const locs = (l.location || '').split('; '), loc = locs.length > 2 ? locs.slice(0, 2).join('; ') + ` +${locs.length - 2}` : l.location;
   const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B`;
   const flags = (l.flags || []).filter((f) => f !== 'Text not read').map((f) => `<span class="${f === 'No sponsorship' ? 'neg' : 'pos'}">${esc(f)}</span>`).join('');
   const [ak, al] = action(l), miss = (l.missing || []).slice(0, 3);
-  const todo = l.dup ? '' : `<span class="l2"><span class="act ${ak}">${al}</span><span>Resume: <span class="rv">${esc(resumeFor(l))}</span></span>${miss.length ? `<span class="add">Add if true: ${miss.map(esc).join(', ')}${(l.missing || []).length > 3 ? ' …' : ''}</span>` : ''}</span>`;
-  const sel = UI.select && !l.dup, picked = sel && UI.selected.has(l.id);
-  return `<article class="lrow${UI.select ? ' sel' : ''}${picked ? ' picked' : ''}" aria-label="${esc(l.company + ', ' + l.role + ', score ' + l.total)}">
+  const todo = l.dup ? `<span class="l2"><span class="act low">Tracking · ${LABEL[l.dup.status]}</span>${kitLine(l.dup)}</span>`
+    : `<span class="l2"><span class="act ${ak}" ${ak === 'blocked' ? `title="${esc(((eligOf(l) || {}).blockers || []).join('; '))}"` : ''}>${al}</span><span>Resume: <span class="rv">${esc(resumeFor(l))}</span></span>${miss.length ? `<span class="add" title="Skills in the posting you have not ticked in Settings. Add them to your resume only if they are true.">Add if true: ${miss.map(esc).join(', ')}${(l.missing || []).length > 3 ? ' …' : ''}</span>` : ''}${kitLine(l)}</span>`;
+  const sel = UI.select && !l.dup, picked = sel && UI.selected.has(l.id), ref = l.dup ? 'a:' + l.dup.id : 'l:' + l.id;
+  return `<article class="lrow${UI.select ? ' sel' : ''}${picked ? ' picked' : ''}${peekCls(ref)}" data-ref="${esc(ref)}" aria-label="${esc(l.company + ', ' + l.role + ', score ' + l.total)}">
     ${UI.select ? (sel ? `<input type="checkbox" data-pick="${esc(l.id)}" ${picked ? 'checked' : ''} aria-label="Select ${esc(l.company)}">` : '<span></span>') : ''}
     ${ring(l.total)}
-    <button class="lmain" type="button" data-expand="${esc(l.id)}" aria-expanded="${ex}">
-      <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span><span class="xcar" aria-hidden="true">›</span><span class="sr">${ex ? 'Hide' : 'Show'} score details</span></span>
-      ${todo}<span class="l2">${l.t ? `<span>${esc(l.t)}</span>` : ''}<span>${esc(loc || '')}</span>${l.posted ? `<span>${ago(l.posted)}</span>` : ''}${l.deadline ? dlTag(l.deadline) : ''}${h ? `<span>${h}</span>` : ''}${n ? `<span>Skills ${m}/${n}</span>` : ''}${flags}${l.dup ? `<span class="pos">Tracking · ${LABEL[l.dup.status]}</span>` : ''}</span>
+    <button class="lmain" type="button" ${sel ? `data-picktoggle="${esc(l.id)}" aria-pressed="${picked}"` : `data-peek="${esc(ref)}" aria-controls="peek" aria-expanded="${UI.peek === ref}"`}>
+      <span class="l1"><b>${esc(l.company)}</b><span class="role">${esc(l.role)}</span></span>
+      ${todo}<span class="l3">${l.t ? `<span>${esc(l.t)}</span>` : ''}<span>${esc(loc || '')}</span>${l.posted ? `<span>${ago(l.posted)}</span>` : ''}${l.deadline ? dlTag(l.deadline) : ''}${h ? `<span>${h}</span>` : ''}${n ? `<span>Skills ${m}/${n}</span>` : ''}${flags}</span>
     </button>
-    <span class="lacts">${l.dup ? `<button class="btn sm" type="button" data-open="${l.dup.id}">Open</button>` : `<button class="btn sm primary" type="button" data-trackl="${esc(l.id)}" title="Save to Applications (Saved)">Save</button><button class="btn sm" type="button" data-appliedl="${esc(l.id)}" title="Add to Applications as applied today">Applied ✓</button>`}${link(l.url, 'Posting ↗')}${l.dup ? '' : `<button class="btn sm ghost" type="button" data-dismiss="${esc(l.id)}" aria-label="Dismiss ${esc(l.company)}" title="Dismiss">✕</button>`}</span>
-    ${ex ? `<div class="ldetail">${evidence(l)}${skillLine(l)}<div class="why"><div class="parts">${l.parts.map((p) => `<span>${WEIGHT_LABEL[p.k]} <b>${Math.round(p.pts)}/${Math.round(p.max)}</b></span>`).join('')}${l.pen ? `<span>No-sponsorship penalty <b>−${l.pen}</b></span>` : ''}<span>Degree ${esc(l.degree || '—')}</span><span>Posted ${fmt(l.posted)}</span>${l.deadline ? `<span>Deadline <b>${fmt(l.deadline)}</b></span>` : '<span>No deadline stated</span>'}</div></div></div>` : ''}
+    ${acts(l.dup ? primaryFor(ref) : primaryFor('l:' + l.id), l.dup ? ref : 'l:' + l.id, l.company)}
   </article>`;
+}
+/* "More" menus: the same choices for a row and for the preview panel. */
+function menuFor(ref) {
+  const [k, id] = ref.split(':');
+  if (k === 'l') return [{ value: 'peek', label: 'Quick view' }, { value: 'job', label: 'Open job page', hint: 'analyze · resume · letter' }, { value: 'posting', label: 'Open the posting ↗' },
+    { value: 'applied', label: 'I already applied', hint: 'adds it as Applied today' }, { value: 'dismiss', label: 'Not interested…', sep: true }];
+  const a = S.apps.find((x) => x.id === id); if (!a) return [];
+  const it = [{ value: 'peek', label: 'Quick view' }, { value: 'job', label: 'Open job page', hint: 'analyze · resume · letter' }, ...(safeUrl(a.url) ? [{ value: 'posting', label: 'Open the posting ↗' }] : [])];
+  if (a.status === 'saved') it.push({ value: 'applied-app', label: 'Mark as applied today' });
+  it.push({ value: 'edit', label: 'Edit details…', hint: 'dates, notes, contacts' });
+  const fromListing = a.listingId || scored().some((l) => l.dup && l.dup.id === a.id);
+  if (a.status === 'saved' && fromListing) it.push({ value: 'unsave', label: 'Unsave', hint: 'back to New listings', sep: true });
+  if (a.status === 'saved') it.push({ value: 'skip', label: 'Not applying', hint: 'moves to Closed', sep: !fromListing });
+  return it;
+}
+function runMenu(ref, v, anchor) {
+  const [k, id] = ref.split(':'), a = k === 'a' ? S.apps.find((x) => x.id === id) : null, l = k === 'l' ? scored().find((x) => x.id === id) : null;
+  const url = safeUrl(a ? a.url : l ? l.url : '');
+  if (v === 'peek') return openPeek(ref);
+  if (v === 'job') { location.hash = jobHref(a ? a.id : id).slice(1); return; }
+  if (v === 'posting') { if (url) window.open(url, '_blank', 'noopener'); return; }
+  if (v === 'applied') return trackListings([id], 'applied');
+  if (v === 'dismiss') return menuAt(anchor, 'Why not interested?', dismissItems(), (r) => dismissListings([id], r));
+  if (!a) return;
+  if (v === 'applied-app') { checkpoint(); setStatus(a, 'applied'); a.snoozeUntil = ''; save(); render(); const n = appliedOn(iso(TODAY)), g = +S.settings.dailyGoal || 3; return toast(`${a.company} marked Applied · ${n}/${g} today`, true); }
+  if (v === 'edit') return openDrawer(a.id);
+  if (v === 'unsave') return unsave(a);
+  if (v === 'skip') { checkpoint(); setStatus(a, 'withdrawn'); a.notes = ((a.notes || '') + ` Decided not to apply on ${fmt(iso(TODAY))}.`).trim(); save(); render(); return toast(`${a.company}: not applying · moved to Closed`, true); }
+}
+/* Saved by mistake: remove the application so the listing shows again in New listings. */
+function unsave(a) {
+  const src = scored().find((l) => (a.listingId && l.id === a.listingId) || (l.dup && l.dup.id === a.id));
+  checkpoint(); S.apps = S.apps.filter((x) => x.id !== a.id); if (UI.peek === 'a:' + a.id) UI.peek = src ? 'l:' + src.id : null;
+  UI.scoredRev++; save(true); render(); toast(`${a.company} unsaved · back in New listings`, true);
+}
+
+/* ---------- preview panel: decide from the list without losing your place ---------- */
+const PK = { cache: new Map() };
+function openPeek(ref) { const was = UI.peek; UI.peek = ref; render(); const h = $('#pkTitle'); if (h && was !== ref) h.focus(); }
+function closePeek(restore = true) {
+  if (!UI.peek) return; const ref = UI.peek; UI.peek = null; renderPeek(); $$('.lrow.peeking').forEach((r) => r.classList.remove('peeking'));
+  $$('[data-peek][aria-expanded="true"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  if (restore) { const b = $(`[data-peek="${CSS.escape(ref)}"]`); if (b) b.focus(); }
+}
+/* Click outside the preview closes it (as with a macOS popover). Clicks that open or switch the preview, and clicks in
+   menus, dialogs, the edit drawer or a toast, leave it to their own handlers. */
+document.addEventListener('pointerdown', (e) => {
+  if (!UI.peek || e.button !== 0) return;
+  const t = e.target;
+  if (!(t instanceof Element) || !document.contains(t)) return;
+  if (t.closest('#peek, .lrow, [data-peek], dialog, #drawer, #scrim, .toast, .menu, [role="menu"], .selbar')) return;
+  closePeek(false);
+}, true);
+function peekStep(dir) {
+  const refs = $$('[data-peek]').map((b) => b.dataset.peek).filter((r, i, arr) => arr.indexOf(r) === i); if (!refs.length) return;
+  const i = refs.indexOf(UI.peek), n = refs[i < 0 ? 0 : Math.max(0, Math.min(refs.length - 1, i + dir))];
+  if (n === UI.peek) return; openPeek(n); const row = $(`.lrow[data-ref="${CSS.escape(n)}"]`); if (row) row.scrollIntoView({ block: 'nearest' });
+}
+function peekItem() {
+  if (!UI.peek) return null; const [k, id] = UI.peek.split(':');
+  if (k === 'l') { const l = scored().find((x) => x.id === id); if (!l) return null; if (l.dup) { UI.peek = 'a:' + l.dup.id; return peekItem(); } return { l }; }
+  const a = S.apps.find((x) => x.id === id); if (!a) return null;
+  const l = scored().find((x) => (a.listingId && x.id === a.listingId) || (x.dup && x.dup.id === a.id)) || null;
+  return { a, l };
+}
+function peekAnalysis(key) {
+  if (Store.mode !== 'file') return null;
+  const c = PK.cache.get(key); if (c) return c;
+  PK.cache.set(key, { loading: true });
+  fetch('api/job?key=' + encodeURIComponent(key), { cache: 'no-store' }).then((r) => r.ok ? r.json() : null).then((d) => { PK.cache.set(key, { job: d && d.job }); if (UI.peek) renderPeek(); }).catch(() => PK.cache.set(key, {}));
+  return PK.cache.get(key);
+}
+function renderPeek() {
+  const el = $('#peek'), it = peekItem();
+  document.body.classList.toggle('peek-open', !!it);
+  if (!it) { el.hidden = true; el.innerHTML = ''; if (UI.peek) UI.peek = null; return; }
+  const { a, l } = it, x = a || l, ref = UI.peek, key = listingKey({ url: x.url, company: x.company, role: x.role }), k = KIT[key] || {};
+  const dl = x.deadline, sp = (a ? a.sponsor : l.sponsor), id = a ? a.id : l.id;
+  const meta = [x.track || (l && l.t) ? `<span class="chip tag">${esc(x.track || l.t)}</span>` : '', x.location ? `<span>${esc(x.location.split('; ').slice(0, 2).join('; '))}${x.location.split('; ').length > 2 ? ' +' + (x.location.split('; ').length - 2) : ''}</span>` : '',
+    x.posted ? `<span>Posted ${ago(x.posted)}</span>` : '', dl ? dlTag(dl) : '', a ? stChip(a.status) : ''].filter(Boolean).join('');
+  const secondary = a ? (a.status === 'saved' ? `<button class="btn sm" type="button" data-applied-app="${a.id}">Mark applied</button>` : `<button class="btn sm" type="button" data-pkm="edit">Edit details</button>`)
+    : `<button class="btn sm" type="button" data-appliedl="${esc(l.id)}" title="Adds it as Applied today">I already applied</button>`;
+  const steps = [['Analyze', k.analyzed ? 'done' : ''], ['Resume', k.resume === 'ai' || k.resumeExported ? 'done' : k.resume ? 'part' : ''], ['Cover letter', k.letter === 'ai' || k.letterExported ? 'done' : k.letter ? 'part' : ''], ['Applied', a && reached(a, 'applied') ? 'done' : '']];
+  const parts = l ? `<div class="pk-parts">${l.parts.map((p) => { const v = p.max ? p.pts / p.max : 0; return `<div class="fp"><span class="fp-l">${WEIGHT_LABEL[p.k]}</span><span class="fbar"><span style="width:${Math.round(v * 100)}%;background:${v >= 0.8 ? 'var(--score-hi)' : v >= 0.5 ? 'var(--score-mid)' : 'var(--bad)'}"></span></span><span class="num fp-n">${Math.round(p.pts)}/${Math.round(p.max)}</span></div>`; }).join('')}${l.pen ? `<div class="fp"><span class="fp-l">No-sponsorship penalty</span><span></span><span class="num fp-n neg">−${l.pen}</span></div>` : ''}</div>` : '';
+  const an = k.analyzed ? peekAnalysis(key) : null, A = an && an.job && an.job.analysis;
+  const ai = !k.analyzed ? `<p class="sub">Not analyzed yet. The job page reads the posting with Claude: who it is for, sponsorship, keywords and a fit score.</p>`
+    : !A ? `<p class="sub">${an && an.loading ? 'Loading…' : 'Analysis not available.'}</p>`
+      : `<p>${esc(A.summary || '')}</p><dl class="pk-dl">${(A.audience && (A.audience.degreeLevels || []).length) ? `<dt>Who it is for</dt><dd>${esc(A.audience.degreeLevels.join(', '))}${A.audience.gradText ? ' · ' + esc(A.audience.gradText) : ''}</dd>` : ''}
+        <dt>Sponsorship</dt><dd>${esc({ yes: 'Sponsors', no: 'No sponsorship', not_stated: 'Not stated', unknown: 'Not stated' }[A.sponsorship && A.sponsorship.status] || 'Not stated')}</dd>
+        ${A.timing && (A.timing.term || A.timing.deadline) ? `<dt>Timing</dt><dd>${esc([A.timing.term, A.timing.deadline ? 'apply by ' + fmt(A.timing.deadline) : ''].filter(Boolean).join(' · '))}</dd>` : ''}
+        ${(A.requiredSkills || []).length ? `<dt>Required</dt><dd>${esc(A.requiredSkills.slice(0, 8).join(', '))}</dd>` : ''}</dl>`;
+  el.innerHTML = `<div class="pk-head"><div class="pk-t"><h2 id="pkTitle" tabindex="-1">${esc(x.company)}</h2><p>${esc(x.role)}</p></div>
+      <button class="btn icon ghost" type="button" data-pkclose aria-label="Close preview" title="Close (Esc)">✕</button></div>
+    <div class="pk-meta">${meta}</div>
+    <div class="pk-acts">${primaryFor(ref, 'btn')}${secondary}${safeUrl(x.url) ? link(x.url, 'Posting ↗', 'btn ghost') : ''}${moreBtn(ref, x.company).replace('btn sm ghost icon', 'btn ghost icon')}</div>
+    <a class="pk-open" href="${jobHref(id)}"><span><b>Open the job page</b><span class="sub">Analyze the posting, tailor the resume, write the cover letter, apply</span></span><span aria-hidden="true">→</span></a>
+    <section class="pk-sec"><h3>Progress</h3><ol class="pk-steps">${steps.map(([t, st], i) => `<li class="${st}"><span class="sn" aria-hidden="true">${st === 'done' ? '✓' : i + 1}</span>${t}<span class="sr">${st === 'done' ? ' done' : st === 'part' ? ' in progress' : ' not started'}</span></li>`).join('')}</ol></section>
+    <section class="pk-sec"><h3>${l ? `Listing priority ${l.total}` : typeof a.score === 'number' ? `Listing priority ${a.score} when saved` : 'Priority'}</h3>${l ? `${parts}${evidence(l)}${skillLine(l)}` : `<p class="sub">Added by hand, so there is no listing score.</p>`}</section>
+    <section class="pk-sec"><h3>Claude’s analysis</h3>${ai}</section>
+    ${a && a.notes ? `<section class="pk-sec"><h3>Notes</h3><p class="pk-notes">${esc(a.notes)}</p></section>` : ''}
+    <p class="pk-keys"><span class="kbd">J</span> <span class="kbd">K</span> next / previous · <span class="kbd">Esc</span> close</p>`;
+  el.hidden = false;
 }
 
 /* ---------- settings ---------- */
-const SECTIONS = [['search', 'Job search'], ['skills', 'Your skills'], ['scoring', 'Scoring'], ['outcomes', 'Score vs. outcomes'], ['goals', 'Goals and reminders'], ['resumes', 'Resume versions'], ['calendar', 'Calendar'], ['data', 'Your data'], ['appearance', 'Appearance']];
+const SECTIONS = [['search', 'Job search'], ['scoring', 'Scoring'], ['outcomes', 'Score vs. outcomes'], ['goals', 'Goals and reminders'], ['claude', 'Claude'], ['resumes', 'Resume versions'], ['calendar', 'Calendar'], ['data', 'Your data'], ['appearance', 'Appearance']];
 const numField = (id, label, key, min, max, hint, step) => `<label class="field"><span>${label}</span><input id="${id}" type="number" min="${min}" max="${max}" step="${step || 1}" data-setting="${key}" data-min="${min}" data-max="${max}" value="${esc(S.settings[key])}">${hint ? `<span class="hint">${hint}</span>` : ''}</label>`;
 R.settings = () => {
   const st = S.settings;
@@ -714,25 +940,19 @@ R.settings = () => {
   <nav class="stoc" aria-label="Settings sections">${SECTIONS.map(([k, l]) => `<a href="#settings/${k}" data-stoc="${k}">${l}</a>`).join('')}</nav>
   <div class="sbody">
   <section class="panel" id="s-search"><h2>Job search</h2>
-    <div class="field"><span>Target tracks ${eff(true)}</span><div class="checks">${TRACKS.map((t) => `<label><input type="checkbox" data-target="${t}" ${st.targets.includes(t) ? 'checked' : ''}> ${t} <span class="sub">${TRACK_NAME[t]}</span></label>`).join('')}</div><span class="hint">Listings in these tracks get full role-fit points.</span></div>
-    <label class="field"><span>Preferred locations ${eff(true)}</span><input id="p-places" type="text" value="${esc(st.places.join(', '))}"><span class="hint">Comma separated, e.g. TX, Remote, Seattle. “TX” also matches “Texas”.</span></label>
+    <div class="notice"><span><b>What you are looking for lives in your Profile:</b> ${st.targets.length ? st.targets.join(', ') : 'no target tracks'} · ${st.places.length ? esc(st.places.join(', ')) : 'any place'} · ${plural(mine.size, 'skill')} ticked for scoring.</span><a class="btn sm" href="#profile/prefs">Edit in Profile</a></div>
     <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor ? 'checked' : ''}> Hide listings that say they do not sponsor visas ${eff(true)}</label>
     <div class="grid2">${numField('p-window', `Show listings posted in the last (days) ${eff(false)}`, 'windowDays', 1, 60)}
       ${numField('p-hours', 'Refresh listings every (hours) <span class="eff later">Within 5 min</span>', 'fetchHours', 1, 24)}</div>
     <div class="row"><span class="empty">${fetchSummary()}</span><button class="btn sm" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh now'}</button></div>
     <p class="empty">The refresh runs on your Mac with no AI calls. The Mac must be awake; a missed run happens within 5 minutes of waking.</p></section>
 
-  <section class="panel" id="s-skills"><h2>Your skills <small>${mine.size} of ${C.SKILL_NAMES.length} selected</small>${eff(true)}</h2>
-    <p class="empty">The skill match compares these with the tools each posting names. Only tick skills you can explain in an interview; the “Add if true” hints on listings come from the ones left unticked.</p>
-    <div class="checks sm">${C.SKILL_NAMES.map((k) => `<label><input type="checkbox" data-skill="${esc(k)}" ${mine.has(k) ? 'checked' : ''}> ${esc(k)}</label>`).join('')}</div>
-    <div class="row"><button class="btn sm ghost" type="button" data-action="skills-reset">Reset to the starting list</button></div></section>
-
   <section class="panel" id="s-scoring"><h2>Scoring ${eff(true)}</h2>
     <div class="field"><span>Weights <span class="hint">relative, any scale; the share column shows each one’s part of 100 points</span></span>
     <div class="weights">${C.WEIGHT_KEYS.map((k) => { const sh = tot ? (Math.max(0, +st.weights[k] || 0) / tot * 100) : 0; return `<label for="w-${k}">${WEIGHT_LABEL[k]} <span class="hint">· ${WEIGHT_HINT[k]}</span></label><input id="w-${k}" type="number" min="0" max="100" step="5" data-weight="${k}" value="${st.weights[k]}"><span class="share" aria-label="${Math.round(sh)} percent"><span class="prog"><span style="width:${sh}%"></span></span>${Math.round(sh)}%</span>`; }).join('')}</div></div>
     <div class="grid2">
-      ${numField('p-top', 'Apply-now threshold', 'topScore', 1, 100, '“Apply now” and Top matches start here.')}
-      ${numField('p-min', 'Lower-match cutoff', 'minScore', 0, 99, 'Listings below this go to the collapsed “Lower matches” group and are labelled Low priority. Nothing is hidden.')}
+      ${numField('p-top', 'Apply-now threshold', 'topScore', 1, 100, '“Apply now” and Top priority start here.')}
+      ${numField('p-min', 'Lower-match cutoff', 'minScore', 0, 99, 'Listings below this go to the collapsed “Lower priority” group and are labelled Low priority. Nothing is hidden.')}
       ${numField('p-pen', 'No-sponsorship penalty (points)', 'noSponsorPenalty', 0, 100, 'Subtracted when a posting says it will not sponsor.')}
       ${numField('p-hl', 'Recency half-life (days)', 'recencyHalfLife', 1, 30, 'The recency points halve every this many days.')}
     </div>
@@ -747,6 +967,8 @@ R.settings = () => {
       ${numField('p-sstale', 'Remind me about a saved application after (days)', 'savedStaleDays', 2, 30)}${numField('p-slimit', 'Saved list limit', 'savedLimit', 3, 60, 'Saved applications lead today’s queue. Past the limit, the dashboard asks you to apply or drop a few first.')}</div>
     <div class="field"><span>Desktop notifications</span><label class="switch"><input type="checkbox" id="p-notify" ${st.notify && 'Notification' in window && Notification.permission === 'granted' ? 'checked' : ''} ${'Notification' in window ? '' : 'disabled'}> Remind me about deadlines, interviews, follow-ups and new “Apply now” matches</label>
       <span class="hint">${notifState}</span>${st.notify && 'Notification' in window && Notification.permission === 'granted' ? '<div class="row"><button class="btn sm" type="button" data-action="notify-test">Send a test notification</button></div>' : ''}</div></section>
+
+  ${HOOKS.settings ? HOOKS.settings() : ''}
 
   <section class="panel" id="s-resumes"><h2>Resume versions <small>shown on each listing as “Resume: …”</small>${eff(true)}</h2>
     <div class="weights" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)">${['DS', 'DA', 'BIE', 'DE', 'SWE'].map((k) => `<label for="rv-${k}">${k} · ${TRACK_NAME[k]}</label><input id="rv-${k}" type="text" data-resume="${k}" value="${esc((st.resumes || DEFAULTS.resumes)[k] || '')}">`).join('')}</div>
@@ -799,8 +1021,8 @@ function calibration() {
   }).join('');
   const reasons = {}; for (const d of S.dismissLog) { const r = d.reason || 'none'; (reasons[r] = reasons[r] || []).push(d.score); }
   const rlist = Object.entries(reasons).sort((a, b) => b[1].length - a[1].length);
-  return `<p class="empty">Applications are grouped by the match score they had when you tracked them. Rates show once a group has 5 or more applications; calibrate when each group has about 10.</p>
-    <table class="calib"><thead><tr><th scope="col">Score when tracked</th><th scope="col">Applied</th><th scope="col">Reply rate</th><th scope="col">Interview rate</th></tr></thead><tbody>${rows}</tbody></table>
+  return `<p class="empty">Applications are grouped by the listing priority they had when you tracked them (descriptive only: it does not predict interviews or offers). Rates show once a group has 5 or more applications; calibrate when each group has about 10.</p>
+    <table class="calib" tabindex="0"><thead><tr><th scope="col">Score when tracked</th><th scope="col">Applied</th><th scope="col">Reply rate</th><th scope="col">Interview rate</th></tr></thead><tbody>${rows}</tbody></table>
     ${rlist.length ? `<div class="field"><span>Why you dismissed listings</span><div class="ev">${rlist.map(([r, sc]) => { const nums = sc.filter((x) => typeof x === 'number'); return `<span class="chip tag">${esc(DISMISS_LABEL[r] || 'No reason given')} · ${sc.length}${nums.length ? ` · avg score ${Math.round(nums.reduce((a, b) => a + b, 0) / nums.length)}` : ''}</span>`; }).join('')}</div>
     <span class="hint">Many high-scoring dismissals for one reason suggest a weight to lower or a preference to change (for example locations).</span></div>` : '<p class="empty">Dismiss reasons will appear here once you dismiss listings.</p>'}`;
 }
@@ -817,12 +1039,14 @@ function route() { const h = location.hash.slice(1).split('/')[0]; return h === 
 let lastView = null;
 function render() {
   const v = route();
-  const navKey = (v === 'board' || v === 'table') ? 'apps' : v;
+  if (!['settings', 'profile', 'docs'].includes(v)) { UI.backTo = location.hash || '#dashboard'; try { UI.backName = VIEWS[v][0]; } catch (_) { UI.backName = ''; } }
+  const navKey = (v === 'board' || v === 'table') ? 'apps' : v === 'job' ? (HOOKS.jobNav ? HOOKS.jobNav() : 'inbox') : v;
   if (navKey === 'apps' && S.ui.layout !== v) { S.ui.layout = v; save(); }
   $$('[data-nav]').forEach((a) => a.dataset.nav === navKey ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
   $('#navApps').setAttribute('href', '#' + (S.ui.layout === 'table' ? 'table' : 'board'));
-  if (v === 'settings') $('#gearBtn').setAttribute('aria-current', 'page'); else $('#gearBtn').removeAttribute('aria-current');
   $('#viewTitle').textContent = VIEWS[v][0];
+  const crumb = VIEWS[v][2] ? VIEWS[v][2]() : null, ce = $('#viewCrumb');
+  if (ce) { ce.hidden = !crumb; if (crumb) { ce.href = crumb[0]; ce.textContent = '← ' + crumb[1]; } }
   document.title = VIEWS[v][0] + ' · Internship Tracker';
   $('#viewSub').textContent = (filtersOn() && (v === 'board' || v === 'table')) ? `Showing ${filtered().length} of ${S.apps.length} applications · filters on` : VIEWS[v][1]();
   $('#tools').hidden = !['board', 'table', 'inbox'].includes(v);
@@ -837,15 +1061,33 @@ function render() {
   if (v === lastView) window.scrollTo(0, y);
   if (v === 'settings' && Store.mode === 'file') loadBackups();
   if (v === 'dashboard') fitChart();
+  for (const f of HOOKS.afterRender) f(v);
+  if (!['inbox', 'dashboard'].includes(v)) UI.peek = null;
+  renderPeek();
+  spyToc();
+  $('#q').placeholder = v === 'inbox' ? 'Search company, role, location, skill' : 'Search company, role, notes';
   if (v !== 'settings') UI.baseline = null;
   if (v !== lastView && lastView !== null) { const sub = location.hash.split('/')[1]; const el = sub && document.getElementById('s-' + sub); if (el) el.scrollIntoView({ block: 'start' }); else window.scrollTo(0, 0); }
   lastView = v;
 }
-function focusCard(id) { const el = $(`.card[data-id="${CSS.escape(id)}"]`); if (el) el.focus(); }
-function toast(msg, undoable) {
-  const t = $('#toast'); t.innerHTML = `<span>${esc(msg)}</span>${undoable ? '<button type="button" class="tbtn" data-action="undo">Undo</button>' : ''}`;
-  t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), undoable ? 7000 : 3200);
+let tocObs = null;
+function spyToc() {
+  if (tocObs) { tocObs.disconnect(); tocObs = null; }
+  const links = $$('.stoc a'); if (!links.length || !('IntersectionObserver' in window)) return;
+  const mark = (id) => links.forEach((a) => { const on = a.getAttribute('href').endsWith('/' + id.replace(/^s-/, '')); on ? a.setAttribute('aria-current', 'location') : a.removeAttribute('aria-current'); });
+  const seen = new Map();
+  tocObs = new IntersectionObserver((es) => { es.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null)); const vis = [...seen].filter(([, t]) => t !== null).sort((a, b) => a[1] - b[1]); if (vis.length) mark(vis[0][0]); }, { rootMargin: '-80px 0px -55% 0px' });
+  $$('.sbody > section[id^="s-"]').forEach((sec) => tocObs.observe(sec));
 }
+function focusCard(id) { const el = $(`.card[data-id="${CSS.escape(id)}"]`); if (el) el.focus(); }
+/* Every change you can take back shows Undo for 10 seconds (the timer pauses while the pointer or focus is on it); ⌘Z / Ctrl+Z works any time. */
+function toast(msg, undoable) {
+  const t = $('#toast'); t.innerHTML = `<span>${esc(msg)}</span>${undoable ? `<button type="button" class="tbtn" data-action="undo">Undo</button><span class="tkey">${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘Z' : 'Ctrl+Z'}</span>` : ''}`;
+  t.hidden = false; toast.ms = undoable ? 10000 : 3500; toastTimer();
+}
+function toastTimer() { clearTimeout(toast.t); toast.t = setTimeout(() => { $('#toast').hidden = true; }, toast.ms); }
+$('#toast').addEventListener('pointerenter', () => clearTimeout(toast.t)); $('#toast').addEventListener('pointerleave', toastTimer);
+$('#toast').addEventListener('focusin', () => clearTimeout(toast.t)); $('#toast').addEventListener('focusout', toastTimer);
 
 /* ---------- menus and dialogs ---------- */
 let menuPick = null;
@@ -882,10 +1124,11 @@ function showHelp() {
   openDialog(`<div class="mbody"><h2 id="dlgTitle">Keyboard shortcuts</h2><dl class="keys">
     <dt>${k(MOD, 'K')}</dt><dd>Search applications, listings and commands</dd>
     <dt>${k('N')}</dt><dd>New application</dd><dt>${k('/')}</dt><dd>Filter the current list</dd>
-    <dt>${k('G', 'D')}</dt><dd>Go to Dashboard (also G A applications, G B board, G T list, G L listings, G S settings)</dd>
+    <dt>${k('G', 'D')}</dt><dd>Go to Dashboard (also G A applications, G B board, G T list, G L listings, G O documents, G P profile, G S settings)</dd>
+    <dt>${k('J')} ${k('K')}</dt><dd>Next / previous job while the preview panel is open</dd>
     <dt>${k('Shift', '←', '→')}</dt><dd>Move the focused card to the previous or next stage</dd>
     <dt>${k('Enter')}</dt><dd>Open the focused card</dd><dt>${k(MOD, 'Z')}</dt><dd>Undo (up to 30 steps)</dd>
-    <dt>${k('Esc')}</dt><dd>Close a dialog or the edit panel</dd><dt>${k('?')}</dt><dd>Show this list</dd></dl>
+    <dt>${k('Esc')}</dt><dd>Close a dialog, the edit panel or the preview; leave Select mode</dd><dt>${k('?')}</dt><dd>Show this list</dd></dl>
     <div class="mfoot"><button class="btn primary" type="button" data-close>Done</button></div></div>`);
   $('[data-close]', dlg).focus();
 }
@@ -896,7 +1139,7 @@ function paletteItems(q) {
   const hit = (s) => t.every((w) => s.toLowerCase().includes(w));
   const cmds = [
     ['Add application', () => openDrawer(null)], ['Go to Dashboard', () => go('dashboard')], ['Go to Applications · Board', () => go('board')], ['Go to Applications · List', () => go('table')], ['Review saved applications', () => { S.ui.stage = 'todo'; go('table'); }],
-    ['Go to New listings', () => go('inbox')], ['Go to Settings', () => go('settings')], ['Refresh listings now', () => startRefresh()], ['Export JSON backup', () => doExport()],
+    ['Go to New listings', () => go('inbox')], ['Go to Documents', () => go('docs')], ['Go to Profile', () => go('profile')], ['Go to Settings', () => go('settings')], ['Refresh listings now', () => startRefresh()], ['Export JSON backup', () => doExport()],
     ['Download calendar (.ics)', () => { location.href = 'calendar.ics?download=1'; }], ['Keyboard shortcuts', () => showHelp()], ['Toggle dark mode', () => cycleTheme()], ['Undo', () => undo()],
   ].map(([label, run]) => ({ k: 'Command', label, run }));
   const out = cmds.filter((c) => !t.length || hit(c.label));
@@ -1002,7 +1245,7 @@ function openDrawer(id, prefill) {
     ${id ? `<details class="dsec"><summary>History <span class="cnt">${a.history.length + (a.followLog || []).length}</span></summary><div class="inner"><span class="hint" style="font-size:12px;color:var(--faint)">Edit a date to backfill when something happened.</span><ul class="timeline" id="hist">${[...a.history.map((h, i) => ({ k: 's', v: h.s, d: h.d, i })), ...(a.followLog || []).map((d, i) => ({ k: 'f', d, i: 100 + i }))].sort((x, y) => x.d.localeCompare(y.d) || x.i - y.i).map((e) => e.k === 's'
       ? `<li data-s="${e.v}"><input type="date" value="${e.d}" aria-label="Date for ${LABEL[e.v]}">${stChip(e.v)}<button class="btn ghost sm" type="button" data-hdel aria-label="Remove ${LABEL[e.v]} entry">Remove</button></li>`
       : `<li data-flog><input type="date" value="${e.d}" aria-label="Follow-up date"><span class="chip fu">✓ Followed up</span><button class="btn ghost sm" type="button" data-hdel aria-label="Remove follow-up entry">Remove</button></li>`).join('')}</ul></div></details>` : ''}
-    <div class="dfoot">${id ? `<button class="btn ghost danger" type="button" data-action="delete">Delete</button>` : ''}${link(a.url, 'Open posting ↗', 'btn ghost')}<span class="spacer"></span>
+    <div class="dfoot">${id ? `<button class="btn ghost danger" type="button" data-action="delete">Delete</button><a class="btn ghost" href="#job/${esc(encodeURIComponent(a.id))}">Details &amp; resume</a>` : ''}${link(a.url, 'Open posting ↗', 'btn ghost')}<span class="spacer"></span>
       <button class="btn" type="button" data-action="close">Cancel</button><button class="btn primary" type="submit">${id ? 'Save changes' : 'Add application'}</button></div>
   </form>`;
   $('#drawer').hidden = false; $('#scrim').hidden = false; $('#app').inert = true;
@@ -1135,7 +1378,7 @@ function trackListings(ids, status) {
   for (const id of ids) {
     const l = L.find((x) => x.id === id); if (!l || l.dup) continue;
     const tr = TRACKS.includes(l.t) ? l.t : inferTrack(l.role);
-    const note = [`Match score ${l.total} when tracked.`, l.h1b !== undefined && l.h1b !== null ? `${l.h1b} H-1B approvals (USCIS FY2023).` : '', (l.flags || []).length ? `Flags: ${l.flags.join(', ')}.` : '',
+    const note = [`Listing priority ${l.total} when tracked.`, l.h1b !== undefined && l.h1b !== null ? `${l.h1b} H-1B approvals (USCIS ${h1bLabel()}).` : '', (l.flags || []).length ? `Flags: ${l.flags.join(', ')}.` : '',
       l.matched.length ? `Skills to highlight: ${l.matched.join(', ')}.` : '', l.missing.length ? `Not on resume: ${l.missing.join(', ')}.` : ''].filter(Boolean).join(' ');
     const a = blankApp({ company: l.company, role: l.role, track: tr, location: l.location, url: safeUrl(l.url), posted: l.posted, deadline: l.deadline || '', sponsor: l.sponsor, sample: l.sample, priority: l.total >= 80 ? 3 : l.total >= 65 ? 2 : 1, notes: note, score: l.total, listingId: l.id, history: [{ s: 'saved', d: iso(TODAY) }] });
     if (status === 'applied') setStatus(a, 'applied');
@@ -1159,7 +1402,7 @@ function dismissListings(ids, reason) {
   if (!n) { undoStack.pop(); return; }
   UI.scoredRev++; save(); render(); toast(n > 1 ? `${n} listings dismissed` : `${name} dismissed`, true);
 }
-const dismissItems = () => [...DISMISS_REASONS.map(([value, label]) => ({ value, label })), { value: '', label: 'Dismiss without a reason', sep: true }];
+const dismissItems = () => [...DISMISS_REASONS.map(([value, label]) => ({ value, label })), { value: '', label: 'No particular reason', sep: true }];
 function startRefresh() {
   if (Store.mode !== 'file') return toast('The local server refreshes from SimplifyJobs. This page is using example listings.');
   if (refreshing) return; const before = F.fetch && F.fetch.at; refreshing = true; render();
@@ -1208,6 +1451,11 @@ document.addEventListener('click', (e) => {
   $$('details.info[open]').forEach((d) => { if (!d.contains(t)) d.open = false; }); // close the labels popover on an outside click
   if (t.closest('#dlg') && t.closest('[data-close]')) return dlg.close();
   const go1 = t.closest('[data-goto]'); if (go1) { UI.expanded.add(go1.dataset.goto); return; }
+  const pkx = t.closest('[data-pkclose]'); if (pkx) return closePeek();
+  const pk = t.closest('[data-peek]'); if (pk) return UI.peek === pk.dataset.peek ? closePeek(false) : openPeek(pk.dataset.peek);
+  const rm2 = t.closest('[data-rowmenu]'); if (rm2) { const ref = rm2.dataset.rowmenu, it = menuFor(ref); const name = (ref[0] === 'l' ? (scored().find((x) => x.id === ref.slice(2)) || {}) : (S.apps.find((x) => x.id === ref.slice(2)) || {})).company || ''; return menuAt(rm2, name, UI.peek === ref || !['inbox', 'dashboard'].includes(route()) ? it.filter((m) => m.value !== 'peek') : it, (v) => runMenu(ref, v, rm2)); }
+  const pkm = t.closest('[data-pkm]'); if (pkm && UI.peek) return runMenu(UI.peek, pkm.dataset.pkm, pkm);
+  const ptg = t.closest('[data-picktoggle]'); if (ptg) { pickToggle(ptg.dataset.picktoggle, !UI.selected.has(ptg.dataset.picktoggle), e.shiftKey); return; }
   const stoc = t.closest('[data-stoc]'); if (stoc && route() === 'settings') { e.preventDefault(); history.replaceState(null, '', '#settings/' + stoc.dataset.stoc); const el = document.getElementById('s-' + stoc.dataset.stoc); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const add = t.closest('[data-add]');
   if (add) { const ul = add.dataset.add === 'round' ? $('#rounds') : $('#contacts'); ul.insertAdjacentHTML('beforeend', add.dataset.add === 'round' ? roundRow({ id: uid(), date: '', time: '', kind: 'Technical', with: '', notes: '' }) : contactRow({ id: uid(), name: '', title: '', email: '', link: '', note: '' })); ul.lastElementChild.querySelector('input').focus(); return; }
@@ -1232,6 +1480,7 @@ document.addEventListener('click', (e) => {
   const sf = t.closest('[data-stage]'); if (sf) { S.ui.stage = sf.dataset.stage; save(); render(); const b = $(`[data-stage="${sf.dataset.stage}"]`); if (b) b.focus(); return; }
   const ts = t.closest('[data-tsec]'); if (ts) { const k = ts.dataset.tsec; S.ui.tsec = Object.assign({}, S.ui.tsec, { [k]: ts.getAttribute('aria-expanded') !== 'true' }); save(); render(); const b = $(`[data-tsec="${k}"]`); if (b) b.focus(); return; }
   const tr = t.closest('[data-trackl]'); if (tr) return trackListings([tr.dataset.trackl], 'saved');
+  const dl = t.closest('[data-dismissl]'); if (dl) { const lid = dl.dataset.dismissl; return menuAt(dl, 'Why not interested?', dismissItems(), (r) => { dismissListings([lid], r); location.hash = '#inbox'; }); }
   const dm = t.closest('[data-dismiss]'); if (dm) { const id = dm.dataset.dismiss; return menuAt(dm, 'Why dismiss it?', dismissItems(), (r) => dismissListings([id], r)); }
   const gl = t.closest('[data-goal]'); if (gl) { UI.editGoal = gl.dataset.goal; render(); const i = $('#g-' + gl.dataset.goal); if (i) { i.focus(); i.select(); } return; }
   const act = t.closest('[data-action]');
@@ -1256,11 +1505,11 @@ document.addEventListener('click', (e) => {
     if (k === 'force-dates') { forceDates = true; return $('#appForm').requestSubmit(); }
     if (k === 'clear-filters') { S.ui.q = ''; S.ui.track = ''; S.ui.sponsor = ''; $('#q').value = ''; $('#fTrack').value = ''; $('#fSponsor').value = ''; save(); render(); return; }
     if (k === 'theme') return cycleTheme();
-    if (k === 'select-mode') { UI.select = !UI.select; if (!UI.select) UI.selected.clear(); return render(); }
+    if (k === 'select-mode') { UI.select = !UI.select; UI.lastPick = null; if (!UI.select) UI.selected.clear(); else UI.peek = null; return render(); }
     if (k === 'sel-all') { for (const id of UI.visibleIds || []) UI.selected.add(id); return render(); }
     if (k === 'sel-none') { UI.selected.clear(); return render(); }
     if (k === 'sel-track') return trackListings([...UI.selected], 'saved');
-    if (k === 'sel-dismiss') { const ids = [...UI.selected]; return menuAt(act, `Dismiss ${plural(ids.length, 'listing')} because…`, dismissItems(), (r) => dismissListings(ids, r)); }
+    if (k === 'sel-dismiss') { const ids = [...UI.selected]; return menuAt(act, `Not interested in ${plural(ids.length, 'listing')} because…`, dismissItems(), (r) => dismissListings(ids, r)); }
     if (k === 'clear-samples') { checkpoint(); S.apps = S.apps.filter((a) => !a.sample); S.manualListings = S.manualListings.filter((l) => !l.sample); UI.scoredRev++; save(true); render(); return toast('Examples removed', true); }
     if (k === 'load-samples') { checkpoint(); const n = addSamples(); save(); render(); return toast(n ? `Added ${n} example items` : 'Example data is already loaded', !!n); }
     if (k === 'undismiss') { checkpoint(); S.dismissed = []; UI.scoredRev++; save(); render(); return toast('Dismissed listings are shown again', true); }
@@ -1279,7 +1528,12 @@ document.addEventListener('click', (e) => {
     if (k === 'restore') { try { const d = JSON.parse($('#io').value); if (!d || !Array.isArray(d.apps)) throw new Error('no apps'); restoreFrom(d, 'Restored from export'); } catch (err) { toast('Restore needs a JSON export from this tracker.'); } return; }
     if (k === 'delete') {
       if (!confirmDel) { confirmDel = true; act.textContent = 'Click again to delete'; return; }
-      checkpoint(); const a = S.apps.find((x) => x.id === editing); S.apps = S.apps.filter((x) => x.id !== editing); returnTo = null; UI.scoredRev++; save(true); closeDrawer(); return toast(`${a ? a.company : 'Application'} deleted`, true);
+      checkpoint(); const a = S.apps.find((x) => x.id === editing); S.apps = S.apps.filter((x) => x.id !== editing); returnTo = null;
+      /* Deleting means "gone": also hide the listing it came from, or it would come straight back into Today's queue as a new pick. */
+      const src = a && scored().find((l) => (a.listingId && l.id === a.listingId) || (l.dup && l.dup.id === a.id)), hid = src && !S.dismissed.includes(listingKey(src));
+      if (hid) { S.dismissed.push(listingKey(src)); S.dismissLog.push({ id: uid(), key: listingKey(src), company: src.company, role: src.role, track: src.t, score: src.total, reason: 'deleted', d: iso(TODAY) }); }
+      if (UI.peek === 'a:' + editing) UI.peek = null;
+      UI.scoredRev++; save(true); closeDrawer(); return toast(`${a ? a.company : 'Application'} deleted${hid ? ' · its listing is hidden too' : ''}`, true);
     }
   }
   const fu = t.closest('[data-fu]');
@@ -1329,7 +1583,7 @@ document.addEventListener('change', (e) => {
   }
   if (t.closest('#drawer') && t.id !== 'f-status') return;
   if (t.id === 'f-status') { $('#stdateWrap').hidden = t.value === origStatus; return; }
-  if (t.dataset.pick) { t.checked ? UI.selected.add(t.dataset.pick) : UI.selected.delete(t.dataset.pick); render(); const b = $(`[data-pick="${CSS.escape(t.dataset.pick)}"]`); if (b) b.focus(); return; }
+  if (t.dataset.pick) return pickToggle(t.dataset.pick, t.checked, UI.shiftDown);
   if (t.dataset.statusFor) {
     const a = S.apps.find((x) => x.id === t.dataset.statusFor); if (!a) return; checkpoint(); moveTo(a, t.value); save(); render();
     if (t.classList.contains('move')) focusCard(a.id); return toast(`${a.company} → ${LABEL[a.status]}`, true);
@@ -1374,7 +1628,11 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return showPalette(); }
+  const inText = e.target.closest('textarea,select,input:not([type=checkbox]):not([type=radio])');
+  if (e.key === 'Escape' && UI.peek && !inText) { e.preventDefault(); return closePeek(); }
+  if (e.key === 'Escape' && UI.select && !inText) { e.preventDefault(); UI.select = false; UI.selected.clear(); return render(); }
   if (e.target.closest('input,textarea,select')) return;
+  if (UI.peek && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key === 'j' || e.key === 'k')) { e.preventDefault(); return peekStep(e.key === 'j' ? 1 : -1); }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') { e.preventDefault(); return undo(); }
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   const c = e.target.closest('.card');
@@ -1386,7 +1644,7 @@ document.addEventListener('keydown', (e) => {
   }
   if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button,a,select,input')) { const o = e.target.closest('li[data-open]'); if (o) { e.preventDefault(); return openDrawer(o.dataset.open); } }
   if (gPrefix && Date.now() - gPrefix < 1200) {
-    const dest = { d: 'dashboard', a: S.ui.layout === 'table' ? 'table' : 'board', b: 'board', t: 'table', l: 'inbox', s: 'settings' }[e.key.toLowerCase()]; gPrefix = 0;
+    const dest = { d: 'dashboard', a: S.ui.layout === 'table' ? 'table' : 'board', b: 'board', t: 'table', l: 'inbox', o: 'docs', p: 'profile', s: 'settings' }[e.key.toLowerCase()]; gPrefix = 0;
     if (dest) { e.preventDefault(); return go(dest); }
   }
   if (e.key === 'g' || e.key === 'G') { gPrefix = Date.now(); return; }
@@ -1394,6 +1652,14 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '?') { e.preventDefault(); return showHelp(); }
   if (e.key === '/' && !$('#tools').hidden) { e.preventDefault(); $('#q').focus(); }
 });
+/* Select: click, or Shift+click to select the whole range since the last one you clicked. */
+document.addEventListener('pointerdown', (e) => { UI.shiftDown = e.shiftKey; }, true);
+function pickToggle(id, on, range) {
+  const ids = UI.visibleIds || [], a = ids.indexOf(UI.lastPick), b = ids.indexOf(id);
+  const span = range && a >= 0 && b >= 0 ? ids.slice(Math.min(a, b), Math.max(a, b) + 1) : [id];
+  for (const x of span) on ? UI.selected.add(x) : UI.selected.delete(x);
+  UI.lastPick = id; render(); const el = $(`[data-pick="${CSS.escape(id)}"]`); if (el) el.focus();
+}
 /* drag and drop (pointer); keyboard and touch use Shift+arrows or the stage menu */
 document.addEventListener('dragstart', (e) => { const c = e.target.closest && e.target.closest('.card'); if (!c) return; e.dataTransfer.setData('text/plain', c.dataset.id); e.dataTransfer.effectAllowed = 'move'; c.classList.add('dragging'); });
 document.addEventListener('dragend', (e) => { const c = e.target.closest && e.target.closest('.card'); if (c) c.classList.remove('dragging'); $$('.col.over').forEach((x) => x.classList.remove('over')); });
@@ -1412,8 +1678,19 @@ let rzT; window.addEventListener('resize', () => { clearTimeout(rzT); rzT = setT
 function tick() { const n = new Date(); n.setHours(0, 0, 0, 0); if (+n !== +TODAY) { TODAY = n; takeDailySnapshot(); UI.cache = null; if ($('#drawer').hidden) render(); } notifyCheck(); }
 setInterval(tick, 60000);
 setInterval(() => { if (!document.hidden) checkRemote(); }, 90000);
+setInterval(() => { if (!document.hidden) ingestClips(); }, 15000);
+window.addEventListener('focus', () => ingestClips());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { tick(); checkRemote(); } });
 window.addEventListener('beforeunload', (e) => { if (Store.queued || Store.busy) { Store.flush(); e.preventDefault(); e.returnValue = ''; } });
+
+/* ---------- internals for studio.js ---------- */
+window.IAT = {
+  $, $$, esc, clone, uid, iso, parse, fmt, ago, daysFrom, plural, safeUrl, urlKey, norm, listingKey, inferTrack,
+  R, VIEWS, HOOKS, UI, render, route, go, toast, save, scored, visibleListings, resumeFor, ring, band, link, eff, stChip, opts,
+  trackListings, openDrawer, loadKit, kitOf, backCrumb, jobIdForKey: (key) => { const a = S.apps.find((x) => listingKey(x) === key); if (a) return a.id; const l = scored().find((x) => listingKey(x) === key); return l ? (l.dup ? l.dup.id : l.id) : null; }, appForKey: (key) => S.apps.find((x) => listingKey(x) === key) || null, checkpoint, setStatus, menuAt, openDialog, dlg, settingChanged, appliedOn, refreshFeed: () => checkRemote(),
+  LABEL, STAGES, TRACKS, TRACK_NAME, CLOSED, DEFAULTS,
+  get S() { return S; }, get F() { return F; }, Store,
+};
 
 /* ---------- boot ---------- */
 (async () => {
@@ -1426,11 +1703,13 @@ window.addEventListener('beforeunload', (e) => { if (Store.queued || Store.busy)
   takeDailySnapshot();
   $('#fTrack').insertAdjacentHTML('beforeend', TRACKS.map((t) => `<option value="${t}">${t} · ${TRACK_NAME[t]}</option>`).join(''));
   S.ui.q = ''; $('#fTrack').value = S.ui.track || ''; $('#fSponsor').value = S.ui.sponsor || ''; $('#q').value = '';
+  await Promise.all([window.IATStudio ? window.IATStudio.boot() : null, loadKit()]);
   render();
   setSaved(Store.mode === 'file' ? 'Saved to data/tracker.json' : 'Saved in this browser only', Store.mode !== 'file');
   if (Store.mode === 'file' && (!user || user.v !== SCHEMA)) save();
   if (!S.settings.onboarded && !S.apps.length) showOnboarding(1);
   notifyCheck();
+  ingestClips();
   window.__iat = { get S() { return S; }, get F() { return F; }, Store }; // for debugging in the console
 })();
 })();
