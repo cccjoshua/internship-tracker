@@ -18,7 +18,9 @@
   --bg:#F5F5F7; --surface:#FFFFFF; --sunk:#F0F0F3; --fill:rgba(120,120,128,.12); --fill-2:rgba(120,120,128,.18); --fill-3:rgba(120,120,128,.08);
   --ink:#1D1D1F; --muted:#5E5E63; --faint:#6A6A6F; --line:#E3E3E8; --line-strong:#C7C7CC; --hair:rgba(0,0,0,.08);
   /* Accent = Apple blue (the darker web blue keeps 4.5:1 for text) */
-  --accent:#0064D2; --accent-ink:#FFFFFF; --accent-soft:#E8F1FC; --accent-text:#0062C4; --link:#0058B0;
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#E8F1FC; --accent-text:#0062C4; --link:#0058B0;
+  /* System blue for tints, selection and focus (never for text on white: 4.0:1). --accent is the filled-button blue (4.7:1 with white). */
+  --tint:#007AFF; --sel:color-mix(in srgb,#007AFF 12%,transparent); --sel-strong:color-mix(in srgb,#007AFF 18%,transparent);
   /* Application stages: grey → blue → indigo → purple → green, like system colours */
   --st-saved:#77777C; --st-applied:#0064D2; --st-oa:#5856D6; --st-interview:#AF52DE; --st-offer:#1E7A34; --st-rejected:#77777C; --st-withdrawn:#77777C;
   --good:#1E7A34; --warn:#C93400; --bad:#D70015; --hl:#FF9F0A; --hl-soft:#FFF4E5;
@@ -28,41 +30,41 @@
   --lift-shadow:0 0 0 .5px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.08);
   --shadow:0 0 0 .5px rgba(0,0,0,.06), 0 18px 50px rgba(0,0,0,.18);
   --material:rgba(246,246,248,.78); --material-strong:rgba(255,255,255,.82); --blur:saturate(180%) blur(24px);
-  --focus:0 0 0 4px color-mix(in srgb,var(--accent) 32%,transparent);
+  --focus:0 0 0 3px color-mix(in srgb,var(--tint) 50%,transparent);
   /* Type */
   --f-ui:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Helvetica Neue", "PingFang TC", "Hiragino Sans", system-ui, sans-serif;
   --f-mono:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif; /* numbers: SF with tabular figures */
   --f-round:"SF Pro Rounded", ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --f-code:ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   /* Shape: concentric radii */
-  --r:18px; --r-row:12px; --r-ctl:10px;
+  --r:14px; --r-row:10px; --r-ctl:6px;
   --ease:cubic-bezier(.25,.1,.25,1);
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#000000; --surface:#1C1C1E; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
+  --bg:#1A1A1C; --surface:#242426; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
   --ink:#F5F5F7; --muted:#AEAEB2; --faint:#98989D; --line:#38383A; --line-strong:#48484A; --hair:rgba(255,255,255,.08);
-  --accent:#0064D2; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --accent-text:#64B5FF; --link:#64B5FF;
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --tint:#0A84FF; --sel:color-mix(in srgb,#0A84FF 22%,transparent); --sel-strong:color-mix(in srgb,#0A84FF 30%,transparent); --accent-text:#64B5FF; --link:#64B5FF;
   --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#BF5AF2; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
   --good:#30D158; --warn:#FF9F0A; --bad:#FF6961; --hl:#FF9F0A; --hl-soft:#3A2A10;
   --score-hi:#30D158; --score-mid:#FF9F0A; --score-lo:#636366;
   --card-shadow:none; --lift-shadow:0 0 0 .5px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.5);
   --shadow:0 0 0 .5px rgba(255,255,255,.1), 0 20px 60px rgba(0,0,0,.6);
-  --material:rgba(28,28,30,.72); --material-strong:rgba(44,44,46,.78);
-  --focus:0 0 0 4px color-mix(in srgb,var(--accent) 45%,transparent); color-scheme:dark}}
+  --material:rgba(12,12,14,.6); --material-strong:rgba(44,44,46,.78);
+  --focus:0 0 0 3px color-mix(in srgb,var(--tint) 55%,transparent); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#000000; --surface:#1C1C1E; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
+  --bg:#1A1A1C; --surface:#242426; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
   --ink:#F5F5F7; --muted:#AEAEB2; --faint:#98989D; --line:#38383A; --line-strong:#48484A; --hair:rgba(255,255,255,.08);
-  --accent:#0064D2; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --accent-text:#64B5FF; --link:#64B5FF;
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --tint:#0A84FF; --sel:color-mix(in srgb,#0A84FF 22%,transparent); --sel-strong:color-mix(in srgb,#0A84FF 30%,transparent); --accent-text:#64B5FF; --link:#64B5FF;
   --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#BF5AF2; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
   --good:#30D158; --warn:#FF9F0A; --bad:#FF6961; --hl:#FF9F0A; --hl-soft:#3A2A10;
   --score-hi:#30D158; --score-mid:#FF9F0A; --score-lo:#636366;
   --card-shadow:none; --lift-shadow:0 0 0 .5px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.5);
   --shadow:0 0 0 .5px rgba(255,255,255,.1), 0 20px 60px rgba(0,0,0,.6);
-  --material:rgba(28,28,30,.72); --material-strong:rgba(44,44,46,.78);
-  --focus:0 0 0 4px color-mix(in srgb,var(--accent) 45%,transparent); color-scheme:dark}
+  --material:rgba(12,12,14,.6); --material-strong:rgba(44,44,46,.78);
+  --focus:0 0 0 3px color-mix(in srgb,var(--tint) 55%,transparent); color-scheme:dark}
 
 /* ---------------------------------------------------------------- base type */
-body{font-size:14px;line-height:1.43;letter-spacing:-.006em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+body{font-size:13px;line-height:1.43;letter-spacing:-.006em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
 a{color:var(--link)}
 .mono,.kpi .v,.frow .num,.trow .num,.nav .n,.col h2 .count,.tsec-h .cnt,.lsec-h .cnt,.dsec>summary .cnt,.stagef .c{font-variant-numeric:tabular-nums}
 .kbd,.pt-id,.src,.copy input,.timeline input{font-family:var(--f-code)}
@@ -80,7 +82,7 @@ h1{font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-.022em}
 .brand b{font-size:15px;font-weight:700;letter-spacing:-.016em;white-space:nowrap}
 .brand span{font-size:12px;color:var(--faint)}
 .nav{gap:1px}
-.nav a{padding:0 10px;min-height:32px;border-radius:8px;color:var(--ink);font-weight:500;font-size:13.5px;transition:background .15s var(--ease)}
+.nav a{padding:0 10px;min-height:32px;border-radius:8px;color:var(--ink);font-weight:500;font-size:13px;transition:background .15s var(--ease)}
 .nav a svg{color:var(--accent-text);width:17px;height:17px}
 .nav a:hover{background:var(--fill-3);color:var(--ink)}
 .nav a[aria-current="page"]{background:var(--fill);color:var(--ink);font-weight:600}
@@ -96,7 +98,7 @@ main{padding-top:28px;gap:20px}
 .crumb:hover{color:var(--link)}
 
 /* ---------------------------------------------------------------- buttons: capsules */
-.btn{min-height:32px;padding:0 15px;border:0;border-radius:999px;background:var(--fill);color:var(--link);font-weight:500;font-size:13.5px;letter-spacing:-.005em;
+.btn{min-height:32px;padding:0 15px;border:0;border-radius:999px;background:var(--fill);color:var(--link);font-weight:500;font-size:13px;letter-spacing:-.005em;
   transition:background .15s var(--ease),transform .12s var(--ease),filter .15s var(--ease),box-shadow .15s var(--ease)}
 .btn:hover{background:var(--fill-2);border-color:transparent}
 .btn:active:not(:disabled){transform:scale(.97)}
@@ -140,7 +142,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;hei
 .switch input[type=checkbox]:disabled{opacity:.4;cursor:default}
 .switch input[type=checkbox]:focus-visible{box-shadow:var(--focus);border-radius:999px}
 .switch{gap:10px}
-.field>span{font-size:12.5px;color:var(--muted);font-weight:600}
+.field>span{font-size:12px;color:var(--muted);font-weight:600}
 .checks label{border:0;background:var(--fill);border-radius:999px;padding:5px 12px;transition:background .15s var(--ease)}
 .checks label:has(input:checked){background:var(--accent-soft);color:var(--accent-text)}
 
@@ -157,7 +159,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;hei
 .panel h2 small{font-size:13px;color:var(--faint)}
 .panel.inset{box-shadow:none;background:var(--fill-3)}
 .lsec,.tablewrap{border-radius:var(--r)}
-.lsec-h{padding:13px 18px;font-size:14px}
+.lsec-h{padding:13px 18px;font-size:13px}
 .notice{background:var(--surface)}
 .notice.warn{border:0;background:var(--hl-soft);color:var(--ink);box-shadow:none}
 .banner{border-style:solid;border:0;background:var(--surface)}
@@ -205,7 +207,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;hei
 /* ---------------------------------------------------------------- board */
 .board{gap:14px}
 .col{background:var(--fill-3);border-top:0;border-radius:var(--r);padding:2px 8px 8px}
-.col h2{padding:12px 6px 10px;font-size:14px}
+.col h2{padding:12px 6px 10px;font-size:13px}
 .col h2 .dot{width:9px;height:9px}
 .col h2 .count{font-weight:600;color:var(--faint)}
 .col.over{background:var(--accent-soft)}
@@ -233,7 +235,7 @@ tbody tr:hover td{background:var(--fill-3)}
 .jsteps a[aria-current] .sn{background:var(--accent);color:#fff}
 .jsteps a.done .sn,.jsteps a.done[aria-current] .sn{background:var(--good);color:#fff}
 .jsteps a.part .sn{background:linear-gradient(90deg,var(--accent-soft) 50%,var(--fill) 50%);color:var(--accent-text)}
-.jsteps .stx b{font-size:14px}
+.jsteps .stx b{font-size:13px}
 .eyebrow{text-transform:none;letter-spacing:-.003em;font-weight:600;color:var(--muted)}
 .step-hero h2,.rs-start h2{font-size:22px;font-weight:700;letter-spacing:-.02em}
 .sh-act{border-radius:14px;background:var(--fill-3)}
@@ -254,12 +256,12 @@ tbody tr:hover td{background:var(--fill-3)}
 dialog{border-radius:22px;box-shadow:var(--shadow)}
 dialog::backdrop{background:rgba(0,0,0,.28);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
 .modal .mbody{padding:24px}
-.modal h2,.drawer h2{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.modal h2,.drawer h2{font-size:22px;font-weight:700;letter-spacing:-.02em}
 .scrim{background:rgba(0,0,0,.28)}
 dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-radius:12px;padding:5px;
   box-shadow:0 0 0 .5px var(--hair),0 10px 32px rgba(0,0,0,.2)}
 .menu .mt{color:var(--faint);font-weight:600}
-.menu button{border-radius:6px;padding:6px 10px;font-size:13.5px}
+.menu button{border-radius:6px;padding:6px 10px;font-size:13px}
 .menu button:hover,.menu button:focus-visible{background:var(--accent);color:#fff}
 .menu button.sep{border-top:.5px solid var(--line);border-radius:6px}
 .info-pop{border:0;border-radius:14px;background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:0 0 0 .5px var(--hair),0 10px 32px rgba(0,0,0,.18)}
@@ -274,10 +276,10 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 
 /* ---------------------------------------------------------------- phones: floating glass tab bar */
 @media (max-width:760px){
-  h1{font-size:30px}
+  h1{font-size:28px}
   .rail{left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom,0px));border:0;border-radius:28px;padding:6px;
     background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:0 0 0 .5px var(--hair),0 8px 30px rgba(0,0,0,.16)}
-  .nav a{border-radius:22px;min-height:50px;font-size:10.5px;font-weight:600;color:var(--muted)}
+  .nav a{border-radius:22px;min-height:50px;font-size:11px;font-weight:600;color:var(--muted)}
   .nav a svg{color:inherit;width:20px;height:20px}
   .nav a[aria-current="page"]{background:var(--fill);color:var(--accent-text)}
   main{padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
@@ -310,7 +312,7 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 .ring.blocked span{color:var(--bad);font-weight:700}
 .ring.none{background:repeating-conic-gradient(var(--line-strong) 0 6deg,transparent 6deg 12deg)}
 .ring.none span{color:var(--muted)}
-.verdict>.ring.blocked span,.verdict>.ring.none span{font-size:20px}
+.verdict>.ring.blocked span,.verdict>.ring.none span{font-size:22px}
 
 /* Eligibility rows: icon + label + detail + quoted evidence + status word (colour is never the only signal) */
 .elig{display:flex;flex-direction:column;margin:4px 0 14px;border-radius:var(--r-row);background:var(--fill-3);overflow:hidden}
@@ -322,9 +324,9 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 .el.warn .el-i{background:color-mix(in srgb,var(--hl) 22%,transparent);color:var(--warn)}
 .el-l{display:flex;flex-direction:column;gap:1px;min-width:0}
 .el-l b{font-weight:600}
-.el-l .sub{color:var(--muted);font-size:12.5px;overflow-wrap:anywhere}
+.el-l .sub{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
 .el-l q{font-size:12px;color:var(--faint);font-style:italic;quotes:"“" "”";overflow-wrap:anywhere}
-.el-s{font-size:11.5px;font-weight:600;color:var(--muted);white-space:nowrap;padding-top:2px}
+.el-s{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;padding-top:2px}
 .el.bad .el-s{color:var(--bad)}.el.warn .el-s{color:var(--warn)}.el.ok .el-s{color:var(--good)}
 .el.na .el-l b{font-weight:500}
 
@@ -344,10 +346,10 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 .lc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:6px}
 .lc-steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--faint)}
 .lc-steps li{display:inline-flex;align-items:center;gap:5px}
-.lc-steps li span[aria-hidden]{font-size:9px}
+.lc-steps li span[aria-hidden]{font-size:11px}
 .lc-steps li.on{color:var(--ink)}
 .lc-steps li.on span[aria-hidden]{color:var(--good)}
-.btn.xs{padding:2px 9px;font-size:11.5px;min-height:24px}
+.btn.xs{padding:2px 9px;font-size:12px;min-height:24px}
 
 /* Yes / No / Not set questions in the Profile */
 .tri-set{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
@@ -357,7 +359,7 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 @media (max-width:640px){.tri{grid-template-columns:1fr}}
 
 /* Stub mode banner (IAT_AI_STUB=1): always visible so test output is never mistaken for Claude's */
-.stub-banner{position:sticky;top:0;z-index:60;padding:6px 16px;text-align:center;font-size:12.5px;font-weight:600;background:var(--hl-soft);color:var(--warn);border-bottom:.5px solid var(--hair)}
+.stub-banner{position:sticky;top:0;z-index:60;padding:6px 16px;text-align:center;font-size:12px;font-weight:600;background:var(--hl-soft);color:var(--warn);border-bottom:.5px solid var(--hair)}
 
 /* ==========================================================================
    Sidebar: search at the top (as in Mail and Notes), Settings pinned at the bottom of the list,
@@ -395,7 +397,7 @@ body:has(#stubBanner) .rail{top:30px;height:calc(100vh - 30px)}
 
 /* ---------------------------------------------------------------- search palette (palette.js) */
 dialog.pal{
-  --pal-sel:color-mix(in srgb,var(--accent) 12%,transparent);
+  --pal-sel:var(--sel);
   --pal-bg:rgba(255,255,255,.78); --pal-line:rgba(60,60,67,.14); --pal-label:#1D1D1F; --pal-2:rgba(60,60,67,.72); --pal-3:rgba(60,60,67,.5);
   width:min(640px,calc(100vw - 32px)); max-height:min(560px,calc(100vh - 15vh - 32px)); margin:15vh auto auto; padding:0; border:.5px solid var(--pal-line); border-radius:14px;
   background:var(--pal-bg); color:var(--pal-label); -webkit-backdrop-filter:blur(30px) saturate(180%); backdrop-filter:blur(30px) saturate(180%);
@@ -423,7 +425,7 @@ dialog.pal kbd{font:500 11px/16px var(--f-ui);min-width:18px;height:18px;padding
 .pal-row{display:flex;align-items:center;gap:10px;min-height:40px;padding:4px 10px;border-radius:10px;cursor:default;min-width:0}
 .pal-row[aria-selected="true"]{background:var(--pal-sel)}
 .pal-row.inert{color:var(--pal-2)}
-.pal-mono{width:24px;height:24px;flex:none;border-radius:6px;display:grid;place-items:center;font:600 10.5px/1 var(--f-ui);letter-spacing:.02em;color:var(--pal-2);background:rgba(120,120,128,.12)}
+.pal-mono{width:24px;height:24px;flex:none;border-radius:6px;display:grid;place-items:center;font:600 11px/1 var(--f-ui);letter-spacing:.02em;color:var(--pal-2);background:rgba(120,120,128,.12)}
 .pal-ic{width:24px;height:24px;flex:none;display:grid;place-items:center;color:var(--pal-2)}
 .pal-row[aria-selected="true"] .pal-ic{color:var(--accent-text)}
 .pal-txt{display:flex;flex-direction:column;min-width:0;flex:1}
@@ -449,3 +451,100 @@ dialog.pal kbd{font:500 11px/16px var(--f-ui);min-width:18px;height:18px;padding
 @media (prefers-reduced-transparency: reduce){dialog.pal{--pal-bg:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) dialog.pal{--pal-sel:color-mix(in srgb,#0A84FF 22%,transparent);--pal-bg:rgba(40,40,42,.78);--pal-line:rgba(255,255,255,.1);--pal-label:#F5F5F7;--pal-2:rgba(235,235,245,.66);--pal-3:rgba(235,235,245,.42);box-shadow:0 0 0 .5px rgba(0,0,0,.6),0 18px 48px rgba(0,0,0,.5)}}
 :root[data-theme="dark"] dialog.pal{--pal-sel:color-mix(in srgb,#0A84FF 22%,transparent);--pal-bg:rgba(40,40,42,.78);--pal-line:rgba(255,255,255,.1);--pal-label:#F5F5F7;--pal-2:rgba(235,235,245,.66);--pal-3:rgba(235,235,245,.42);box-shadow:0 0 0 .5px rgba(0,0,0,.6),0 18px 48px rgba(0,0,0,.5)}
+
+
+/* ==========================================================================
+   macOS app system (redesign, 2026-11). See DESIGN.md. Loaded last, so it wins.
+   ========================================================================== */
+/* Focus: an outline (not a box-shadow), so no component shadow can hide it; keyboard only. */
+:focus-visible,.btn:focus-visible,.switch input[type=checkbox]:focus-visible,.card:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:3px solid color-mix(in srgb,var(--tint) 50%,transparent);outline-offset:1px;box-shadow:none}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline-offset:0;border-color:var(--tint)}
+:focus:not(:focus-visible){outline:none}
+
+/* Sidebar: tinted selection, plain counts, no ring */
+.nav a{font-size:13px;min-height:28px;border-radius:6px;font-weight:400}
+.nav a[aria-current="page"]{background:var(--sel);color:var(--ink);font-weight:590}
+.nav a:hover:not([aria-current]){background:var(--fill-3)}
+.nav .n,.nav a[aria-current="page"] .n{background:none;color:var(--muted);font-weight:400;padding:0;min-width:0;font-size:12px}
+.nav .n.hot{background:none;color:var(--warn);font-weight:590}
+.rail-search{border-radius:6px}
+.savestate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+
+/* Buttons: one filled primary per view; row actions are tinted or plain. 6px radius, no press squish. */
+.btn{border-radius:6px;font-size:13px;min-height:28px;padding:0 12px;transition:background .15s var(--ease),filter .15s var(--ease)}
+.btn:active:not(:disabled){transform:none;filter:brightness(.95)}
+.btn.sm{min-height:24px;padding:0 10px;font-size:12px}
+.btn.lg{min-height:36px;padding:0 18px;font-size:15px}
+.btn.icon{width:28px;height:28px;min-height:28px;border-radius:6px}
+.btn.icon.sm{width:24px;height:24px;min-height:24px}
+.btn.tint{background:var(--sel);color:var(--accent-text);font-weight:590}
+.btn.tint:hover{background:var(--sel-strong)}
+.btn.plain{background:transparent;color:var(--accent-text);padding:0 6px}
+.btn.plain:hover{background:var(--fill-3)}
+.more-btn{border-radius:6px}
+
+/* Lists over cards: panels are grouped containers with hairlines, no drop shadow in light mode */
+.panel,.lsec,.tablewrap,.tsec-empty,.checks-box,.notice,.banner{box-shadow:0 0 0 .5px var(--line)}
+.panel{border-radius:var(--r);padding:16px 20px;gap:12px}
+.panel h2{font-size:15px;font-weight:600}
+.panel h2 small{font-size:12px;font-weight:400}
+.todo li,.tmatch li{border-radius:var(--r-row)}
+.lrow.qsaved,.tmatch li.qsaved{background:transparent}
+.lrow.peeking,.tmatch li.peeking,.todo li.peeking{background:var(--sel)}
+.lrow,.todo li,.tmatch li{transition:none}
+.card{transition:box-shadow .15s var(--ease)}
+.card:hover{transform:none}
+
+/* Scores: the number carries the information; only the top band gets the accent */
+.ring{--rc:var(--line-strong)}
+.ring.b1{--rc:var(--tint)}
+.ring.b2{--rc:color-mix(in srgb,var(--muted) 55%,transparent)}
+.ring.b3{--rc:var(--line)}
+.ring span{font-family:var(--f-ui);font-weight:590;color:var(--ink)}
+
+/* Dialogs and sheets: 14px */
+dialog{border-radius:14px}
+dialog::backdrop{background:rgba(0,0,0,.2);-webkit-backdrop-filter:none;backdrop-filter:none}
+.modal h2,.drawer h2{font-size:22px}
+@media (min-width:761px){.peek,.drawer{border-radius:14px}}
+.menu button:hover,.menu button:focus-visible{background:var(--sel-strong);color:var(--ink)}
+.toast{border-radius:10px}
+@media (prefers-reduced-transparency: reduce){
+  .rail,dialog.menu,.info-pop,.toast,thead th{-webkit-backdrop-filter:none;backdrop-filter:none}
+  .rail{background:var(--bg)} dialog.menu,.info-pop{background:var(--surface)}}
+
+/* Dashboard: status line, queue first, quiet empty states */
+.dashwrap{display:flex;flex-direction:column;gap:16px}
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 28px;padding:10px 16px;border-radius:var(--r);background:var(--surface);box-shadow:0 0 0 .5px var(--line);min-height:48px}
+.strip .si{display:flex;align-items:center;gap:8px;min-width:0}
+.strip .sk{font-size:12px;color:var(--muted)}
+.strip .sv{all:unset;cursor:pointer;font-size:15px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;border-radius:4px;padding:0 2px}
+.strip .sv span{color:var(--muted);font-weight:400}
+.strip .sv:hover{color:var(--accent-text)}
+.strip .sv:focus-visible{outline:3px solid color-mix(in srgb,var(--tint) 50%,transparent);outline-offset:1px}
+.strip .ss{font-size:12px;color:var(--muted)}
+.strip form{display:flex;gap:6px;align-items:center}.strip form input{width:64px;min-height:24px;padding:2px 8px}
+.meter{width:56px;height:4px;border-radius:2px;background:var(--fill);overflow:hidden;flex:none}
+.meter i{display:block;height:100%;background:var(--tint);border-radius:2px}
+.meter.done i{background:var(--good)}
+.dash{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);grid-template-areas:"top att" "pipe track" "week week";gap:16px}
+.dash:not(:has(.a-track)) .a-pipe{grid-column:2;grid-row:2}
+.dash:not(:has(.a-track)){grid-template-areas:"top att" "top pipe" "week week"}
+.panel.quiet{gap:6px}
+.panel.quiet .empty{margin:0}
+.new-t{color:var(--accent-text);font-weight:590}
+.panel h2 .rates{margin-left:auto;display:inline-flex;gap:14px;font-size:12px;font-weight:400;color:var(--muted)}
+.panel h2 .rates b{color:var(--ink);font-weight:600}
+.panel h2 .rates .small{color:var(--muted);font-style:italic}
+.panel h2{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.frow .fbar{height:6px;background:var(--fill-3)}
+.frow .fbar span{display:block;height:100%;background:var(--tint);border-radius:3px}
+.frow.zero>span:first-child{color:var(--muted)}
+.frow.zero .fbar{background:transparent;border-top:.5px dashed var(--line);height:0;border-radius:0}
+.chart .goal{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 4}
+.chart .goal-l{fill:var(--muted);font-weight:400}
+.chart .bar{fill:var(--tint);opacity:.3}.chart .bar.now{opacity:1}
+.tmatch li .what b,.todo li .what b{font-weight:590}
+.panel-foot{gap:4px}
+@media (max-width:1080px){.dash,.dash:not(:has(.a-track)){grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "att" "pipe" "track" "week"}.dash:not(:has(.a-track)) .a-pipe{grid-column:auto;grid-row:auto}}

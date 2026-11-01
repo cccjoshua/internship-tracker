@@ -58,12 +58,13 @@ Semantic tokens only; components never use raw hex.
 | `--separator` | `rgba(60,60,67,.14)` | `rgba(84,84,88,.6)` | Hairlines (0.5px on 2× screens) |
 | `--fill` | `rgba(120,120,128,.12)` | `rgba(118,118,128,.24)` | Control backgrounds, hover |
 | `--fill-secondary` | `rgba(120,120,128,.08)` | `rgba(118,118,128,.16)` | Quiet wells |
-| `--background` | `#FFFFFF` | `#1E1E1E` | Content area |
+| `--background` | `#FFFFFF` | `#242426` (panels on `#1A1A1C`) | Content area |
 | `--grouped-background` | `#F2F2F7` | `#000000` | Behind inset grouped rows (Settings, Profile) |
 | `--sidebar` | material `rgba(246,246,248,.8)` + blur | `rgba(40,40,42,.7)` + blur | Source list |
-| `--accent` | `#007AFF` | `#0A84FF` | Primary button, selection tint, links, focus |
+| `--tint` | `#007AFF` | `#0A84FF` | Selection tint, focus ring, icons, meters, chart bars (never text on white: 4.0:1) |
+| `--accent` | `#0071E3` | `#0071E3` | Filled primary button (4.7:1 with white text; system blue fails AA there) |
 | `--accent-text` | `#0062C4` | `#64B5FF` | Accent used as text on white/black (AA) |
-| `--selection` | accent @ 12% | accent @ 22% | Selected row / sidebar item fill |
+| `--sel` | tint @ 12% | tint @ 22% | Selected row / sidebar item fill, tinted buttons |
 
 **Status colors carry meaning only.** `--red` (`#FF3B30` / `#FF453A`) = overdue, blocked, error. `--orange` (`#FF9500` / `#FF9F0A`) = due soon, needs action. `--green` (`#34C759` / `#30D158`) = offer, success. Stage dots: neutral grey for Saved/Closed; accent for Applied; one shared indigo for OA/Interview; green for Offer. No other decorative color.
 

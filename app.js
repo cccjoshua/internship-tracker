@@ -201,7 +201,13 @@ const Store = {
     if (this.queued && this.tries < 5) this.flush();
   },
 };
-function setSaved(t, warn) { const el = $('#saveState'); el.textContent = t; el.title = t; el.classList.toggle('warn', !!warn); }
+/* Sidebar footer: short text ("Saved · 5:52 PM"); the full detail is in the tooltip. */
+function setSaved(t, warn) {
+  const el = $('#saveState'); let short = t, tip = t;
+  if (t === 'Saved to data/tracker.json') { const at = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }); short = 'Saved · ' + at; tip = 'Saved to data/tracker.json on this Mac at ' + at; }
+  else if (t === 'Saved in this browser only') short = 'Saved in this browser';
+  el.textContent = short; el.title = tip; el.classList.toggle('warn', !!warn);
+}
 let S, F = normFeed({}), pendingExt = null;
 function save(destructive) { Store.save(userData(), destructive); }
 function adoptUser(d, o) { const ui = S ? S.ui : null; S = migrate(d); if (o && o.keepUi && ui) S.ui = ui; }
@@ -406,7 +412,8 @@ const VIEWS = {
 };
 /* Settings, Profile and Documents remember the page you came from, so a "← Back to …" link returns you there. */
 function backCrumb() {
-  const h = UI.backTo; if (!h) return null;
+  return null; // Settings, Profile and Documents are top-level pages: the sidebar is the way back (DESIGN.md §6).
+  const h = UI.backTo; if (!h) return null; // eslint-disable-line no-unreachable
   const v = h.slice(1).split('/')[0], name = UI.backName || (VIEWS[v] || [''])[0];
   return name ? [h, 'Back to ' + name] : null;
 }
@@ -434,7 +441,7 @@ function kitLine(x, always) {
 const savedBadge = (a) => typeof a.score === 'number' ? `<span class="ring sm ${band(a.score)}" style="--p:${a.score}" title="Listing priority ${a.score} when saved"><span>${a.score}</span></span>` : `<span class="qbadge" title="Saved by you" aria-hidden="true"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2.5h8v11l-4-3-4 3z"/></svg></span>`;
 const savedAgo = (a) => { const d = savedDays(a); return d === 0 ? 'today' : d === 1 ? 'yesterday' : d + ' days ago'; };
 const dlTag = (d) => { const n = daysFrom(d); return n === null ? '' : `<span class="dl ${n <= 1 ? 'hot' : n <= 7 ? 'soon' : ''}" title="Application deadline">${n < 0 ? 'Deadline passed' : 'Deadline ' + fmt(d)}${n >= 0 && n <= 7 ? ' · ' + dueText(n).toLowerCase() : ''}</span>`; };
-const appliedBtn = (a, cls = 'btn sm primary') => `<button class="${cls}" type="button" data-applied-app="${a.id}" title="Mark as applied today">Applied ✓</button>`;
+const appliedBtn = (a, cls = 'btn sm tint') => `<button class="${cls}" type="button" data-applied-app="${a.id}" title="Mark as applied today">Applied ✓</button>`;
 const skipBtn = (a) => `<button class="btn sm ghost" type="button" data-skip-app="${a.id}" title="You decided not to apply: moves to Closed (Withdrawn); Undo is available">Not applying</button>`;
 const visIcon = (s) => s === 'yes' ? '<span class="vis yes" title="Sponsors visa / CPT-OPT friendly" aria-label="Sponsors visa">✓</span>' : s === 'no' ? '<span class="vis no" title="No sponsorship" aria-label="No sponsorship">✕</span>' : '<span class="sr">Unknown</span>';
 
@@ -442,7 +449,7 @@ const visIcon = (s) => s === 'yes' ? '<span class="vis yes" title="Sponsors visa
 function weekSvg(width) {
   const { wk, goalW } = UI.week || { wk: [], goalW: 0 }; if (!wk.length) return '';
   const mx = Math.max(goalW, ...wk.map((w) => w.c)), top = mx <= 4 ? 4 : Math.ceil(mx / 2) * 2;
-  const W = Math.max(280, Math.round(width)), H = 200, L = 28, B = 24, T = 18, Rp = 6, pw = W - L - Rp, ph = H - B - T, bw = pw / 8, y = (v) => T + ph - (v / top) * ph, narrow = bw < 62;
+  const W = Math.max(280, Math.round(width)), H = 150, L = 28, B = 24, T = 18, Rp = 6, pw = W - L - Rp, ph = H - B - T, bw = pw / 8, y = (v) => T + ph - (v / top) * ph, narrow = bw < 62;
   let svg = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Applications submitted per week over the last 8 weeks: ${wk.map((w) => w.c).join(', ')}">`;
   for (const g of [0, top / 2, top]) svg += `<line class="gl" x1="${L}" x2="${W - Rp}" y1="${y(g)}" y2="${y(g)}"/><text x="${L - 8}" y="${y(g) + 4}" text-anchor="end">${g}</text>`;
   wk.forEach((w, i) => {
@@ -478,21 +485,22 @@ R.dashboard = () => {
   const best = visibleListings().filter((l) => !l.dup && l.total >= topS);
   const picks = queueList(), moreSaved = qMoreSaved(picks);
   const qli = (x) => x.kind === 'app'
-    ? `<li class="qsaved${peekCls('a:' + x.a.id)}" data-ref="a:${x.a.id}">${savedBadge(x.a)}<button class="what" type="button" data-peek="a:${x.a.id}" aria-controls="peek"><b>${esc(x.a.company)} <span class="chip st s-saved">Saved</span></b><span>${esc(x.a.role)} · ${x.a.deadline ? `<span class="due ${dueCls(daysFrom(x.a.deadline))}">Apply by ${fmt(x.a.deadline)}</span>` : `Saved ${savedAgo(x.a)}`}</span></button>${acts(primaryFor('a:' + x.a.id), 'a:' + x.a.id, x.a.company)}</li>`
-    : `<li class="${peekCls('l:' + x.l.id)}" data-ref="l:${esc(x.l.id)}">${ring(x.l.total)}<button class="what" type="button" data-peek="l:${esc(x.l.id)}" aria-controls="peek"><b>${esc(x.l.company)}</b><span>${x.l.isNew ? '<span class="chip new">New</span> ' : ''}${esc(x.l.role)}${x.l.deadline ? ' · ' + dlTag(x.l.deadline) : ''}</span></button>${acts(primaryFor('l:' + x.l.id), 'l:' + x.l.id, x.l.company)}</li>`;
-  const topPanel = picks.length ? `<ul class="tmatch">${picks.slice(0, 6).map(qli).join('')}</ul>
-    <div class="panel-foot">${moreSaved ? `<button class="btn sm ghost" type="button" data-action="show-saved">${moreSaved} more saved →</button>` : ''}<a class="btn sm ghost" href="#inbox">All new listings · ${best.length} top priority →</a></div>`
+    ? `<li class="qsaved${peekCls('a:' + x.a.id)}" data-ref="a:${x.a.id}">${savedBadge(x.a)}<button class="what" type="button" data-peek="a:${x.a.id}" aria-controls="peek"><b>${esc(x.a.company)}<span class="sr">, saved</span></b><span>${esc(x.a.role)} · ${x.a.deadline ? `<span class="due ${dueCls(daysFrom(x.a.deadline))}">Apply by ${fmt(x.a.deadline)}</span>` : `Saved ${savedAgo(x.a)}`}</span></button>${acts(primaryFor('a:' + x.a.id), 'a:' + x.a.id, x.a.company)}</li>`
+    : `<li class="${peekCls('l:' + x.l.id)}" data-ref="l:${esc(x.l.id)}">${ring(x.l.total)}<button class="what" type="button" data-peek="l:${esc(x.l.id)}" aria-controls="peek"><b>${esc(x.l.company)}</b><span>${x.l.isNew ? '<span class="new-t">New</span> · ' : ''}${esc(x.l.role)}${x.l.deadline ? ' · ' + dlTag(x.l.deadline) : ''}</span></button>${acts(primaryFor('l:' + x.l.id), 'l:' + x.l.id, x.l.company)}</li>`;
+  const QMAX = 8, shownQ = picks.slice(0, QMAX);
+  const topPanel = picks.length ? `<ul class="tmatch">${shownQ.map(qli).join('')}</ul>
+    <div class="panel-foot">${picks.length > QMAX ? `<a class="btn sm plain" href="#inbox">${picks.length - QMAX} more in the queue →</a>` : ''}${moreSaved ? `<button class="btn sm plain" type="button" data-action="show-saved">${moreSaved} more saved →</button>` : ''}<a class="btn sm plain" href="#inbox">All new listings · ${best.length} top priority →</a></div>`
     : `<p class="empty">Nothing queued. Save listings you want to apply to, or check New listings after the next refresh.</p>`;
   const fst = [['applied', 'Applied'], ['oa', 'Assessment'], ['interview', 'Interview'], ['offer', 'Offer']];
   const fc = fst.map(([s]) => A.filter((a) => reached(a, s)).length), base = Math.max(fc[0], 1);
-  const funnel = fst.map(([s, l], i) => `<div class="frow"><span>${l}</span><div class="fbar" aria-hidden="true"><span class="s-${s}" style="width:${Math.max(fc[i] ? 3 : 0, fc[i] / base * 100)}%"></span></div><span class="num"><b>${fc[i]}</b>${i ? ` · ${Math.round(fc[i] / base * 100)}%` : ''}</span></div>`).join('');
+  const funnel = fst.map(([s, l], i) => `<div class="frow${fc[i] ? '' : ' zero'}"><span>${l}</span><div class="fbar" aria-hidden="true">${fc[i] ? `<span style="width:${Math.max(3, fc[i] / base * 100)}%"></span>` : ''}</div><span class="num"><b>${fc[i]}</b>${i && fc[i] ? ` · ${Math.round(fc[i] / base * 100)}%` : ''}</span></div>`).join('');
   const start = weekStart(); start.setDate(start.getDate() - 49);
   const wk = Array.from({ length: 8 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + 7 * i); return { d, c: 0 }; });
   for (const a of A) { const h = a.history.find((x) => x.s === 'applied'); const d = parse(h ? h.d : a.applied); if (!d) continue; const i = Math.floor((d - start) / (7 * 864e5)); if (i >= 0 && i < 8) wk[i].c++; }
   const goalW = Math.max(0, +S.settings.weeklyGoal || 0);
   UI.week = { wk, goalW };
   const segs = [['saved', 'Saved'], ['active', 'In progress'], ['closed', 'Closed']];
-  const tcol = { saved: 'var(--line-strong)', active: 'var(--st-applied)', closed: 'var(--st-rejected)' };
+  const tcol = { saved: 'var(--line-strong)', active: 'var(--tint)', closed: 'var(--fill-2)' };
   const tmax = Math.max(1, ...TRACKS.map((t) => A.filter((a) => a.track === t).length));
   const trows = TRACKS.map((t) => {
     const at = A.filter((a) => a.track === t); const c = { saved: at.filter((a) => a.status === 'saved').length, active: at.filter((a) => ['applied', 'oa', 'interview', 'offer'].includes(a.status)).length, closed: at.filter((a) => CLOSED.includes(a.status)).length };
@@ -501,28 +509,28 @@ R.dashboard = () => {
   const dG = +S.settings.dailyGoal || 3, dDone = appliedOn(iso(TODAY));
   const wDone = appliedThisWeek(), wG = goalW || 10;
   const due3 = items.filter((i) => i.n <= 3), overdue = due3.filter((i) => i.n < 0 && !i.fu).length;
-  const goalForm = (k, v, max) => `<form data-goalform="${k}"><label class="sr" for="g-${k}">${k === 'daily' ? 'Daily' : 'Weekly'} goal</label><input id="g-${k}" type="number" min="1" max="${max}" value="${v}" class="mono"><button class="btn sm primary" type="submit">Save</button><button class="btn sm ghost" type="button" data-action="goal-cancel">Cancel</button></form>`;
-  const pencil = (k) => `<button class="btn icon sm ghost" type="button" data-goal="${k}" aria-label="Edit ${k} goal" title="Edit goal"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 2.5 13.5 5 6 12.5H3.5V10z"/></svg></button>`;
-  const prog = (n, g) => `<div class="prog ${n >= g ? 'done' : ''}"><span style="width:${Math.min(100, n / g * 100)}%"></span></div>`;
-  const tile = (k, body, tip) => `<div class="tile"${tip ? ` title="${esc(tip)}"` : ''}><span class="k">${k}</span>${body}</div>`;
-  const Q = picks;
-  const today = `<div class="today" role="group" aria-label="Today">
-    ${tile(`Applied today ${pencil('daily')}`, UI.editGoal === 'daily' ? goalForm('daily', dG, 20) : `<span class="t mono">${dDone}/${dG}</span>${prog(dDone, dG)}<a class="go s" href="#inbox">${dDone >= dG ? 'Daily goal met · keep going →' : `${plural(Q.length, 'pick')} in today’s queue →`}</a>`, 'Applications you marked Applied today, against your daily goal.')}
-    ${tile(`This week ${pencil('weekly')}`, UI.editGoal === 'weekly' ? goalForm('weekly', wG, 60) : `<span class="t mono">${wDone}/${wG}</span>${prog(wDone, wG)}<span class="s">${wDone >= wG ? 'Weekly goal met' : `${wG - wDone} more to reach your goal${toApply ? ` · ${toApply} saved to apply` : ''}`}</span>`, 'Applications submitted since Monday, against your weekly goal.')}
-    ${tile('Needs attention', `<span class="t ${overdue ? 'hot' : due3.length ? 'soon' : ''}">${due3.length || 'None'}</span><span class="s">${overdue ? `<span class="due hot">${overdue} overdue</span>` : due3.length ? 'Follow-ups and items due within 3 days' : 'Nothing due within 3 days'}</span>`, 'Follow-ups that are due, plus deadlines, next steps and interviews in the next 3 days.')}
-    ${tile('Response rate', `<span class="t mono${small ? ' dim' : ''}">${pct(replied, applied)}</span><span class="s">${replied} of ${applied} replied${smallNote}</span>`, 'Share of applications that got any reply: an assessment, interview, offer or rejection.')}
-    ${tile('Interview rate', `<span class="t mono${small ? ' dim' : ''}">${pct(intv, applied)}</span><span class="s">${plural(intv, 'interview')} · ${plural(offers, 'offer')}${smallNote}</span>`, 'Share of applications that reached an interview.')}
+  const goalForm = (k, v, max) => `<form data-goalform="${k}"><label class="sr" for="g-${k}">${k === 'daily' ? 'Daily' : 'Weekly'} goal</label><input id="g-${k}" type="number" min="1" max="${max}" value="${v}" class="mono"><button class="btn sm tint" type="submit">Save</button><button class="btn sm ghost" type="button" data-action="goal-cancel">Cancel</button></form>`;
+  const goalBtn = (k, n, g) => `<button class="sv mono" type="button" data-goal="${k}" title="Edit your ${k} goal" aria-label="${n} of ${g}, edit ${k} goal">${n}<span>/${g}</span></button>`;
+  const meter = (n, g) => `<span class="meter${n >= g ? ' done' : ''}" aria-hidden="true"><i style="width:${Math.min(100, n / g * 100)}%"></i></span>`;
+  /* One quiet status line instead of hero tiles: today's pace, the week, what needs you, what you saved. */
+  const strip = `<div class="strip" role="group" aria-label="Today">
+    <div class="si"><span class="sk">Today</span>${UI.editGoal === 'daily' ? goalForm('daily', dG, 20) : `${goalBtn('daily', dDone, dG)}${meter(dDone, dG)}<span class="ss">${dDone >= dG ? 'Daily goal met' : 'applied'}</span>`}</div>
+    <div class="si"><span class="sk">This week</span>${UI.editGoal === 'weekly' ? goalForm('weekly', wG, 60) : `${goalBtn('weekly', wDone, wG)}${meter(wDone, wG)}<span class="ss">${wDone >= wG ? 'Weekly goal met' : `${wG - wDone} to go`}</span>`}</div>
+    <div class="si"><span class="sk">Needs you</span>${due3.length ? `<button class="sv mono" type="button" data-action="attn-focus" aria-label="${due3.length} need you, show them">${due3.length}</button><span class="ss">${overdue ? `<span class="due hot">${overdue} overdue</span>` : 'within 3 days'}</span>` : '<span class="ss">Nothing due within 3 days</span>'}</div>
+    <div class="si"><span class="sk">To apply</span>${toApply ? `<button class="sv mono" type="button" data-action="show-saved" aria-label="${toApply} saved to apply, review">${toApply}</button><span class="ss">saved</span>` : '<span class="ss">None saved</span>'}</div>
   </div>${(() => { const n = toApply, lim = +S.settings.savedLimit || 15; return n > lim ? `<div class="notice warn"><span><b>${n} saved applications</b>, more than your limit of ${lim}. Apply to or drop a few before saving more.</span><button class="btn sm" type="button" data-action="show-saved">Review saved →</button></div>` : ''; })()}${UI.closedNotice ? `<div class="notice"><span class="grow">Closed since the last refresh: <b>${UI.closedNotice.map(esc).join(', ')}</b> moved from Saved to Closed.</span><button class="btn sm ghost" type="button" data-action="notice-ok">OK</button></div>` : ''}`;
   const showTrack = replied >= 5;
-  const sampleHint = small ? `<p class="empty">Rates are based on ${plural(applied, 'application')}; treat them as a rough signal until you have ${SMALL} or more.</p>` : '';
-  return `<div style="display:flex;flex-direction:column;gap:16px">
-  ${today}
+  const rates = applied ? `<span class="rates"><span title="Share of applications that got any reply: an assessment, interview, offer or rejection.">Response <b class="mono">${pct(replied, applied)}</b></span><span title="Share of applications that reached an interview.">Interview <b class="mono">${pct(intv, applied)}</b></span>${small ? `<span class="small" title="With fewer than ${SMALL} applications one reply moves a rate by ${Math.round(100 / applied)} points">small sample</span>` : ''}</span>` : '';
+  const attPanel = items.length ? `<section class="panel a-att" id="attn"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>`
+    : `<section class="panel a-att quiet" id="attn"><h2>Needs attention</h2><p class="empty">Nothing due in the next 7 days.</p></section>`;
+  return `<div class="dashwrap">
+  ${strip}
   <div class="dash">
-    <section class="panel a-att"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>
-    <section class="panel a-top"><h2>Today’s queue <small>deadlines first, then what you saved, then new picks</small></h2>${topPanel}</section>
-    <section class="panel a-pipe" ${showTrack ? '' : 'style="grid-column:1/-1"'}><h2>Pipeline <small>applications that reached each stage · n = ${applied}</small></h2><div class="funnel">${funnel}</div>${sampleHint}${showTrack ? '' : `<p class="empty">A breakdown by track appears once you have 5 or more replies (now ${replied}).</p>`}</section>
+    <section class="panel a-top"><h2>Today’s queue <small>${plural(picks.length, 'pick')} · deadlines first, then saved, then new</small></h2>${topPanel}</section>
+    ${attPanel}
+    <section class="panel a-pipe"><h2>Pipeline <small>n = ${applied}</small>${rates}</h2><div class="funnel">${funnel}</div>${showTrack ? '' : `<p class="empty">By-track breakdown appears after 5 replies (now ${replied}).</p>`}</section>
     ${showTrack ? `<section class="panel a-track"><h2>By track</h2><div class="tracks">${trows}</div><div class="legend">${segs.map(([k, l]) => `<span><i style="background:${tcol[k]}"></i>${l}</span>`).join('')}</div></section>` : ''}
-    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks · dashed line is your weekly goal</small></h2><div id="weekChart" class="chartbox">${weekSvg(880)}</div></section>
+    <section class="panel chart a-week"><h2>Applications per week <small>last 8 weeks · dashed line is your goal</small></h2><div id="weekChart" class="chartbox">${weekSvg(880)}</div></section>
   </div></div>`;
 };
 function attentionItems() {
@@ -785,9 +793,9 @@ const acts = (primary, ref, name) => `<span class="lacts"><span class="s-main">$
 /* The one main action for a row or the preview panel. */
 function primaryFor(ref, cls = 'btn sm') {
   const [k, id] = ref.split(':');
-  if (k === 'l') return `<button class="${cls} primary" type="button" data-trackl="${esc(id)}" title="Save to your applications. Undo is available.">Save</button>`;
+  if (k === 'l') return `<button class="${cls} tint" type="button" data-trackl="${esc(id)}" title="Save to your applications. Undo is available.">Save</button>`;
   const a = S.apps.find((x) => x.id === id); if (!a) return '';
-  if (a.status === 'saved') { const [nl, step, tip] = nextStep(a); return `<a class="${cls} primary" href="${jobHref(a.id, step)}" title="${esc(tip)}">${nl} →</a>`; }
+  if (a.status === 'saved') { const [nl, step, tip] = nextStep(a); return `<a class="${cls} tint" href="${jobHref(a.id, step)}" title="${esc(tip)}">${nl} →</a>`; }
   return `<a class="${cls}" href="${jobHref(a.id)}" title="Job page: analysis, resume and cover letter">Open</a>`;
 }
 const peekCls = (ref) => UI.peek === ref ? ' peeking' : '';
@@ -1464,6 +1472,7 @@ document.addEventListener('click', (e) => {
     if (k === 'help') return showHelp();
     if (k === 'onboarding') return showOnboarding(1);
     if (k === 'goal-cancel') { UI.editGoal = null; return render(); }
+    if (k === 'attn-focus') { const el = $('#attn'); if (el) { el.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); const f = el.querySelector('button.what'); if (f) f.focus({ preventScroll: true }); } return; }
     if (k === 'notice-ok') { UI.closedNotice = null; return render(); }
     if (k === 'attn-all') { UI.attnAll = !UI.attnAll; return render(); }
     if (k === 'closed-toggle') { S.ui.closedOpen = !S.ui.closedOpen; save(); return render(); }
