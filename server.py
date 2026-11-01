@@ -52,7 +52,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 PAGE = "internship-tracker.html"
 STATIC = {"/core.js": ("core.js", "text/javascript; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"),
           "/studio.js": ("studio.js", "text/javascript; charset=utf-8"),
-          "/base.css": ("base.css", "text/css; charset=utf-8"), "/apple.css": ("apple.css", "text/css; charset=utf-8")}
+          "/base.css": ("base.css", "text/css; charset=utf-8"), "/apple.css": ("apple.css", "text/css; charset=utf-8"),
+          "/icon.svg": ("icon.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml")}
 FONT = re.compile(r"^/fonts/([a-z0-9-]+\.woff2)$")
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
 BACKUP_EVERY = dt.timedelta(minutes=30)

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Internship Tracker">
+  <!-- Waypoint: Saved → Applied → Interview, rising to the offer (the target ring). -->
+  <rect width="64" height="64" rx="14.3" fill="#007AFF"/>
+  <path d="M14 47 27 33l9 7 13-19" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="14" cy="47" r="4.6" fill="#fff"/><circle cx="27" cy="33" r="4.6" fill="#fff"/><circle cx="36" cy="40" r="4.6" fill="#fff"/>
+  <circle cx="49" cy="21" r="8.2" fill="#fff"/><circle cx="49" cy="21" r="3.3" fill="#007AFF"/>
+</svg>
