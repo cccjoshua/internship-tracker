@@ -21,3 +21,6 @@ __pycache__/
 *.pyc
 node_modules/
 test-results/
+
+# impeccable local reports
+.impeccable/
