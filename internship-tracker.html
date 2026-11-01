@@ -16,7 +16,7 @@
 <div class="app" id="app">
   <aside class="rail">
     <div class="brand"><img class="brand-mark" src="icon.svg" width="28" height="28" alt=""><div><b>Internship Tracker</b><span>Summer 2027 season</span></div></div>
-    <button class="rail-search" type="button" data-action="palette" title="Search applications, listings and pages (⌘K / Ctrl K)"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><span>Search</span><span class="kbd" id="kHint">⌘K</span></button>
+    <button class="rail-search" type="button" data-action="palette" aria-keyshortcuts="Meta+K Control+K /"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg><span>Search</span><span class="kbd" id="kHint">⌘K</span></button>
     <nav class="nav" aria-label="Views">
       <a href="#dashboard" data-nav="dashboard"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/></svg><span class="lbl">Dashboard</span><span class="lbl-s">Home</span><span class="n" id="nDash"></span></a>
       <a href="#board" data-nav="apps" id="navApps"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2.5" width="3.4" height="11" rx="1"/><rect x="6.3" y="2.5" width="3.4" height="7" rx="1"/><rect x="10.6" y="2.5" width="3.4" height="9" rx="1"/></svg><span class="lbl">Applications</span><span class="lbl-s">Apps</span><span class="n" id="nApps"></span></a>
@@ -63,7 +63,9 @@
 <noscript><p style="padding:24px">The tracker needs JavaScript.</p></noscript>
 
 <script src="core.js"></script>
+<script src="search.js"></script>
 <script src="app.js"></script>
 <script src="studio.js"></script>
+<script src="palette.js"></script>
 </body>
 </html>

@@ -3,7 +3,7 @@
   "private": true,
   "description": "Development-only dependencies: Playwright for the browser tests. The app itself needs no Node packages.",
   "scripts": {
-    "test": "node --test tests/core.test.js tests/regressions.test.js tests/fixtures.test.js && python3 -m unittest discover -s tests",
+    "test": "node --test tests/core.test.js tests/regressions.test.js tests/fixtures.test.js tests/search.test.js && python3 -m unittest discover -s tests",
     "test:e2e": "tests/e2e/run.sh",
     "demo": "python3 scripts/make_demo_data.py demo-data && IAT_AI_STUB=1 python3 server.py --data demo-data --no-fetch --port 8766"
   },

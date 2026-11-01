@@ -263,12 +263,6 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 .menu button:hover,.menu button:focus-visible{background:var(--accent);color:#fff}
 .menu button.sep{border-top:.5px solid var(--line);border-radius:6px}
 .info-pop{border:0;border-radius:14px;background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:0 0 0 .5px var(--hair),0 10px 32px rgba(0,0,0,.18)}
-dialog.pal{border-radius:18px;background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
-.pal input{font-size:20px;padding:16px 18px;border:0;border-bottom:.5px solid var(--line);border-radius:18px 18px 0 0;box-shadow:none;background:transparent;min-height:0}
-.pal li{border-radius:8px}
-.pal li[aria-selected="true"]{background:var(--accent);color:#fff}
-.pal li[aria-selected="true"] .t span,.pal li[aria-selected="true"] .k{color:rgba(255,255,255,.8)}
-.pal li .k{text-transform:none;letter-spacing:0;font-weight:600}
 .toast{background:rgba(30,30,32,.86);color:#F5F5F7;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-radius:999px;padding:10px 12px 10px 20px;font-weight:500;
   box-shadow:0 10px 30px rgba(0,0,0,.25)}
 .toast .tbtn{background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:4px 12px}
@@ -397,3 +391,61 @@ dialog.pal{border-radius:18px;background:var(--material-strong);-webkit-backdrop
   .titlebar .sub{font-size:13px}
 }
 body:has(#stubBanner) .rail{top:30px;height:calc(100vh - 30px)}
+
+
+/* ---------------------------------------------------------------- search palette (palette.js) */
+dialog.pal{
+  --pal-sel:color-mix(in srgb,var(--accent) 12%,transparent);
+  --pal-bg:rgba(255,255,255,.78); --pal-line:rgba(60,60,67,.14); --pal-label:#1D1D1F; --pal-2:rgba(60,60,67,.72); --pal-3:rgba(60,60,67,.5);
+  width:min(640px,calc(100vw - 32px)); max-height:min(560px,calc(100vh - 15vh - 32px)); margin:15vh auto auto; padding:0; border:.5px solid var(--pal-line); border-radius:14px;
+  background:var(--pal-bg); color:var(--pal-label); -webkit-backdrop-filter:blur(30px) saturate(180%); backdrop-filter:blur(30px) saturate(180%);
+  box-shadow:0 0 0 .5px rgba(0,0,0,.04),0 2px 6px rgba(0,0,0,.06),0 18px 48px rgba(0,0,0,.18); overflow:hidden; font-size:13px; line-height:18px;
+  display:none; flex-direction:column}
+dialog.pal[open]{display:flex;animation:pal-in .16s cubic-bezier(.2,.8,.2,1)}
+dialog.pal.closing{animation:pal-out .12s ease-in forwards}
+dialog.pal::backdrop{background:rgba(0,0,0,.15);-webkit-backdrop-filter:none;backdrop-filter:none}
+@keyframes pal-in{from{opacity:0;transform:scale(.98)}}
+@keyframes pal-out{to{opacity:0;transform:scale(.98)}}
+.pal-field{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px 0 16px;flex:none}
+.pal-field>svg{width:20px;height:20px;color:var(--pal-3);flex:none}
+.pal-field input{flex:1;min-width:0;height:100%;border:0;background:transparent;font:inherit;font-size:17px;line-height:22px;color:var(--pal-label);padding:0;box-shadow:none;outline:none;border-radius:0;letter-spacing:-.01em}
+.pal-field input::placeholder{color:var(--pal-3)}
+.pal-field input:focus-visible{box-shadow:none}
+dialog.pal kbd{font:500 11px/16px var(--f-ui);min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;background:rgba(120,120,128,.12);color:var(--pal-2);box-shadow:inset 0 -.5px 0 rgba(0,0,0,.08)}
+.pal-esc{flex:none}
+.pal-scopes{display:flex;gap:4px;padding:0 12px 8px;flex:none;border-bottom:.5px solid var(--pal-line)}
+.pal-scopes button{font:500 12px/16px var(--f-ui);color:var(--pal-2);background:transparent;border:0;border-radius:6px;padding:3px 8px;cursor:pointer;min-height:0;box-shadow:none}
+.pal-scopes button:hover{background:rgba(120,120,128,.08)}
+.pal-scopes button[aria-checked="true"]{background:var(--pal-sel);color:var(--accent-text)}
+.pal-list{overflow-y:auto;padding:6px 6px 8px;flex:1 1 auto;overscroll-behavior:contain}
+.pal-h{display:flex;align-items:baseline;gap:8px;font:600 11px/13px var(--f-ui);color:var(--pal-3);padding:10px 10px 4px}
+.pal-h span{font-weight:400;margin-left:auto}
+.pal-row{display:flex;align-items:center;gap:10px;min-height:40px;padding:4px 10px;border-radius:10px;cursor:default;min-width:0}
+.pal-row[aria-selected="true"]{background:var(--pal-sel)}
+.pal-row.inert{color:var(--pal-2)}
+.pal-mono{width:24px;height:24px;flex:none;border-radius:6px;display:grid;place-items:center;font:600 10.5px/1 var(--f-ui);letter-spacing:.02em;color:var(--pal-2);background:rgba(120,120,128,.12)}
+.pal-ic{width:24px;height:24px;flex:none;display:grid;place-items:center;color:var(--pal-2)}
+.pal-row[aria-selected="true"] .pal-ic{color:var(--accent-text)}
+.pal-txt{display:flex;flex-direction:column;min-width:0;flex:1}
+.pal-t,.pal-s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-t{color:var(--pal-label)}
+.pal-s{font-size:12px;line-height:16px;color:var(--pal-2)}
+.pal-t mark,.pal-s mark{background:none;color:inherit;font-weight:700}
+.pal-keys{display:flex;gap:3px;flex:none}
+.pal-ret{visibility:hidden;flex:none}
+.pal-row[aria-selected="true"] .pal-ret{visibility:visible}
+.pal-none{padding:14px 10px 6px;color:var(--pal-2)}
+.pal-foot{display:flex;align-items:center;gap:14px;flex:none;padding:8px 14px;border-top:.5px solid var(--pal-line);font-size:12px;color:var(--pal-2)}
+.pal-foot>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.pal-foot kbd{margin-right:1px}
+.pal-tip{margin-left:auto}
+@media (max-width:560px){.pal-tip{display:none}}
+.pal-flash{animation:pal-flash 1.8s ease-out}
+@keyframes pal-flash{0%,35%{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 16%,transparent);border-radius:6px}100%{background:transparent;box-shadow:0 0 0 4px transparent}}
+@media (prefers-reduced-motion: reduce){
+  dialog.pal[open]{animation:pal-fade .1s linear} dialog.pal.closing{animation:none}
+  @keyframes pal-fade{from{opacity:0}}
+  .pal-flash{animation:none;background:color-mix(in srgb,var(--accent) 16%,transparent)}}
+@media (prefers-reduced-transparency: reduce){dialog.pal{--pal-bg:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) dialog.pal{--pal-sel:color-mix(in srgb,#0A84FF 22%,transparent);--pal-bg:rgba(40,40,42,.78);--pal-line:rgba(255,255,255,.1);--pal-label:#F5F5F7;--pal-2:rgba(235,235,245,.66);--pal-3:rgba(235,235,245,.42);box-shadow:0 0 0 .5px rgba(0,0,0,.6),0 18px 48px rgba(0,0,0,.5)}}
+:root[data-theme="dark"] dialog.pal{--pal-sel:color-mix(in srgb,#0A84FF 22%,transparent);--pal-bg:rgba(40,40,42,.78);--pal-line:rgba(255,255,255,.1);--pal-label:#F5F5F7;--pal-2:rgba(235,235,245,.66);--pal-3:rgba(235,235,245,.42);box-shadow:0 0 0 .5px rgba(0,0,0,.6),0 18px 48px rgba(0,0,0,.5)}

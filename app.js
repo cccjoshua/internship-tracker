@@ -1122,8 +1122,8 @@ dlg.addEventListener('click', (e) => { if (e.target === dlg && !dlg.classList.co
 function showHelp() {
   const k = (...ks) => ks.map((x) => `<span class="kbd">${esc(x)}</span>`).join('');
   openDialog(`<div class="mbody"><h2 id="dlgTitle">Keyboard shortcuts</h2><dl class="keys">
-    <dt>${k(MOD, 'K')}</dt><dd>Search applications, listings and commands</dd>
-    <dt>${k('N')}</dt><dd>New application</dd><dt>${k('/')}</dt><dd>Filter the current list</dd>
+    <dt>${k(MOD, 'K')}</dt><dd>Search applications, listings, settings and actions · ${k('>')} actions only · ${k('Tab')} change scope · ${k(MOD, 'Enter')} open the posting</dd>
+    <dt>${k('N')}</dt><dd>New application</dd><dt>${k('/')}</dt><dd>Search (same as ${MOD} K)</dd><dt>${k(MOD, 'F')}</dt><dd>Filter the current list</dd>
     <dt>${k('G', 'D')}</dt><dd>Go to Dashboard (also G A applications, G B board, G T list, G L listings, G O documents, G P profile, G S settings)</dd>
     <dt>${k('J')} ${k('K')}</dt><dd>Next / previous job while the preview panel is open</dd>
     <dt>${k('Shift', '←', '→')}</dt><dd>Move the focused card to the previous or next stage</dd>
@@ -1133,41 +1133,9 @@ function showHelp() {
   $('[data-close]', dlg).focus();
 }
 
-/* Command palette (Ctrl/⌘ + K) */
-function paletteItems(q) {
-  const t = q.toLowerCase().trim().split(/\s+/).filter(Boolean);
-  const hit = (s) => t.every((w) => s.toLowerCase().includes(w));
-  const cmds = [
-    ['Add application', () => openDrawer(null)], ['Go to Dashboard', () => go('dashboard')], ['Go to Applications · Board', () => go('board')], ['Go to Applications · List', () => go('table')], ['Review saved applications', () => { S.ui.stage = 'todo'; go('table'); }],
-    ['Go to New listings', () => go('inbox')], ['Go to Documents', () => go('docs')], ['Go to Profile', () => go('profile')], ['Go to Settings', () => go('settings')], ['Refresh listings now', () => startRefresh()], ['Export JSON backup', () => doExport()],
-    ['Download calendar (.ics)', () => { location.href = 'calendar.ics?download=1'; }], ['Keyboard shortcuts', () => showHelp()], ['Toggle dark mode', () => cycleTheme()], ['Undo', () => undo()],
-  ].map(([label, run]) => ({ k: 'Command', label, run }));
-  const out = cmds.filter((c) => !t.length || hit(c.label));
-  if (t.length) {
-    out.push(...S.apps.filter((a) => hit([a.company, a.role, LABEL[a.status], a.location, a.notes].join(' '))).slice(0, 12).map((a) => ({ k: LABEL[a.status], label: a.company, sub: a.role, run: () => openDrawer(a.id) })));
-    out.push(...visibleListings().filter((l) => !l.dup && hit(l.company + ' ' + l.role + ' ' + (l.location || ''))).sort((a, b) => b.total - a.total).slice(0, 10).map((l) => ({ k: 'Listing ' + l.total, label: l.company, sub: l.role, run: () => { UI.expanded.add(l.id); go('inbox'); } })));
-  }
-  return out.slice(0, 40);
-}
+/* Search palette (⌘K / Ctrl K, /): palette.js */
 function go(v) { if (route() === v) render(); else location.hash = v; }
-function showPalette() {
-  openDialog(`<label class="sr" for="palIn" id="dlgTitle">Search</label><input id="palIn" type="text" role="combobox" aria-expanded="true" aria-controls="palList" aria-autocomplete="list" placeholder="Search applications, listings or commands…" autocomplete="off"><ul id="palList" role="listbox"></ul><div class="pf"><span><span class="kbd">↑</span><span class="kbd">↓</span> move</span><span><span class="kbd">Enter</span> open</span><span><span class="kbd">Esc</span> close</span></div>`, 'pal');
-  const inp = $('#palIn'), ul = $('#palList'); let items = [], idx = 0;
-  const draw = () => {
-    items = paletteItems(inp.value); idx = Math.min(idx, Math.max(0, items.length - 1));
-    ul.innerHTML = items.length ? items.map((it, i) => `<li role="option" id="po-${i}" data-pi="${i}" aria-selected="${i === idx}"><span class="k">${esc(it.k)}</span><span class="t">${esc(it.label)}${it.sub ? ` <span>· ${esc(it.sub)}</span>` : ''}</span></li>`).join('') : '<li class="empty">No matches</li>';
-    inp.setAttribute('aria-activedescendant', items.length ? 'po-' + idx : '');
-    const sel = $('#po-' + idx); if (sel) sel.scrollIntoView({ block: 'nearest' });
-  };
-  const runIt = (i) => { const it = items[i]; if (!it) return; dlg.close(); setTimeout(it.run, 0); };
-  inp.addEventListener('input', () => { idx = 0; draw(); });
-  inp.addEventListener('keydown', (e) => {
-    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); idx = (idx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % Math.max(1, items.length); draw(); }
-    else if (e.key === 'Enter') { e.preventDefault(); runIt(idx); }
-  });
-  ul.addEventListener('click', (e) => { const li = e.target.closest('[data-pi]'); if (li) runIt(+li.dataset.pi); });
-  draw(); inp.focus();
-}
+function showPalette() { if (window.IATPalette) window.IATPalette.open(); }
 
 /* First-run setup */
 function showOnboarding(step) {
@@ -1616,7 +1584,7 @@ document.addEventListener('change', (e) => {
 let qT; $('#q').addEventListener('input', (e) => { clearTimeout(qT); qT = setTimeout(() => { S.ui.q = e.target.value; save(); render(); }, 150); });
 let gPrefix = 0;
 document.addEventListener('keydown', (e) => {
-  if (dlg.open || $('#menu').open) return; // native dialogs handle Esc and focus
+  if (dlg.open || $('#menu').open || (window.IATPalette && window.IATPalette.isOpen)) return; // native dialogs handle Esc and focus
   const open = !$('#drawer').hidden;
   if (open) {
     if (e.key === 'Escape') { e.preventDefault(); return closeDrawer(); }
@@ -1628,6 +1596,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return showPalette(); }
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f' && !$('#tools').hidden) { e.preventDefault(); $('#q').focus(); $('#q').select(); return; } // filter this page; elsewhere the browser's Find
   const inText = e.target.closest('textarea,select,input:not([type=checkbox]):not([type=radio])');
   if (e.key === 'Escape' && UI.peek && !inText) { e.preventDefault(); return closePeek(); }
   if (e.key === 'Escape' && UI.select && !inText) { e.preventDefault(); UI.select = false; UI.selected.clear(); return render(); }
@@ -1650,7 +1619,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'g' || e.key === 'G') { gPrefix = Date.now(); return; }
   if (e.key === 'n' || e.key === 'N') { e.preventDefault(); return openDrawer(null); }
   if (e.key === '?') { e.preventDefault(); return showHelp(); }
-  if (e.key === '/' && !$('#tools').hidden) { e.preventDefault(); $('#q').focus(); }
+  if (e.key === '/') { e.preventDefault(); return showPalette(); }
 });
 /* Select: click, or Shift+click to select the whole range since the last one you clicked. */
 document.addEventListener('pointerdown', (e) => { UI.shiftDown = e.shiftKey; }, true);
@@ -1690,6 +1659,11 @@ window.IAT = {
   trackListings, openDrawer, loadKit, kitOf, backCrumb, jobIdForKey: (key) => { const a = S.apps.find((x) => listingKey(x) === key); if (a) return a.id; const l = scored().find((x) => listingKey(x) === key); return l ? (l.dup ? l.dup.id : l.id) : null; }, appForKey: (key) => S.apps.find((x) => listingKey(x) === key) || null, checkpoint, setStatus, menuAt, openDialog, dlg, settingChanged, appliedOn, refreshFeed: () => checkRemote(),
   LABEL, STAGES, TRACKS, TRACK_NAME, CLOSED, DEFAULTS,
   get S() { return S; }, get F() { return F; }, Store,
+  palette: {
+    startRefresh: () => startRefresh(), doExport: () => doExport(), showHelp: () => showHelp(), cycleTheme: () => cycleTheme(), undo: () => undo(), queue: () => queueList(),
+    openListing: (id) => { UI.peek = 'l:' + id; if (route() === 'inbox') render(); else location.hash = 'inbox'; setTimeout(() => { const h = $('#pkTitle'); if (h) h.focus(); }, 60); },
+    showSettingsPane: null,
+  },
 };
 
 /* ---------- boot ---------- */

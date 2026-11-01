@@ -47,12 +47,14 @@ import ai
 import clips
 import fetcher
 import resume_export
+import search
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PAGE = "internship-tracker.html"
 STATIC = {"/core.js": ("core.js", "text/javascript; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"),
           "/studio.js": ("studio.js", "text/javascript; charset=utf-8"),
           "/base.css": ("base.css", "text/css; charset=utf-8"), "/apple.css": ("apple.css", "text/css; charset=utf-8"),
+          "/search.js": ("search.js", "text/javascript; charset=utf-8"), "/palette.js": ("palette.js", "text/javascript; charset=utf-8"),
           "/icon.svg": ("icon.svg", "image/svg+xml"), "/favicon.svg": ("favicon.svg", "image/svg+xml")}
 FONT = re.compile(r"^/fonts/([a-z0-9-]+\.woff2)$")
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "[::1]")
@@ -583,6 +585,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return self._json(200, ai.studio_index())
             if path == "/api/studio/docs":
                 return self._json(200, ai.studio_docs())
+            if path == "/api/search":
+                q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
+                scope = (q.get("scope") or ["hidden"])[0]
+                if scope != "hidden":
+                    return self._json(400, {"error": "Only scope=hidden is searched on the server; the page searches everything else itself."})
+                text = (q.get("q") or [""])[0][:200]
+                try:
+                    limit = max(1, min(100, int((q.get("limit") or ["30"])[0])))
+                except ValueError:
+                    return self._json(400, {"error": "limit must be a number from 1 to 100."})
+                settings = ((load_state() or {}).get("settings") or {})
+                feed_path = os.path.join(fetcher.CACHE, "simplify.json")
+                if not os.path.exists(feed_path):
+                    return self._json(200, {"groups": [{"group": "Hidden listings", "items": []}], "note": "No feed downloaded yet."})
+                rows = search.HIDDEN.rows(feed_path, LISTINGS, settings,
+                                          lambda: (_read(feed_path), (load_listings() or {}).get("listings") or []))
+                return self._json(200, {"groups": [{"group": "Hidden listings", "items": search.HiddenIndex.search(rows, text, limit), "total": len(rows)}]})
             if path == "/api/job":
                 q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
                 key = (q.get("key") or [""])[0]
