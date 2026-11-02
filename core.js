@@ -300,6 +300,8 @@
     }
     return out.filter((x) => x && x.length < 40);
   }
+  /* 'Java | Python | C++' (one requirement, any option) -> ['Java', 'Python', 'C++']; a plain term -> [term]. */
+  const anyOf = (t) => String(t || '').split(/\s+\|\s+|\s*\|\s*/).map((x) => x.trim()).filter(Boolean);
   /* set: direct claims; implied: skill -> the direct claim that suggests it; no: do-not-claim. */
   function skillSet(profile, settings) {
     profile = profile || {};
@@ -346,19 +348,30 @@
     // skills
     let req = a.requiredSkills || [], opt = a.preferredSkills || [];
     if (!req.length && !opt.length) {
-      const kw = (a.keywords || []).filter((k) => k.kind === 'skill' || k.kind === 'tool');
+      /* Older analyses may list no skills: fall back to the concrete tools among the keywords only.
+         Work habits (code review, Agile, documentation) are not something a skills list can show. */
+      const kw = (a.keywords || []).filter((k) => k.kind === 'tool');
       req = kw.filter((k) => k.importance >= 2).map((k) => k.term); opt = kw.filter((k) => k.importance < 2).map((k) => k.term);
     }
     const uniq = (xs) => { const seen = new Set(); return xs.filter((x) => { const k = nk(x); if (!k || seen.has(k)) return false; seen.add(k); return true; }); };
     req = uniq(req); opt = uniq(opt).filter((x) => !req.some((r) => nk(r) === nk(x)));
-    const kind = new Map([...req, ...opt].map((x) => [x, hasSkill(x, S)]));
+    /* "Java | Python | C++" is one requirement met by any one option. */
+    const label = new Map();
+    const kind = new Map([...req, ...opt].map((x) => {
+      const ops = anyOf(x);
+      if (ops.length < 2) return [x, hasSkill(x, S)];
+      const got = ops.map((o) => [o, hasSkill(o, S)]), d = got.filter((g) => g[1] === 'direct'), im = got.filter((g) => g[1] === 'implied');
+      label.set(x, d.length ? d.map((g) => g[0]).join(' / ') : im.length ? im[0][0] : ops.join(' or '));
+      return [x, d.length ? 'direct' : im.length ? 'implied' : null];
+    }));
+    const show = (x) => label.get(x) || x;
     const credit = (x) => kind.get(x) === 'direct' ? 1 : kind.get(x) === 'implied' ? IMPLIED_CREDIT : 0;
     const reqHit = req.filter((x) => kind.get(x)), optHit = opt.filter((x) => kind.get(x));
-    const inferred = [...reqHit, ...optHit].filter((x) => kind.get(x) === 'implied').map((x) => ({ term: x, from: S.implied.get(nk(x)) }));
+    const inferred = [...reqHit, ...optHit].filter((x) => kind.get(x) === 'implied').map((x) => ({ term: show(x), from: S.implied.get(nk(show(x))) }));
     const denom = 2 * req.length + opt.length, haveSkills = S.set.size > 0;
     v.skills = denom && haveSkills ? (2 * req.reduce((t, x) => t + credit(x), 0) + opt.reduce((t, x) => t + credit(x), 0)) / denom : null;
     const flagged = [...req, ...opt].filter((x) => S.no.has(nk(x)));
-    notes.skills = !denom ? 'The posting lists no skills' : !haveSkills ? 'Your Profile lists no skills yet'
+    notes.skills = !denom ? 'The posting lists no concrete skills' : !haveSkills ? 'Your Profile lists no skills yet'
       : `${reqHit.length}/${req.length} required · ${optHit.length}/${opt.length} preferred${inferred.length ? ` · ${inferred.length} inferred` : ''}`;
     // education and graduation window
     const au = a.audience || {}, levels = au.degreeLevels || [];
@@ -443,7 +456,7 @@
     const rawTotal = total;
     if (blockers.length && total !== null) total = Math.min(total, BLOCKED_CAP);
     return { total, rawTotal, coverage: Math.round(coverage * 100) / 100, verdict, parts, track, blockers, open: open.map((e) => e.label), eligibility, flagged,
-      skills: { reqHit, reqMiss: req.filter((x) => reqHit.indexOf(x) < 0), optHit, optMiss: opt.filter((x) => optHit.indexOf(x) < 0), inferred } };
+      skills: { reqHit: reqHit.map(show), reqMiss: req.filter((x) => reqHit.indexOf(x) < 0).map(show), optHit: optHit.map(show), optMiss: opt.filter((x) => optHit.indexOf(x) < 0).map(show), inferred } };
   }
 
   /* Literal keyword coverage of the resume text: share of the posting's keywords (weighted by importance) that appear

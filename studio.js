@@ -499,13 +499,20 @@ function fitText() {
 function kwPanel() {
   const st = JOBS.get(JOB && JOB.key), a = st && st.job && st.job.analysis;
   if (!a) return '<p class="empty">Analyze the job to see which of its keywords this resume covers.</p>';
-  const ks = C.keywordScore(resumeText(ST.model), a.keywords || []), Sk = C.skillSet(P.data, I.S.settings);
+  /* Soft skills and credentials are shown by what the bullets and education say, not by a matching word, so they are
+     listed apart and left out of the percentage. */
+  const SOFT = (k) => k.kind === 'soft' || k.kind === 'credential';
+  const txt = resumeText(ST.model), all = a.keywords || [];
+  const ks = C.keywordScore(txt, all.filter((k) => !SOFT(k))), soft = C.keywordScore(txt, all.filter(SOFT)), Sk = C.skillSet(P.data, I.S.settings);
   const can = ks.miss.filter((k) => C.hasSkill(k.term, Sk)), cannot = ks.miss.filter((k) => !C.hasSkill(k.term, Sk));
-  return `<div class="kw-head"><span class="ring sm ${I.band(ks.score)}" style="--p:${ks.score}"><span>${ks.score}</span></span><div><b>Keyword coverage ${ks.score}%</b><div class="sub">${ks.hit.length} of ${ks.hit.length + ks.miss.length} posting keywords appear in this resume, weighted by importance. Wording only: it does not change your fit, and it is not any employer’s ATS score</div></div></div>
+  const softChips = [...soft.hit.map((k) => `<span class="chip v-yes">${esc(k.term)}</span>`), ...soft.miss.map((k) => `<span class="chip">${esc(k.term)}</span>`)].join('');
+  return `<div class="kw-head"><span class="ring sm ${I.band(ks.score)}" style="--p:${ks.score}"><span>${ks.score}</span></span><div><b>Keyword coverage ${ks.score}%</b><div class="sub">${ks.hit.length} of ${ks.hit.length + ks.miss.length} technical keywords from the posting appear in this resume, weighted by importance. Wording only: it does not change your fit, and it is not any employer’s ATS score</div></div></div>
     ${can.length ? `<div class="kw-l"><span class="sk-l">In your profile, not on this resume</span>${can.map((k) => `<span class="chip kw-can" title="Importance ${k.importance}">${esc(k.term)}</span>`).join('')}</div>` : ''}
     ${ks.negated.length ? `<p class="sub">Not counted because the resume negates them (“no …”, “without …”): ${ks.negated.map((k) => esc(k.term)).join(', ')}</p>` : ''}
     ${ks.hit.length ? `<div class="kw-l"><span class="sk-l">Covered</span>${ks.hit.map((k) => `<span class="chip v-yes">${esc(k.term)}</span>`).join('')}</div>` : ''}
-    ${cannot.length ? `<div class="kw-l"><span class="sk-l">Not in your profile</span>${cannot.map((k) => `<span class="chip miss">${esc(k.term)}</span>`).join('')}</div>` : ''}`;
+    ${cannot.length ? `<div class="kw-l"><span class="sk-l">Not in your Profile</span>${cannot.map((k) => `<span class="chip miss">${esc(k.term)}</span>`).join('')}</div>` : ''}
+    ${softChips ? `<div class="kw-l"><span class="sk-l" title="Shown by what your bullets describe; not counted in the percentage">Soft skills · not scored</span>${softChips}</div>` : ''}
+    ${cannot.length ? `<p class="sub">Have one of these? Add it to Profile › Skills first; tailoring only uses what your Profile says.</p>` : ''}`;
 }
 
 /* ---------- job page ---------- */

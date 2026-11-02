@@ -134,3 +134,24 @@ test('budget: scoring 3,000 listings stays under 150 ms', () => {
   for (let k = 0; k < 3; k++) { const t = process.hrtime.bigint(); for (const l of many) C.score(l, {}, '2026-10-28'); best = Math.min(best, Number(process.hrtime.bigint() - t) / 1e6); }
   assert.ok(best < 150, `scoring 3,000 listings took ${best.toFixed(0)} ms`);
 });
+
+test('a one-of requirement counts once and is met by any option', () => {
+  const P = { skills: [{ value: 'Python, Java, SQL' }] }, ctx = { settings: {}, role: 'Software Engineer Intern' };
+  const r = C.fit(P, { requiredSkills: ['Java | Python | C++ | Go', 'Rust'], preferredSkills: ['Ruby | Perl'] }, ctx);
+  const sk = r.parts.find((p) => p.k === 'skills');
+  assert.equal(sk.note, '1/2 required · 0/1 preferred');
+  assert.deepEqual(r.skills.reqHit, ['Java / Python']);
+  assert.deepEqual(r.skills.optMiss, ['Ruby or Perl']);
+  // A full-credit group is worth one required skill, not four
+  assert.equal(C.fit(P, { requiredSkills: ['Java | Python | C++'] }, ctx).parts.find((p) => p.k === 'skills').v, 1);
+});
+
+test('without concrete skills, work habits are not scored as missing skills', () => {
+  const P = { skills: [{ value: 'Python' }] };
+  const a = { requiredSkills: [], preferredSkills: [], keywords: [{ term: 'Code review', importance: 3, kind: 'skill' }, { term: 'Agile', importance: 2, kind: 'skill' }] };
+  const sk = C.fit(P, a, { settings: {} }).parts.find((p) => p.k === 'skills');
+  assert.equal(sk.known, false);
+  assert.equal(sk.note, 'The posting lists no concrete skills');
+  const b = Object.assign({}, a, { keywords: [...a.keywords, { term: 'Python', importance: 2, kind: 'tool' }] });
+  assert.equal(C.fit(P, b, { settings: {} }).parts.find((p) => p.k === 'skills').note, '1/1 required · 0/0 preferred');
+});
