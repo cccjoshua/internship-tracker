@@ -162,3 +162,8 @@ test('one-of options inside a label, and Git suggests version control', () => {
   assert.deepEqual(r.skills.reqHit, ['Python']);
   assert.deepEqual(r.skills.inferred.map((x) => x.term), ['Version control systems']);
 });
+
+test('"Database systems" in a posting matches "Databases" in the Profile', () => {
+  const S = C.skillSet({ skills: [{ value: 'Databases' }] }, {});
+  assert.equal(C.hasSkill('Database systems', S), 'direct');
+});

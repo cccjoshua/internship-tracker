@@ -271,6 +271,7 @@
   const FIT_WEIGHTS = { skills: 35, education: 15, experience: 10, role: 15, location: 10, auth: 15 };
   const MIN_COVERAGE = 0.6, BLOCKED_CAP = 35, IMPLIED_CREDIT = 0.5;
   const ALIAS = {
+    'database systems': 'databases', 'relational databases': 'databases', 'database': 'databases', 'dbms': 'databases',
     js: 'javascript', 'node': 'node.js', nodejs: 'node.js', ts: 'typescript', py: 'python', postgres: 'postgresql', ml: 'machine learning',
     dl: 'deep learning', sklearn: 'scikit-learn', 'scikit learn': 'scikit-learn', tf: 'tensorflow', k8s: 'kubernetes', 'google cloud platform': 'gcp',
     'google cloud': 'gcp', 'amazon web services': 'aws', 'microsoft azure': 'azure', 'ms sql server': 'sql server', 'microsoft sql server': 'sql server',
