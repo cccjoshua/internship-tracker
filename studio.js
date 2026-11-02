@@ -606,7 +606,7 @@ function staleBanner(job) {
   return `<div class="notice warn" role="status"><span><b>The posting text changed after it was analyzed.</b> Fit, keywords and eligibility below describe the old text. Tailoring and letters are paused until you re-analyze.</span><button class="btn sm primary" type="button" data-jb="analyze">Re-analyze</button></div>`;
 }
 function stepHero(J) {
-  const st = JOBS.get(J.key) || {}, tl = st.job && st.job.text ? st.job.text.length : 9000, e = est('analyze', tl / 3.6 + 1100, 900);
+  const st = JOBS.get(J.key) || {}, tl = st.job && st.job.text ? st.job.text.length : 9000, e = est('analyze', tl / 3.6 + 1100, 2400);
   const gets = [['Eligibility', 'degree, graduation window and sponsorship, with quotes from the posting'], ['Fit score', 'your Profile against its requirements'], ['Keywords', 'what your resume should cover'], ['Responsibilities', 'for your cover letter and interviews']];
   const act = ready('analyze')
     ? `<button class="btn primary lg" type="button" data-jb="analyze" ${ST.busy ? 'disabled' : ''}>${ST.busy === 'analyze' ? 'Reading the posting…' : 'Analyze with Claude'}</button>
