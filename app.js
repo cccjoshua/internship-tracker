@@ -552,6 +552,13 @@ R.dashboard = () => {
   const rates = applied ? `<span class="rates"><span title="Share of applications that got any reply: an assessment, interview, offer or rejection.">Response <b class="mono">${pct(replied, applied)}</b></span><span title="Share of applications that reached an interview.">Interview <b class="mono">${pct(intv, applied)}</b></span>${small ? `<span class="small" title="With fewer than ${SMALL} applications one reply moves a rate by ${Math.round(100 / applied)} points">small sample</span>` : ''}</span>` : '';
   const attPanel = items.length ? `<section class="panel a-att" id="attn"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>`
     : `<section class="panel a-att quiet" id="attn"><h2>Needs attention</h2><p class="empty">Nothing due in the next 7 days.</p></section>`;
+  if (!A.length) return `<div class="dashwrap">${strip}<div class="dash">
+    <section class="panel a-top"><h2>Today’s queue</h2>${topPanel}</section>
+    <section class="panel a-att"><h2>Get started</h2><ol class="start-l">
+      <li><b>Check your Profile.</b> It is the only source of facts for scores, eligibility and resumes. <a href="#profile">Open Profile →</a></li>
+      <li><b>Save a few listings.</b> New listings ranks jobs for your target roles. <a href="#inbox">Browse listings →</a></li>
+      <li><b>Prepare, then apply.</b> Each saved job gets an analysis, a tailored resume and a cover letter.</li></ol>
+      <p class="empty">Pipeline and weekly charts appear after your first application.</p></section></div></div>`;
   return `<div class="dashwrap">
   ${strip}
   <div class="dash">
@@ -600,8 +607,8 @@ function card(a) {
   if (r) meta += `<span class="rd">◆ ${esc(r.kind)} · ${fmt(r.date)}${r.time ? ' ' + esc(r.time) : ''}</span>`;
   if (a.nextText) meta += `<span class="next">→ ${esc(a.nextText)}${a.nextDate ? ' · ' + fmt(a.nextDate) : ''}</span>`;
   return `<li class="card ${urgency(a)}" draggable="true" data-id="${a.id}" data-open="${a.id}" tabindex="0" aria-label="${esc(a.company + ', ' + a.role + ', ' + LABEL[a.status])}">
-    <div class="card-top"><strong>${esc(a.company)}</strong>${prio(a.priority)}</div>
-    <div class="role">${esc(a.role)}</div>
+    <div class="card-top"><strong title="${esc(a.company)}">${esc(a.company)}</strong>${prio(a.priority)}</div>
+    <div class="role" title="${esc(a.role)}">${esc(a.role)}</div>
     <div class="chips">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${a.sponsor !== 'unknown' ? spChip(a.sponsor) : ''}${CLOSED.includes(a.status) ? stChip(a.status) : ''}</div>
     <div class="meta">${meta}</div>
     ${a.status === 'saved' ? `<div class="qacts">${primaryFor('a:' + a.id, 'btn sm').replace('btn sm tint', 'btn sm plain')}${moreBtn('a:' + a.id, a.company)}</div>` : ''}
@@ -631,7 +638,7 @@ R.board = () => {
 };
 function emptyState() {
   return `<div class="panel" style="align-items:flex-start"><h2>No applications yet</h2><p class="empty">Add one with <span class="kbd">N</span>, save a listing from New listings, or import a file in Settings.</p>
-    <div class="row"><button class="btn primary" type="button" data-action="add">+ Add application</button><a class="btn" href="#inbox">Browse new listings</a><a class="btn ghost" href="#settings/data">Import</a></div></div>`;
+    <div class="row"><a class="btn tint" href="#inbox">Browse new listings</a><button class="btn" type="button" data-action="add">Add one by hand</button><a class="btn ghost" href="#settings/data">Import</a></div></div>`;
 }
 
 /* One computed "what happens next" per application. rank: lower = sooner. */
@@ -683,7 +690,7 @@ function sortRows(rows, { key, dir }) {
 }
 const appliedCell = (a) => { if (!a.applied) return '—'; const n = -daysFrom(a.applied); return `${fmt(a.applied)}<span class="na-s">${n <= 0 ? 'today' : n + 'd ago'}</span>`; };
 const resumeCell = (a) => `<td class="rs" title="${esc(a.resume || resumeFor(a))}">${a.resume ? esc(a.resume) : `<span style="color:var(--faint)">${esc(resumeFor(a))} (base)</span>`}</td>`;
-const coCell = (a) => `<td class="co ${urgency(a)}"><button type="button" data-open="${a.id}">${esc(a.company)}</button><span class="sub2">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${esc(a.role)}</span></td>`;
+const coCell = (a) => `<td class="co ${urgency(a)}"><button type="button" data-open="${a.id}" title="${esc(a.company + ', ' + a.role)}">${esc(a.company)}</button><span class="sub2">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${esc(a.role)}</span></td>`;
 const stCell = (a) => `<td><span class="stwrap s-${a.status}"><span class="dot" aria-hidden="true"></span><select class="stsel" data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES, a.status)}</select></span></td>`;
 function rowFor(k, a) {
   if (k === 'todo') {
@@ -788,7 +795,7 @@ R.inbox = () => {
   const A = appsMatchingFilters();
   const appsSec = A.length ? `<section class="lsec" aria-label="Matching applications"><div class="lsec-h"><span>In your Applications</span> <span class="cnt">${A.length}</span><span class="hint">saved or in progress · they no longer appear as new listings</span><a class="btn sm ghost" href="#table" style="margin-left:auto">Open Applications →</a></div>${A.slice(0, 10).map(srow).join('')}${A.length > 10 ? `<a class="more" href="#table">See all ${A.length} in Applications</a>` : ''}</section>` : '';
   if (!L.length && A.length) return head + `<div style="margin-top:12px">${appsSec}<p class="empty" style="margin:12px 4px">No new listings match. Only the applications above do.</p></div>`;
-  if (!L.length) return head + `<div class="panel" style="margin-top:12px"><p class="empty">${filtersOn() ? `Nothing matches${S.ui.q ? ` “${esc(S.ui.q.trim())}”` : ''}. Search looks at company, role, location, track, skills and sponsorship; every word has to match.` : 'No listings yet. Refresh now, or widen the window in Settings.'}</p>${filtersOn() ? '<div class="row"><button class="btn sm" type="button" data-action="clear-filters">Clear search and filters</button></div>' : ''}</div>`;
+  if (!L.length) return head + `<div class="panel" style="margin-top:12px"><p class="empty">${filtersOn() ? `Nothing matches${S.ui.q ? ` “${esc(S.ui.q.trim())}”` : ''}. Search looks at company, role, location, track, skills and sponsorship; every word has to match.` : 'No listings yet. Refresh now, or widen the window in Settings › Job search.'}</p>${filtersOn() ? '<div class="row"><button class="btn sm" type="button" data-action="clear-filters">Clear search and filters</button></div>' : '<div class="row"><button class="btn sm tint" type="button" data-action="refresh">Refresh now</button><a class="btn sm" href="#settings/search">Job search settings</a></div>'}</div>`;
   const topS = +S.settings.topScore || 75, minS = +S.settings.minScore || 55, open = S.ui.sec || {};
   const rest = L;
   const fOn = filtersOn();
@@ -917,7 +924,7 @@ function closePeek(restore = true) {
 /* Click outside the preview closes it (as with a macOS popover). Clicks that open or switch the preview, and clicks in
    menus, dialogs, the edit drawer or a toast, leave it to their own handlers. */
 document.addEventListener('pointerdown', (e) => {
-  if (!UI.peek || e.button !== 0 || docked()) return;
+  if (!UI.peek || e.button !== 0) return;
   const t = e.target;
   if (!(t instanceof Element) || !document.contains(t)) return;
   if (t.closest('#peek, .lrow, [data-peek], dialog, #drawer, #scrim, .toast, .menu, [role="menu"], .selbar')) return;

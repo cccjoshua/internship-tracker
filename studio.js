@@ -1380,7 +1380,7 @@ function rDocs() {
       <div class="stagef" role="group" aria-label="Show">${seg.map(([k, l]) => `<button type="button" data-dockind="${k}" aria-pressed="${DOCS.kind === k}">${l}</button>`).join('')}</div><span class="grow"></span>
       <span class="hint">File names follow Profile → Basics</span></div>
     ${DOCS.list.length ? (rows.length ? `<div class="dgrps">${tables}</div>` : '<div class="panel"><p class="empty">Nothing matches.</p></div>')
-      : `<div class="panel" style="align-items:flex-start"><h2>No job documents yet</h2><p class="empty">Open a job from New listings or Applications, then build its resume (step 2) or cover letter (step 3). Every draft shows up here, grouped by track, with one-click downloads.</p><div class="row"><a class="btn primary" href="#inbox">Go to New listings</a></div></div>`}`;
+      : `<div class="panel" style="align-items:flex-start"><h2>No job documents yet</h2><p class="empty">Open a job from New listings or Applications, then build its resume (step 2) or cover letter (step 3). Every draft shows up here, grouped by track, with one-click downloads.</p><div class="row"><a class="btn tint" href="#inbox">Go to New listings</a></div></div>`}`;
 }
 /* Download pair: one control, both formats equal ("Download  .docx | .pdf"). */
 const dlPair = (ref, label) => `<div class="dlpair" role="group" aria-label="Download ${esc(label)}"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-dl="${esc(ref.replace('%', 'docx'))}" title="Word document, for most application forms">.docx</button><button type="button" data-dl="${esc(ref.replace('%', 'pdf'))}" title="PDF, for email and portals that prefer it">.pdf</button></div>`;

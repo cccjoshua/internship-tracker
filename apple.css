@@ -697,3 +697,17 @@ dialog.pal .pal-field input:focus-visible,dialog.pal .pal-field input:focus{outl
 .lrow.peeking,.lrow.peeking:hover,.tmatch li.peeking,.tmatch li.peeking:hover,.todo li.peeking{background:var(--sel)}
 .tracked-note{margin:12px 4px 0;font-size:12px;color:var(--muted)}
 .tracked-note a{color:var(--accent-text)}
+.start-l{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.start-l a{color:var(--accent-text);white-space:nowrap}
+/* Long text: clamp names and roles so one long posting cannot stretch a card or row; the full text is in the
+   row's accessible name, the tooltip and the preview */
+.card-top strong,.card .role,td.co>button,td.co .sub2,.tmatch li .what b,.todo li .what b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.card .role,td.co .sub2{-webkit-line-clamp:2}
+.tmatch li .what b,.todo li .what b{-webkit-line-clamp:1}
+.card .next,.card .meta>span{overflow-wrap:anywhere}
+.card .meta .next{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+/* Board fits a 1280px window: populated columns 176px minimum, empty ones 112px */
+.col{min-width:176px}
+.col.is-empty,.col.collapsed{flex:0 0 112px;min-width:112px}
+/* Off switches keep a visible edge in dark mode (3:1 for meaningful UI) */
+.switch input[type=checkbox]:not(:checked){box-shadow:inset 0 0 0 1px var(--line-strong)}
