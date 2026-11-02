@@ -1623,7 +1623,7 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); return showPalette(); }
-  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f' && !$('#tools').hidden) { e.preventDefault(); $('#q').focus(); $('#q').select(); return; } // filter this page; elsewhere the browser's Find
+  if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'f') { const f = !$('#tools').hidden ? $('#q') : $('#docQ'); if (f) { e.preventDefault(); f.focus(); f.select(); return; } } // filter this page; elsewhere the browser's Find
   const inText = e.target.closest('textarea,select,input:not([type=checkbox]):not([type=radio])');
   if (e.key === 'Escape' && UI.peek && !inText) { e.preventDefault(); return closePeek(); }
   if (e.key === 'Escape' && UI.select && !inText) { e.preventDefault(); UI.select = false; UI.selected.clear(); return render(); }

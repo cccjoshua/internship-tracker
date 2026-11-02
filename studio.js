@@ -1362,12 +1362,14 @@ function rDocs() {
   };
   const groups = {}; rows.forEach((r) => { const t = trackOf(r); (groups[t] = groups[t] || []).push(r); });
   const order = [...I.TRACKS, 'Other'].filter((t) => groups[t]);
-  const head = '<thead><tr><th scope="col">Company · Role</th><th scope="col">Application</th><th scope="col">Resume</th><th scope="col">Cover letter</th><th scope="col"><span class="sr">Open</span></th></tr></thead>';
+  const head = '<colgroup><col class="c-co"><col class="c-app"><col class="c-doc"><col class="c-doc"><col class="c-open"></colgroup><thead><tr><th scope="col">Company · Role</th><th scope="col">Application</th><th scope="col">Resume</th><th scope="col">Cover letter</th><th scope="col"><span class="sr">Open</span></th></tr></thead>';
   const tables = order.map((t) => `<section class="dgrp" aria-label="${esc(t)} documents"><h2 class="dgrp-h"><span class="chip tag">${esc(t)}</span>${esc(I.TRACK_NAME[t] || t)}<span class="cnt">${plural(groups[t].length, 'job')}</span></h2>
     <div class="tablewrap"><table class="docs-t">${head}<tbody>${groups[t].map(row).join('')}</tbody></table></div></section>`).join('');
   const targets = (I.S.settings.targets || []).filter((t) => I.TRACKS.includes(t));
+  /* Base resumes as one grouped list: each row shows the full ordering, so nothing is cut off. */
+  const lead = (t) => { const w = ((P.data.tracks || {})[t] || {}).leadWith; return w ? 'Leads with ' + w.split('→').map((x) => x.trim()).filter(Boolean).join(' → ') : 'Profile order'; };
   const base = P.data && P.data.basics.name && targets.length ? `<section class="panel dbase"><h2>Base resumes <small>your master resume ordered for each target track, fitted to one page · free, no Claude call</small></h2>
-    <div class="dbase-g">${targets.map((t) => `<div class="dbase-c"><div><b>${esc(t)}</b><span class="sub">${esc(I.TRACK_NAME[t] || t)}</span></div><span class="hint">${esc(((P.data.tracks || {})[t] || {}).leadWith ? 'Leads with ' + P.data.tracks[t].leadWith.split('→')[0].trim() : 'Profile order')}</span>${dlPair(`base:%:${t}`, t + ' base resume')}</div>`).join('')}</div>
+    <ul class="dbase-l">${targets.map((t) => `<li><span class="dbase-t"><b>${esc(t)}</b><span class="sub">${esc(I.TRACK_NAME[t] || t)}</span></span><span class="dbase-o">${esc(lead(t))}</span>${dlPair(`base:%:${t}`, t + ' base resume')}</li>`).join('')}</ul>
     <p class="sub">Use these for quick applications. For roles you care about, open the job and tailor the resume to its posting.</p></section>` : '';
   const seg = [['all', `All ${DOCS.list.length}`], ['resume', `Resumes ${nR}`], ['letter', `Cover letters ${nL}`]];
   return `${base}<div class="toolbar" style="margin:${base ? '16px' : '0'} 0 12px"><input type="search" id="docQ" placeholder="Search company or role" aria-label="Search documents" value="${esc(DOCS.q)}" style="max-width:280px">

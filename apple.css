@@ -614,3 +614,20 @@ dialog::backdrop{background:rgba(0,0,0,.2);-webkit-backdrop-filter:none;backdrop
 .tsec.s-todo .tablewrap{border-color:var(--line)}
 td.rs{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tsec-h .tsec-t{font-size:15px}
+
+/* Documents: base resumes as a grouped list, aligned job tables, neutral document states, stage as dot + text */
+.dbase-l{list-style:none;margin:0;padding:0}
+.dbase-l li{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:4px 16px;align-items:center;padding:8px 0;border-top:.5px solid var(--line)}
+.dbase-l li:first-child{border-top:0}
+.dbase-t{display:flex;align-items:baseline;gap:6px}.dbase-t b{font-weight:600}.dbase-t .sub{font-size:12px;color:var(--muted)}
+.dbase-o{font-size:12px;color:var(--muted);line-height:1.4}
+.docs-t{table-layout:fixed;width:100%}
+.docs-t col.c-co{width:30%}.docs-t col.c-app{width:13%}.docs-t col.c-doc{width:24%}.docs-t col.c-open{width:9%}
+.docs-t .dc-c{min-width:0}
+.docs-t .co b,.docs-t .sub2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.docs-t .chip.v-yes{background:var(--fill);color:var(--ink)}
+.chip.st{background:none!important;padding:0;color:var(--ink);font-weight:400;gap:6px}
+.chip.st::before{background:var(--c)}
+.dlpair{border-radius:6px}
+.dgrp-h .chip.tag{font-weight:600}
+@media (max-width:760px){.dbase-l li{grid-template-columns:minmax(0,1fr)}.docs-t{table-layout:auto}}
