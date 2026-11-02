@@ -89,6 +89,26 @@ const api = async (p, path) => p.evaluate(async (u) => (await fetch(u, { cache: 
   await p.locator('textarea[data-lt-p^="paragraphs"]').first().waitFor();
   step('cover letter written (stub)');
 
+  // 6b. a Claude-tailored base resume for a track, revised, then used as a job's starting point
+  await p.goto(base + '/#docs', { waitUntil: 'networkidle' });
+  await p.locator('[data-tb="tailor:DE"]').click();
+  await p.locator('dialog#dlg.tbd .tb-paper .paper').waitFor({ timeout: 15000 });
+  assert.match(await p.textContent('dialog#dlg .tb-head'), /DE base resume.*Tailored by Claude/s, 'opens for review once tailored');
+  await p.fill('#tbIns', 'Lead Skills with SQL');
+  await p.press('#tbIns', 'Control+Enter');
+  await p.locator('[data-tb="undo:DE"]').waitFor({ timeout: 15000 });
+  const vers = await api(p, 'api/bases');
+  assert.ok(vers.bases.DE.versions.some((v) => /revise: Lead Skills with SQL/.test(v.label)), 'revision saved as a version');
+  if (shots) await p.screenshot({ path: shots + '/e2e-base.png' });
+  await p.locator('dialog#dlg [data-close].primary').click();
+  assert.ok(await p.locator('.dbase-l [data-tb="open:DE"]').isVisible(), 'the row offers Review now');
+  const deApp = await p.evaluate(() => window.IAT.S.apps.find((a) => a.track === 'DE'));
+  assert.ok(deApp, 'demo data has a DE application');
+  await p.goto(base + '/#job/' + encodeURIComponent(deApp.id) + '/resume', { waitUntil: 'networkidle' });
+  await p.locator('[data-jb="base"]').first().click();
+  await p.locator('#toast', { hasText: 'Started from your DE base resume' }).waitFor({ timeout: 5000 });
+  step('DE base resume tailored, revised, and used as the starting point');
+
   // 7. export resume (.docx, .pdf) and mark reviewed
   await p.goto(base + '/#job/' + encodeURIComponent(appId) + '/resume', { waitUntil: 'networkidle' });
   await p.locator('[data-jb="review"]').click();

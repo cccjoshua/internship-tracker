@@ -711,6 +711,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 rows = search.HIDDEN.rows(feed_path, LISTINGS, settings,
                                           lambda: (_read(feed_path), (load_listings() or {}).get("listings") or []))
                 return self._json(200, {"groups": [{"group": "Hidden listings", "items": search.HiddenIndex.search(rows, text, limit), "total": len(rows)}]})
+            if path == "/api/bases":
+                return self._json(200, {"bases": ai.load_bases(list(ai.TRACK_BRIEF))})
             if path == "/api/job":
                 q = urllib.parse.parse_qs(self.path.split("?", 1)[1] if "?" in self.path else "")
                 key = (q.get("key") or [""])[0]
@@ -759,7 +761,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def _studio(self, method, path):
         """Profile, Claude API and resume endpoints. Returns True when handled."""
-        routes = {("PUT", "/api/profile"), ("PUT", "/api/resume"), ("POST", "/api/ai/key"), ("POST", "/api/ai/config"), ("POST", "/api/ai/verify"),
+        routes = {("PUT", "/api/profile"), ("PUT", "/api/resume"), ("PUT", "/api/base"), ("POST", "/api/ai/base"), ("POST", "/api/ai/key"), ("POST", "/api/ai/config"), ("POST", "/api/ai/verify"),
                   ("POST", "/api/job/text"), ("POST", "/api/ai/analyze"), ("POST", "/api/ai/tailor"), ("POST", "/api/ai/rewrite"), ("POST", "/api/ai/cover"), ("PUT", "/api/letter"), ("POST", "/api/ai/claude-check"), ("POST", "/api/h1b"),
                   ("POST", "/api/resume/fit"), ("POST", "/api/export")}
         if (method, path) not in routes:
@@ -822,6 +824,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     raise ai.AIError("Fill in your Profile first: it is the only source of facts for the letter.", 409)
                 g = lambda k: str(b.get(k) or "")
                 result, row = ai.cover(job_meta(b), profile, g("track") or "SWE", g("resumeText"), g("recipient"), g("why"), g("emphasis"), g("availability"), g("instructions"))
+                return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
+            if path == "/api/base":
+                track = str(b.get("track") or "")
+                if track not in ai.TRACK_BRIEF or not isinstance(b.get("resume"), dict):
+                    raise ai.AIError("Expected a track and a resume.")
+                try:
+                    doc = ai.save_resume({"key": ai.base_key(track), "company": "Base resume", "role": track}, b["resume"], str(b.get("label") or ""),
+                                         str(b.get("by") or "you"), b.get("notes"), kind="base", base=b.get("baseUpdatedAt"))
+                except ai.DocConflict as e:
+                    return self._json(409, {"error": str(e), "resume": e.doc}) or True
+                return self._json(200, {"ok": True, "resume": dict(doc, state=ai.doc_state(doc))}) or True
+            if path == "/api/ai/base":
+                profile = load_profile()
+                if not profile:
+                    raise ai.AIError("Fill in your Profile first: it is the only source of facts for the resume.", 409)
+                track = str(b.get("track") or "")
+                lead = ((profile.get("tracks") or {}).get(track) or {}).get("leadWith", "")
+                result, row = ai.base_tailor(profile, track, lead, str(b.get("instructions") or ""), profile.get("resumeRules") or [],
+                                             str(profile.get("resumeActivities") or "auto"), str(b.get("baseline") or "")[:8000], bool(b.get("revise")))
                 return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
             if path in ("/api/resume", "/api/letter"):
                 if not isinstance(b.get("resume"), dict):

@@ -233,6 +233,27 @@ class StudioTest(unittest.TestCase):
         system = " ".join(b["text"] for b in body["system"])
         self.assertNotIn("SECRET UNCONFIRMED CLAIM", system)  # the truth rules and profile filter still apply
 
+    def test_track_base_resume_is_tailored_saved_and_kept_out_of_job_documents(self):
+        self.req("POST", "/api/ai/key", {"key": KEY})
+        self.req("PUT", "/api/profile", {"profile": PROFILE, "baseRev": 0})
+        self.assertEqual(self.j("POST", "/api/ai/base", {"track": "XX"})[0], 400)
+        code, r = self.j("POST", "/api/ai/base", {"track": "DE", "baseline": "PROFILE ORDER DRAFT"})
+        self.assertEqual(code, 200)
+        body = self.calls[-1]
+        user = body["messages"][0]["content"] if isinstance(body["messages"][0]["content"], str) else " ".join(c.get("text", "") for c in body["messages"][0]["content"])
+        self.assertIn("BASE resume for Data Engineer internship applications", user)
+        self.assertIn("ETL/ELT pipelines", user)  # the track brief
+        self.assertIn("PROFILE ORDER DRAFT", user)
+        self.assertNotIn("SECRET UNCONFIRMED CLAIM", " ".join(b["text"] for b in body["system"]))
+        code, saved = self.j("PUT", "/api/base", {"track": "DE", "resume": {"v": 1, "sections": []}, "label": "Claude", "by": "ai", "notes": {"model": "m"}})
+        self.assertEqual(code, 200)
+        self.assertTrue(saved["resume"]["state"]["generated"])
+        bases = self.j("GET", "/api/bases")[1]["bases"]
+        self.assertTrue(bases["DE"]["current"] is not None)
+        self.assertIsNone(bases["SWE"])
+        self.assertEqual(ai.studio_docs(), [])  # never listed as a job document
+        self.assertEqual(self.j("PUT", "/api/base", {"track": "DE", "resume": {"v": 1, "sections": []}, "baseUpdatedAt": "old"})[0], 409)
+
     def test_tailor_sends_the_current_draft_and_the_selection_rules(self):
         self.req("POST", "/api/ai/key", {"key": KEY})
         self.req("PUT", "/api/profile", {"profile": PROFILE, "baseRev": 0})

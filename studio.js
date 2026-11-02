@@ -1052,7 +1052,7 @@ async function runTailor(J, track, instructions, revise) {
     const before = ST.model && JOB && JOB.key === J.key ? { model: I.clone(ST.model), notes: ST.notes ? I.clone(ST.notes) : null } : null;
     if (ST.model) await saveVersion(revise ? 'Before revising' : 'Before tailoring', 'you', J, ST.model);
     /* The current draft (or the master resume) goes along as approved wording, so tailoring improves it instead of starting over. */
-    const baseline = resumeText(ST.model || baseResume(P.data, track));
+    const baseline = resumeText(ST.model || masterFor(track));
     const r = await api('POST', 'api/ai/tailor', Object.assign(meta(J), { track, instructions, baseline, revise: !!revise }));
     AI.status = r.status;
     /* Bound to J: if you opened another job meanwhile, the result is saved to this job and that editor is not touched. */
@@ -1232,8 +1232,8 @@ async function jobAction(k) {
   if (k === 'base') {
     if (!P.data || !P.data.basics.name) return I.toast('Fill in your Profile first.');
     if (ST.model) await saveVersion('Before reset to master', 'you');
-    const m = baseResume(P.data, J.track), A = st.job && st.job.analysis; const h = await fitOnePage(m, A && A.keywords); ST.model = m; ST.notes = null; ST.trimmed = h; await saveVersion('Master resume', 'base'); I.render();
-    return I.toast(`Started from your master resume · free${h.length ? ' · trimmed to fit one page' : ''}`);
+    const tb = tbTailored(J.track), m = masterFor(J.track), A = st.job && st.job.analysis; const h = await fitOnePage(m, A && A.keywords); ST.model = m; ST.notes = null; ST.trimmed = h; await saveVersion(tb ? `${J.track} base resume` : 'Master resume', 'base'); I.render();
+    return I.toast(`Started from your ${tb ? J.track + ' base' : 'master'} resume · free${h.length ? ' · trimmed to fit one page' : ''}`);
   }
   if (k === 'version') { await saveVersion('Saved by you', 'you'); I.render(); return I.toast('Version saved'); }
   if (k === 'review') return markReviewed('resume');
@@ -1418,9 +1418,18 @@ function rDocs() {
   const targets = (I.S.settings.targets || []).filter((t) => I.TRACKS.includes(t));
   /* Base resumes as one grouped list: each row shows the full ordering, so nothing is cut off. */
   const lead = (t) => { const w = ((P.data.tracks || {})[t] || {}).leadWith; return w ? 'Leads with ' + w.split('→').map((x) => x.trim()).filter(Boolean).join(' → ') : 'Profile order'; };
-  const base = P.data && P.data.basics.name && targets.length ? `<section class="panel dbase"><h2>Base resumes <small>your master resume ordered for each target track, fitted to one page · free, no Claude call</small></h2>
-    <ul class="dbase-l">${targets.map((t) => `<li><span class="dbase-t"><b>${esc(t)}</b><span class="sub">${esc(I.TRACK_NAME[t] || t)}</span></span><span class="dbase-o">${esc(lead(t))}</span>${dlPair(`base:%:${t}`, t + ' base resume')}</li>`).join('')}</ul>
-    <p class="sub">Use these for quick applications. For roles you care about, open the job and tailor the resume to its posting.</p></section>` : '';
+  if (!TB.docs && !TB.loading) loadBases();
+  const tbRow = (t) => {
+    const d = tbDoc(t), on = tbTailored(t), busy = TB.busy === t;
+    const st = on ? `<span class="chip v-yes">Tailored by Claude</span><span class="sub">${esc(when(d.updatedAt))}${d.notes && d.notes.model ? ' · ' + esc(d.notes.model) : ''}</span>` : `<span class="sub">${esc(lead(t))}</span>`;
+    const act = busy ? `<button class="btn sm" type="button" disabled>Tailoring… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}</button>`
+      : on ? `<button class="btn sm" type="button" data-tb="open:${t}">Review</button>`
+        : `<button class="btn sm" type="button" data-tb="tailor:${t}" ${ready('tailor') && !TB.busy ? '' : 'disabled'} title="${esc(ready('tailor') ? costLabel('tailor', est('tailor', 9000, 2600)).replace(/<[^>]+>/g, '') : notReadyTip('tailor'))}">✨ Tailor for ${t}</button>`;
+    return `<li><span class="dbase-t"><b>${esc(t)}</b><span class="sub">${esc(I.TRACK_NAME[t] || t)}</span></span><span class="dbase-o">${st}</span><span class="dbase-a">${act}</span>${dlPair(`base:%:${t}`, t + ' base resume')}</li>`;
+  };
+  const base = P.data && P.data.basics.name && targets.length ? `<section class="panel dbase"><h2>Base resumes <small>the starting point for every job resume in a track</small></h2>
+    <ul class="dbase-l">${targets.map(tbRow).join('')}</ul>
+    <p class="sub">Without tailoring, a base resume is your Profile in its lead-with order. Tailor one with Claude and it leads with what that track’s recruiters screen for, worded for the track, from your Profile’s facts only. Every job resume in the track then starts from it.</p></section>` : '';
   const seg = [['all', `All ${DOCS.list.length}`], ['resume', `Resumes ${nR}`], ['letter', `Cover letters ${nL}`]];
   return `${base}<div class="toolbar" style="margin:${base ? '16px' : '0'} 0 12px"><input type="search" id="docQ" placeholder="Search company or role" aria-label="Search documents" value="${esc(DOCS.q)}" style="max-width:280px">
       <div class="stagef" role="group" aria-label="Show">${seg.map(([k, l]) => `<button type="button" data-dockind="${k}" aria-pressed="${DOCS.kind === k}">${l}</button>`).join('')}</div><span class="grow"></span>
@@ -1429,11 +1438,99 @@ function rDocs() {
       : `<div class="panel" style="align-items:flex-start"><h2>No job documents yet</h2><p class="empty">Open a job from New listings or Applications, then build its resume (step 2) or cover letter (step 3). Every draft shows up here, grouped by track, with one-click downloads.</p><div class="row"><a class="btn tint" href="#inbox">Go to New listings</a></div></div>`}`;
 }
 /* Download pair: one control, both formats equal ("Download  .docx | .pdf"). */
+/* ---------- track base resumes: one Claude-tailored starting point per track ---------- */
+const TB = { docs: null, loading: false, busy: '', open: null, undo: null, rev: '' };
+async function loadBases() {
+  TB.loading = true;
+  try { TB.docs = (await api('GET', 'api/bases')).bases || {}; } catch (_) { TB.docs = TB.docs || {}; }
+  finally { TB.loading = false; I.render(); }
+}
+const tbDoc = (t) => (TB.docs || {})[t] || null;
+const tbTailored = (t) => { const d = tbDoc(t); return !!(d && d.current && d.state && d.state.generated); };
+/* The resume a job in this track starts from: the tailored base when there is one, else the Profile in lead-with order. */
+function masterFor(track) {
+  if (!tbTailored(track)) return baseResume(P.data, track);
+  const m = I.clone(tbDoc(track).current);
+  m.header = { name: P.data.basics.name, contact: contactLine(P.data.basics) }; // contact details always from the Profile as it is now
+  return m;
+}
+function tbPaper(m) { const keep = ST.fit; ST.fit = null; try { return paper(m); } finally { ST.fit = keep; } }
+function tbDialog(t) {
+  const d = tbDoc(t), n = (d && d.notes) || {}, busy = TB.busy === t, m = masterFor(t), undo = TB.undo && TB.undo.t === t;
+  return `<div class="mbody tb-dlg"><div class="tb-head"><h2 id="dlgTitle">${esc(t)} base resume</h2><span class="sub">${tbTailored(t) ? `Tailored by Claude${n.model ? ' · ' + esc(n.model) : ''} · ${esc(when(d.updatedAt))}` : 'Your Profile in lead-with order'}</span><span class="grow"></span>${dlPair(`base:%:${t}`, t + ' base resume')}</div>
+    <div class="tb-grid"><div class="tb-paper rs-paper">${tbPaper(m)}</div>
+      <div class="tb-side">
+        ${(n.changes || []).length ? `<details class="why" open><summary>What Claude did for ${esc(t)}</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
+        ${(n.questions || []).length ? `<div class="notice"><span><b>Need from you:</b> ${n.questions.map(esc).join(' · ')} <a href="#profile" data-close>Add to Profile →</a></span></div>` : ''}
+        ${(n.keywordsSkipped || []).length ? `<p class="sub">Left out (not supported by your Profile): ${n.keywordsSkipped.map(esc).join(', ')}</p>` : ''}
+        <form class="revise" id="tbForm" aria-label="Ask Claude to revise the ${esc(t)} base resume">
+          <label for="tbIns" class="rv-l"><b>Ask Claude to revise</b><span class="sub">Claude edits this base and keeps the rest.</span></label>
+          <div class="rv-box"><textarea id="tbIns" rows="3" maxlength="1500" placeholder="e.g. Put the databases course in Education and lead Skills with SQL" ${busy ? 'disabled' : ''}>${esc(TB.rev)}</textarea>
+            <button class="btn primary" type="submit" ${busy || !ready('tailor') ? 'disabled' : ''}>${busy ? 'Working…' : 'Revise'}</button></div>
+          <span class="sub">${busy ? `Claude is writing. About ${usesPro('tailor') ? '1–2 min' : '30–60 s'}; you can close this and keep working.` : `${usesPro('tailor') ? 'Claude Pro · no API cost' : 'about the cost of a tailor'} · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}↵ to send`}</span>
+        </form>
+        <div class="tb-acts">${undo ? '<button class="btn sm ghost" type="button" data-tb="undo:' + t + '">Undo last change</button>' : ''}
+          <button class="btn sm ghost" type="button" data-tb="retailor:${t}" ${busy || !ready('tailor') ? 'disabled' : ''}>Re-tailor from Profile</button>
+          ${tbTailored(t) ? `<button class="btn sm ghost" type="button" data-tb="reset:${t}" ${busy ? 'disabled' : ''}>Back to Profile order</button>` : ''}</div>
+        <p class="sub">Hand edits belong in a job’s resume (step 2). To change the facts themselves, edit your Profile, then re-tailor.</p>
+      </div></div>
+    <div class="mfoot"><span class="spacer"></span><button class="btn primary" type="button" data-close>Done</button></div></div>`;
+}
+function tbRefresh() { if (TB.open && I.dlg.open && I.dlg.classList.contains('tbd')) { const y = (I.dlg.querySelector('.tb-side') || {}).scrollTop; I.dlg.innerHTML = tbDialog(TB.open); const sd = I.dlg.querySelector('.tb-side'); if (sd && y) sd.scrollTop = y; } I.render(); }
+function tbOpen(t) { TB.open = t; TB.rev = ''; I.openDialog(tbDialog(t), 'tbd wide', () => { TB.open = null; }); }
+async function tbSave(t, model, label, by, notes) {
+  const d = tbDoc(t);
+  const r = await api('PUT', 'api/base', { track: t, resume: model, label, by, notes: notes || {}, baseUpdatedAt: d && d.updatedAt });
+  TB.docs = Object.assign({}, TB.docs, { [t]: r.resume }); return r.resume;
+}
+async function tbRun(t, instructions, revise) {
+  if (TB.busy) return;
+  TB.busy = t; tbRefresh();
+  try {
+    const before = tbTailored(t) ? { model: I.clone(tbDoc(t).current), notes: I.clone(tbDoc(t).notes || {}) } : null;
+    const cur = masterFor(t);
+    const r = await api('POST', 'api/ai/base', { track: t, instructions, baseline: revise || before ? resumeText(cur) : resumeText(baseResume(P.data, t)), revise: !!revise });
+    AI.status = r.status;
+    const model = fromAI(r.result, P.data), keep = ST.fit; await fitOnePage(model, []); ST.fit = keep;
+    const notes = { changes: r.result.changes, questions: r.result.questions, keywordsSkipped: r.result.keywordsSkipped, keywordsUsed: r.result.keywordsUsed, model: (AI.status.modelLabels[r.usage.model] || r.usage.model) + (r.usage.provider === 'pro' ? ' via Claude Pro' : ''), cost: r.usage.cost };
+    if (revise) notes.request = instructions.trim();
+    if (before) await tbSave(t, before.model, revise ? 'Before revising' : 'Before re-tailoring', 'you', before.notes);
+    await tbSave(t, model, `Claude · ${notes.model}${revise ? ' · revise: ' + instructions.slice(0, 40) : ''}`, 'ai', notes);
+    TB.undo = before ? Object.assign(before, { t }) : null; if (revise) TB.rev = '';
+    I.toast(`${t} base resume ${revise ? 'revised' : 'tailored'} · ${usedText(r.usage)}${TB.open !== t ? ' · open Documents to review it' : ''}`);
+    if (!TB.open && !revise) tbOpen(t);
+  } catch (e) { I.toast(e.message); }
+  finally { TB.busy = ''; tbRefresh(); }
+}
+async function tbAction(act, t) {
+  if (act === 'open') return tbOpen(t);
+  if (act === 'tailor' || act === 'retailor') return tbRun(t, '', false);
+  if (act === 'reset') {
+    const m = baseResume(P.data, t), keep = ST.fit; await fitOnePage(m, []); ST.fit = keep;
+    TB.undo = { t, model: I.clone(tbDoc(t).current), notes: I.clone(tbDoc(t).notes || {}) };
+    try { await tbSave(t, m, 'Back to Profile order', 'base', {}); I.toast(`${t} base is your Profile order again · the Claude version is kept`); } catch (e) { I.toast(e.message); }
+    return tbRefresh();
+  }
+  if (act === 'undo') {
+    const u = TB.undo; if (!u || u.t !== t) return;
+    try { await tbSave(t, u.model, 'Change undone', u.notes && u.notes.model ? 'ai' : 'base', u.notes); TB.undo = null; I.toast('Undone'); } catch (e) { I.toast(e.message); }
+    return tbRefresh();
+  }
+}
+function tbSend() {
+  const i = $('#tbIns'); if (!i || !TB.open) return;
+  if (!i.value.trim()) { i.focus(); return I.toast('Write what you want changed first.'); }
+  TB.rev = i.value; return tbRun(TB.open, i.value.trim(), true);
+}
+document.addEventListener('click', (e) => { const b = e.target.closest('[data-tb]'); if (!b) return; e.preventDefault(); const [act, t] = b.dataset.tb.split(':'); tbAction(act, t); });
+document.addEventListener('input', (e) => { if (e.target.id === 'tbIns') TB.rev = e.target.value; });
+document.addEventListener('submit', (e) => { if (e.target.id === 'tbForm') { e.preventDefault(); tbSend(); } });
+document.addEventListener('keydown', (e) => { if (e.target.id === 'tbIns' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tbSend(); } });
 const dlPair = (ref, label) => `<div class="dlpair" role="group" aria-label="Download ${esc(label)}"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-dl="${esc(ref.replace('%', 'docx'))}" title="Word document, for most application forms">.docx</button><button type="button" data-dl="${esc(ref.replace('%', 'pdf'))}" title="PDF, for email and portals that prefer it">.pdf</button></div>`;
 async function docDownload(kind, fmt, key) {
   let model, label;
   if (kind === 'base') {
-    model = baseResume(P.data, key); const keep = ST.fit; await fitOnePage(model, []); ST.fit = keep; label = key;
+    model = masterFor(key); const keep = ST.fit; await fitOnePage(model, []); ST.fit = keep; label = key;
   } else {
     const r = (DOCS.list || []).find((x) => x.key === key); if (!r || !r[kind]) return;
     model = kind === 'letter' ? letterExport(r[kind].current) : r[kind].current; label = r.company;
@@ -1507,5 +1604,5 @@ document.addEventListener('click', (e) => {
   ST.revText = i.value; i.focus(); i.setSelectionRange(i.value.length, i.value.length);
 });
 
-window.IATStudio = { boot: async () => { await Promise.all([loadProfile(), refreshStatus()]); }, get P() { return P; }, get ST() { return ST; }, baseResume, fromAI, resumeText };
+window.IATStudio = { boot: async () => { await Promise.all([loadProfile(), refreshStatus()]); loadBases(); }, get P() { return P; }, get ST() { return ST; }, baseResume, fromAI, resumeText };
 })();

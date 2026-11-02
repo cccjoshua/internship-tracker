@@ -923,6 +923,43 @@ def tailor(meta, profile, track, lead_with="", instructions="", rules_extra=None
             f"Keywords (* = importance 1-3): {kw}"]
     if c.get("includePosting") and rec.get("text"):
         job.append(f"\nPosting excerpt:\n<posting>\n{rec['text'][:EXCERPT_CHARS]}\n</posting>")
+    result, row = _write_resume(job, profile, instructions, rules_extra, activities, baseline, revise,
+                                f"{rec.get('company', '')} · {rec.get('role', '')}")
+    result["analysisState"] = analysis_state(rec)
+    return result, row
+
+
+# What internship postings in each track usually screen for. General market knowledge, not facts about the candidate:
+# it only tells Claude which of the candidate's true facts to put first and which words recruiters search for.
+TRACK_BRIEF = {
+    "SWE": "Software engineering intern postings usually require: one or more of Java, Python, C++, C#, Go, JavaScript/TypeScript; data structures, algorithms and object-oriented design; building and shipping working software. "
+           "Often preferred: web or backend development, REST APIs, SQL and databases, Git, testing, cloud (AWS/Azure), Linux, CI/CD, AI-assisted development.",
+    "DE": "Data engineering intern postings usually require: SQL and Python; relational databases and data modeling; ETL/ELT pipelines that move and clean data. "
+          "Often preferred: Spark or other distributed processing, Airflow/orchestration, data warehouses (Snowflake, Redshift, BigQuery), cloud (AWS/Azure/GCP), schema design, query optimization, data quality, Git.",
+    "DA": "Data analyst intern postings usually require: SQL, Excel, and a BI or visualization tool (Tableau, Power BI); Python or R for analysis; turning data into findings for business stakeholders. "
+          "Often preferred: statistics and A/B testing, dashboards and KPIs, data cleaning, storytelling with data, pandas.",
+    "DS": "Data science / ML intern postings usually require: Python, statistics, and machine learning (scikit-learn, PyTorch or TensorFlow); data analysis and model evaluation. "
+          "Often preferred: deep learning, NLP or LLMs, experimentation, SQL, feature engineering, research or publication experience, clear communication of results.",
+    "BIE": "Business intelligence intern postings usually require: SQL, data modeling and a BI tool (Tableau, Power BI, QuickSight); building dashboards and reports that stakeholders use. "
+           "Often preferred: ETL, data warehouses, Excel, Python, defining metrics and KPIs.",
+}
+
+
+def base_tailor(profile, track, lead_with="", instructions="", rules_extra=None, activities="auto", baseline="", revise=False):
+    """A base resume for a whole track (no single posting): the default starting point for that track's applications."""
+    if track not in TRACK_BRIEF:
+        raise AIError(f"Unknown track {track}.", 400)
+    job = ["# TARGET: a BASE resume for " + TRACK_NAMES.get(track, track) + " internship applications in general (no single posting).",
+           f"Track: {track} ({TRACK_NAMES.get(track, track)})",
+           "What these postings usually screen for: " + TRACK_BRIEF[track],
+           "Treat these as the posting keywords: use each one only where the profile truthfully supports it, and choose and word the entries "
+           "so a recruiter for this track sees the strongest true evidence first. In \"changes\", say in a few lines how this differs from a resume for the other tracks."]
+    if lead_with:
+        job.append(f"Lead-with order for this track: {lead_with}")
+    return _write_resume(job, profile, instructions, rules_extra, activities, baseline, revise, f"Base resume · {track}")
+
+
+def _write_resume(job, profile, instructions, rules_extra, activities, baseline, revise, target):
     if revise and not (instructions.strip() and baseline.strip()):
         raise AIError("Write what you want changed, and have a draft to revise.", 422)
     if revise:
@@ -936,13 +973,12 @@ def tailor(meta, profile, track, lead_with="", instructions="", rules_extra=None
         job.append(f"\nCURRENT DRAFT (approved wording; improve it for this posting, do not copy it blindly):\n<draft>\n{baseline.strip()[:6000]}\n</draft>")
     rules = TAILOR_RULES + "\n14. " + ACTIVITIES_RULE.get(activities, ACTIVITIES_RULE["auto"]) + ("\nCandidate's standing resume rules:\n" + "\n".join(f"- {r}" for r in rules_extra if r) if rules_extra else "")
     result, row = run("tailor", [profile_block(profile), rules], _redact("\n".join(job), profile) + "\n\nReturn the tailored resume.", TAILOR_SCHEMA,
-                      f"{rec.get('company', '')} · {rec.get('role', '')}", cache_at=0)
+                      target, cache_at=0)
     result = validate_tailor(result)
     valid = profile_points(profile)
     for sec in ("experience", "projects", "leadership", "education"):
         for e in result.get(sec) or []:
             check_sources(e.get("bullets") or [], valid)
-    result["analysisState"] = analysis_state(rec)
     return result, row
 
 
@@ -1133,8 +1169,21 @@ def record_export(key, kind, fmt, file):
     return doc
 
 
+# Track base resumes (one per track, not tied to a posting) live apart from job documents, so job lists never show them.
+DOC_PATHS = dict(DOC_DIRS, base="bases")
+
+
 def resume_path(key, kind="resume"):
-    return _p(DOC_DIRS[kind], job_hash(key) + ".json")
+    return _p(DOC_PATHS[kind], job_hash(key) + ".json")
+
+
+def base_key(track):
+    return "track-base:" + track
+
+
+def load_bases(tracks):
+    """Track -> saved base resume doc (or None when the track still uses the Profile-order master)."""
+    return {t: load_resume(base_key(t), "base") for t in tracks}
 
 
 def load_resume(key, kind="resume"):
