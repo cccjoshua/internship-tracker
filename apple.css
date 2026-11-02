@@ -310,7 +310,7 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 /* Rings: blocked (✕) and not-enough-information (—) never look like a score */
 .ring.blocked{--rc:var(--bad);background:conic-gradient(var(--bad) 100%,var(--bad) 0)}
 .ring.blocked span{color:var(--bad);font-weight:700}
-.ring.none{background:repeating-conic-gradient(var(--line-strong) 0 6deg,transparent 6deg 12deg)}
+.ring.none{background:none;box-shadow:inset 0 0 0 2px var(--line);border-radius:50%} /* not enough information: an empty ring, not a score */
 .ring.none span{color:var(--muted)}
 .verdict>.ring.blocked span,.verdict>.ring.none span{font-size:22px}
 
