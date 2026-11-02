@@ -1513,6 +1513,13 @@ document.addEventListener('click', (e) => {
   const rm2 = t.closest('[data-rowmenu]'); if (rm2) { const ref = rm2.dataset.rowmenu, it = menuFor(ref); const name = (ref[0] === 'l' ? (scored().find((x) => x.id === ref.slice(2)) || {}) : (S.apps.find((x) => x.id === ref.slice(2)) || {})).company || ''; return menuAt(rm2, name, UI.peek === ref || !['inbox', 'dashboard'].includes(route()) ? it.filter((m) => m.value !== 'peek') : it, (v) => runMenu(ref, v, rm2)); }
   const pkm = t.closest('[data-pkm]'); if (pkm && UI.peek) return runMenu(UI.peek, pkm.dataset.pkm, pkm);
   const ptg = t.closest('[data-picktoggle]'); if (ptg) { pickToggle(ptg.dataset.picktoggle, !UI.selected.has(ptg.dataset.picktoggle), e.shiftKey); return; }
+  /* The logo goes to the Dashboard. Already there: back to the top instead (a same-hash link would do nothing).
+     Cmd/Ctrl/Shift/middle clicks keep the browser's own behavior (new tab or window). */
+  const brand = t.closest('[data-brand]');
+  if (brand && !e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.button === 0 && route() === 'dashboard') {
+    e.preventDefault(); if (UI.peek) closePeek(false);
+    window.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); $('#view').focus({ preventScroll: true }); return;
+  }
   const lay = t.closest('[data-layout]'); if (lay) { S.ui.layout = lay.dataset.layout; save(); }
   const stoc = t.closest('[data-stoc]'); if (stoc && route() === 'settings') { e.preventDefault(); history.replaceState(null, '', '#settings/' + stoc.dataset.stoc); applySettingsPane(stoc.dataset.stoc); window.scrollTo(0, 0); return; }
   const add = t.closest('[data-add]');

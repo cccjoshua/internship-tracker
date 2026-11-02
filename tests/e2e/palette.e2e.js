@@ -110,6 +110,18 @@ const step = (m) => console.log('✓ palette: ' + m);
   assert.deepEqual(await p.$$eval('.sbody > section[id^=s-]', (s) => s.filter((x) => !x.hidden).map((x) => x.id)), ['s-goals'], 'Settings shows one pane');
   step('Profile shows all sections; Settings shows one pane');
 
+  // The logo goes to the Dashboard; on the Dashboard it scrolls back to the top
+  await p.evaluate(() => { location.hash = 'inbox'; }); await p.waitForTimeout(400);
+  await p.click('a.brand'); await p.waitForTimeout(400);
+  assert.equal(await p.evaluate(() => location.hash), '#dashboard', 'logo opens the Dashboard');
+  assert.equal(await p.getAttribute('.nav a[data-nav=dashboard]', 'aria-current'), 'page', 'sidebar marks Dashboard');
+  await p.evaluate(() => window.scrollTo(0, 400)); await p.click('a.brand'); await p.waitForTimeout(700);
+  assert.equal(await p.evaluate(() => Math.round(window.scrollY)), 0, 'on the Dashboard the logo scrolls to the top');
+  await p.evaluate(() => { location.hash = 'board'; }); await p.waitForTimeout(300);
+  await p.focus('a.brand'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
+  assert.equal(await p.evaluate(() => location.hash), '#dashboard', 'Enter on the focused logo works too');
+  step('logo returns to the Dashboard (and to the top when already there)');
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('Palette E2E passed');
   await b.close();
