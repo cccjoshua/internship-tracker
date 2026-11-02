@@ -1095,7 +1095,17 @@ function applySettingsPane(k) {
   $$('.sbody > section[id^="s-"]').forEach((sec) => { sec.hidden = sec.id !== 's-' + k; });
   $$('.stoc a').forEach((a) => (a.dataset.stoc === k ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
 }
-function spyToc() { applySettingsPane(); }
+let tocObs = null;
+/* Settings: panes. Profile (a long form): the section list follows the scroll position. */
+function spyToc() {
+  if (tocObs) { tocObs.disconnect(); tocObs = null; }
+  if (route() === 'settings') return applySettingsPane();
+  const links = $$('.stoc a'); if (!links.length || !('IntersectionObserver' in window)) return;
+  const mark = (id) => links.forEach((a) => { const on = a.getAttribute('href').endsWith('/' + id.replace(/^s-/, '')); on ? a.setAttribute('aria-current', 'location') : a.removeAttribute('aria-current'); });
+  const seen = new Map();
+  tocObs = new IntersectionObserver((es) => { es.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null)); const vis = [...seen].filter(([, t]) => t !== null).sort((a, b) => a[1] - b[1]); if (vis.length) mark(vis[0][0]); }, { rootMargin: '-80px 0px -55% 0px' });
+  $$('.sbody > section[id^="s-"]').forEach((sec) => tocObs.observe(sec));
+}
 function focusCard(id) { const el = $(`.card[data-id="${CSS.escape(id)}"]`); if (el) el.focus(); }
 /* Every change you can take back shows Undo for 10 seconds (the timer pauses while the pointer or focus is on it); ⌘Z / Ctrl+Z works any time. */
 function toast(msg, undoable) {

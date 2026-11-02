@@ -118,7 +118,7 @@ function completeness(p) {
     ['Resume bullets', [...p.experience, ...p.projects].some((e) => e.points.some((x) => x.kind === 'bullet'))], ['Track playbook', TRACKS.some((t) => (p.tracks[t] || {}).leadWith)]];
   const missing = checks.filter(([, ok]) => !ok).map(([l]) => l);
   const confirm = ['education', 'experience', 'projects', 'leadership'].reduce((n, k) => n + p[k].reduce((m, e) => m + e.points.filter((x) => x.confirm).length, 0), 0);
-  return { pct: Math.round((checks.length - missing.length) / checks.length * 100), missing, confirm };
+  return { pct: Math.round((checks.length - missing.length) / checks.length * 100), total: checks.length, missing, confirm };
 }
 const PF_SECTIONS = [['basics', 'Basics'], ['prefs', 'What I am looking for'], ['education', 'Education'], ['experience', 'Experience'], ['projects', 'Projects'], ['leadership', 'Leadership'], ['skills', 'Skills'], ['rules', 'Resume rules'], ['cover', 'Cover letters'], ['tools', 'Import / export']];
 const fld = (path, label, o = {}) => {
@@ -166,10 +166,10 @@ function rProfile() {
   return `<div class="settings pf">
   <nav class="stoc" aria-label="Profile sections">${PF_SECTIONS.map(([k, l]) => `<a href="#profile/${k}" data-pftoc="${k}">${l}</a>`).join('')}</nav>
   <div class="sbody">
-  <div class="pf-top panel"><div class="pf-meter"><span class="ring ${cm.pct >= 90 ? 'b1' : cm.pct >= 60 ? 'b2' : 'b3'}" style="--p:${cm.pct}"><span>${cm.pct}</span></span>
-    <div><b>Profile ${cm.pct}% complete</b><div class="sub">${cm.missing.length ? 'Missing: ' + cm.missing.map(esc).join(', ') : 'Everything Claude needs is here.'}${cm.confirm ? ` · <span class="warn-t">${plural(cm.confirm, 'point needs', 'points need')} confirming</span>` : ''}</div>
-    <div class="sub">This page is the only source of facts for tailored resumes, fit and eligibility checks. Unconfirmed points and hidden entries are never sent to Claude.</div></div></div>
-    <div class="row"><span class="savestate" id="pfState">${P.server ? (p.updatedAt ? 'Saved ' + new Date(p.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not saved yet') : 'Saved in this browser only'}</span></div></div>
+  <div class="pf-top panel"><div class="pf-status">
+    <div><b>${cm.missing.length ? `${cm.total - cm.missing.length} of ${cm.total} essentials filled` : 'All essentials filled'}</b>${cm.confirm ? ` <span class="warn-t">· ${plural(cm.confirm, 'point', 'points')} to confirm</span>` : ''}
+      <div class="sub">${cm.missing.length ? 'Missing: ' + cm.missing.map(esc).join(', ') + '. ' : ''}This page is the only source of facts for tailored resumes, fit and eligibility checks. Unconfirmed points and hidden entries are never sent to Claude.</div></div>
+    <span class="savestate" id="pfState">${P.server ? (p.updatedAt ? 'Saved ' + new Date(p.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not saved yet') : 'Saved in this browser only'}</span></div></div>
 
   ${sec('basics', 'Basics', 'resume header', `<div class="dgrid">${fld('basics.name', 'Name as on resume')}${fld('basics.location', 'Location', { hint: 'city and state only' })}${fld('basics.email', 'Email', { input: 'email' })}${fld('basics.phone', 'Phone')}${fld('basics.linkedin', 'LinkedIn')}${fld('basics.github', 'GitHub')}${fld('basics.website', 'Website / portfolio')}${fld('resumeFileName', 'Resume file name', { hint: '[Company] is replaced' })}</div>
     ${fld('preferences.headline', 'One-line headline', { cls: 'full', ph: 'e.g. MS Computer Science student building data pipelines and dashboards' })}`)}

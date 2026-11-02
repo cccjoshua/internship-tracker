@@ -643,20 +643,34 @@ td.rs{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sbody>.panel>h2{font-size:22px;font-weight:700;margin:10px 0 12px;letter-spacing:-.016em}
 .sbody>.panel>h2 small{display:block;width:100%;font-size:12px;margin-top:2px}
 .sbody .grid2{display:flex;flex-direction:column;gap:0}
-.sbody .field:has(>input[type=number]){display:grid;grid-template-columns:minmax(0,1fr) 84px;column-gap:20px;row-gap:2px;align-items:center;padding:10px 0;border-top:.5px solid var(--line)}
-.sbody .field:has(>input[type=number])>span:first-child{grid-column:1;grid-row:1;font-size:13px;font-weight:400;color:var(--ink)}
-.sbody .field:has(>input[type=number])>input{grid-column:2;grid-row:1 / span 2;width:84px;min-height:26px;padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums}
-.sbody .field:has(>input[type=number])>.hint{grid-column:1;grid-row:2;font-size:12px;color:var(--muted)}
+.settings:not(.pf) .sbody .field:has(>input[type=number]){display:grid;grid-template-columns:minmax(0,1fr) 84px;column-gap:20px;row-gap:2px;align-items:center;padding:10px 0;border-top:.5px solid var(--line)}
+.settings:not(.pf) .sbody .field:has(>input[type=number])>span:first-child{grid-column:1;grid-row:1;font-size:13px;font-weight:400;color:var(--ink)}
+.settings:not(.pf) .sbody .field:has(>input[type=number])>input{grid-column:2;grid-row:1 / span 2;width:84px;min-height:26px;padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums}
+.settings:not(.pf) .sbody .field:has(>input[type=number])>.hint{grid-column:1;grid-row:2;font-size:12px;color:var(--muted)}
 .sbody .field>span:first-child .eff{margin-left:6px}
-.sbody label.switch{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:20px;padding:10px 0;border-top:.5px solid var(--line);font-size:13px}
+.settings:not(.pf) .sbody label.switch{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:20px;padding:10px 0;border-top:.5px solid var(--line);font-size:13px}
 .sbody>.panel>.row,.sbody>.panel>p.empty,.sbody>.panel>.notice{margin:10px 0 0}
 .sbody .weights{gap:6px 16px;padding:4px 0 6px}
 .sbody .weights input{min-height:26px;padding:3px 8px;width:84px;justify-self:end}
 .sbody .weights input[type=text]{width:100%}
-.sbody>.panel>.field{padding:10px 0;border-top:.5px solid var(--line)}
+.settings:not(.pf) .sbody>.panel>.field{padding:10px 0;border-top:.5px solid var(--line)}
 .sbody>.panel>.field>span:first-child{font-size:13px;font-weight:590;color:var(--ink)}
 .sbody .eff{font-size:11px;font-weight:500;background:none!important;color:var(--muted)!important;padding:0}
 .settings .btn.danger,.settings .btn.ghost.danger{color:var(--bad)}
 @media (max-width:1080px){.settings{grid-template-columns:minmax(0,1fr)}.stoc{position:static;flex-direction:row;flex-wrap:wrap}}
-.sbody .field:has(>input[type=number]):not(:has(>.hint))>span:first-child{grid-row:1 / span 2}
+.settings:not(.pf) .sbody .field:has(>input[type=number]):not(:has(>.hint))>span:first-child{grid-row:1 / span 2}
 html{background:var(--bg)}
+
+/* Profile: one honest status line (no ring), plain checkboxes, sections keep their spacing */
+.pf .sbody{gap:16px}
+.pf-status{display:flex;align-items:flex-start;gap:16px}
+.pf-status>div{flex:1;min-width:0}
+.pf-status b{font-weight:600}
+.pf-status .sub{margin-top:2px;font-size:12px;color:var(--muted)}
+.pf-status .savestate{flex:none;font-size:12px;color:var(--muted);white-space:nowrap}
+.pf .sbody>.panel{padding:6px 20px 16px}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px 16px}
+.checks.sm{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+.checks label{background:none!important;border:0;border-radius:6px;padding:4px 2px;display:flex;align-items:center;gap:8px;color:var(--ink)!important;min-height:24px}
+.checks label .sub{color:var(--muted);font-size:12px}
+.checks label:hover{background:var(--fill-3)!important}

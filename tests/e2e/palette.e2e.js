@@ -103,6 +103,13 @@ const step = (m) => console.log('✓ palette: ' + m);
   assert.equal((await groups())[0], 'Recent', 'Recent leads the empty state');
   await p.keyboard.press('Escape');
 
+  // Regression: Settings panes must not hide the Profile page's sections (both use the same section list layout)
+  await p.evaluate(() => { location.hash = 'profile'; }); await p.waitForTimeout(500);
+  assert.ok(await p.locator('#s-basics').isVisible() && await p.locator('#s-skills').isVisible(), 'Profile shows every section');
+  await p.evaluate(() => { location.hash = 'settings/goals'; }); await p.waitForTimeout(400);
+  assert.deepEqual(await p.$$eval('.sbody > section[id^=s-]', (s) => s.filter((x) => !x.hidden).map((x) => x.id)), ['s-goals'], 'Settings shows one pane');
+  step('Profile shows all sections; Settings shows one pane');
+
   assert.deepEqual(errors, [], 'no page errors');
   console.log('Palette E2E passed');
   await b.close();
