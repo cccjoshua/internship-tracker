@@ -331,7 +331,7 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
 .el.na .el-l b{font-weight:500}
 
 /* Fit components the posting or Profile does not state: shown, but visibly not counted */
-.fp.unknown .fbar{background:repeating-linear-gradient(90deg,var(--fill-2) 0 6px,transparent 6px 10px)}
+.fp.unknown .fbar{background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong);border-radius:3px} /* no data: an empty outline, not a value */
 .fp.unknown .fp-n,.fp.unknown .fp-l{color:var(--faint)}
 .chip.inferred{border-style:dashed}
 
