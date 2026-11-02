@@ -1415,7 +1415,7 @@ I.VIEWS.profile = ['Profile', () => 'The single source of facts for your resumes
 I.VIEWS.docs = ['Documents', () => 'Every resume and cover letter you have made, by job', () => I.backCrumb()];
 I.R.docs = rDocs;
 I.VIEWS.job = { get 0() { const J = resolveJob(curId()); return J ? J.company : 'Job'; }, 1: () => { const J = resolveJob(curId()); return J ? J.role : ''; },
-  2: () => { const J = resolveJob(curId()); return J && J.app ? ['#' + (I.S.ui.layout === 'table' ? 'table' : 'board'), 'Back to Applications'] : ['#inbox', 'Back to New listings']; } };
+  2: () => { const J = resolveJob(curId()); return J && J.app ? ['#' + (I.S.ui.layout === 'board' ? 'board' : 'table'), 'Back to Applications'] : ['#inbox', 'Back to New listings']; } };
 I.R.profile = rProfile;
 I.R.job = rJob;
 I.HOOKS.settings = rSettings;

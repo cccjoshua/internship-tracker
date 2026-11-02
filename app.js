@@ -615,7 +615,8 @@ function colSort(s) {
   const nxt = (a) => [a.nextDate, ...upcomingRounds(a).map((r) => r.date)].filter(Boolean).sort()[0] || '9';
   return (x, y) => nxt(x).localeCompare(nxt(y)) || (lastDate(y) || '').localeCompare(lastDate(x) || '') || y.priority - x.priority;
 }
-const layoutCtl = (v) => `<div class="segctl" role="group" aria-label="Layout"><a href="#board" ${v === 'board' ? 'aria-current="true"' : ''}>Board</a><a href="#table" ${v === 'table' ? 'aria-current="true"' : ''}>List</a></div>`;
+const appsView = () => (S.ui.layout === 'board' ? 'board' : 'table');
+const layoutCtl = (v) => `<div class="segctl" role="group" aria-label="Layout"><a href="#board" data-layout="board" ${v === 'board' ? 'aria-current="true"' : ''}>Board</a><a href="#table" data-layout="table" ${v === 'table' ? 'aria-current="true"' : ''}>List</a></div>`;
 R.board = () => {
   const A = filtered(); const cols = ['saved', 'applied', 'oa', 'interview', 'offer', 'closed'];
   if (!S.apps.length) return emptyState();
@@ -796,7 +797,7 @@ R.inbox = () => {
     ['top', 'Top priority', `priority ${topS}+`, rest.filter((l) => !gone(l) && !l.isNew && l.total >= topS), true],
     ['more', 'Worth a look', `priority ${minS}–${topS - 1}`, rest.filter((l) => !gone(l) && !l.isNew && l.total >= minS && l.total < topS), false],
     ['low', 'Lower priority', `below ${minS}`, rest.filter((l) => !gone(l) && l.total < minS), false],
-    ['dup', 'Already tracking', '', rest.filter((l) => gone(l)), false]].filter((g) => g[3].length);
+  ].filter((g) => g[3].length);
   const vis = [];
   const body = `<div style="margin-top:12px">${appsSec}${A.length ? '<div style="height:12px"></div>' : ''}${groups.map(([k, title, hint, items, def]) => {
     const isOpen = k === 'results' || (open[k] !== undefined ? open[k] : def), lim = UI.limits['sec-' + k] || (k === 'results' ? 50 : 25);
@@ -813,7 +814,9 @@ R.inbox = () => {
     <button class="btn sm ghost" type="button" data-action="sel-all" ${nv && n < nv ? '' : 'disabled'}>Select all ${nv} shown</button><button class="btn sm ghost" type="button" data-action="sel-none" ${n ? '' : 'disabled'}>Clear</button>
     <span class="selsep" aria-hidden="true"></span>
     <button class="btn sm tint" type="button" data-action="sel-track" ${n ? '' : 'disabled'}>Save${n ? ' ' + n : ''}</button><button class="btn sm" type="button" data-action="sel-dismiss" ${n ? '' : 'disabled'}>Not interested…</button><button class="btn sm ghost" type="button" data-action="select-mode">Done</button></div>` : '';
-  return head + body + selbar;
+  const nTracked = fOn ? 0 : rest.filter((l) => gone(l)).length;
+  const trackedNote = nTracked ? `<p class="tracked-note">${plural(nTracked, 'listing is', 'listings are')} already in your Applications and not shown here. <a href="#${appsView()}">Open Applications →</a></p>` : '';
+  return head + body + trackedNote + selbar;
 };
 /* Rows share one shape: title / next step / facts on the left; on the right exactly one primary action
    and a "More" menu with everything else. Clicking the row opens the preview panel (no hover-only buttons). */
@@ -1094,9 +1097,9 @@ function render() {
   const v = route();
   if (!['settings', 'profile', 'docs'].includes(v)) { UI.backTo = location.hash || '#dashboard'; try { UI.backName = VIEWS[v][0]; } catch (_) { UI.backName = ''; } }
   const navKey = (v === 'board' || v === 'table') ? 'apps' : v === 'job' ? (HOOKS.jobNav ? HOOKS.jobNav() : 'inbox') : v;
-  if (navKey === 'apps' && S.ui.layout !== v) { S.ui.layout = v; save(); }
+  /* Applications opens the List by default; the Board/List switch (not every visit) sets your preference. */
   $$('[data-nav]').forEach((a) => a.dataset.nav === navKey ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'));
-  $('#navApps').setAttribute('href', '#' + (S.ui.layout === 'table' ? 'table' : 'board'));
+  $('#navApps').setAttribute('href', '#' + appsView());
   $('#viewTitle').textContent = VIEWS[v][0];
   const crumb = VIEWS[v][2] ? VIEWS[v][2]() : null, ce = $('#viewCrumb');
   if (ce) { ce.hidden = !crumb; if (crumb) { ce.href = crumb[0]; ce.textContent = '← ' + crumb[1]; } }
@@ -1503,6 +1506,7 @@ document.addEventListener('click', (e) => {
   const rm2 = t.closest('[data-rowmenu]'); if (rm2) { const ref = rm2.dataset.rowmenu, it = menuFor(ref); const name = (ref[0] === 'l' ? (scored().find((x) => x.id === ref.slice(2)) || {}) : (S.apps.find((x) => x.id === ref.slice(2)) || {})).company || ''; return menuAt(rm2, name, UI.peek === ref || !['inbox', 'dashboard'].includes(route()) ? it.filter((m) => m.value !== 'peek') : it, (v) => runMenu(ref, v, rm2)); }
   const pkm = t.closest('[data-pkm]'); if (pkm && UI.peek) return runMenu(UI.peek, pkm.dataset.pkm, pkm);
   const ptg = t.closest('[data-picktoggle]'); if (ptg) { pickToggle(ptg.dataset.picktoggle, !UI.selected.has(ptg.dataset.picktoggle), e.shiftKey); return; }
+  const lay = t.closest('[data-layout]'); if (lay) { S.ui.layout = lay.dataset.layout; save(); }
   const stoc = t.closest('[data-stoc]'); if (stoc && route() === 'settings') { e.preventDefault(); history.replaceState(null, '', '#settings/' + stoc.dataset.stoc); applySettingsPane(stoc.dataset.stoc); window.scrollTo(0, 0); return; }
   const add = t.closest('[data-add]');
   if (add) { const ul = add.dataset.add === 'round' ? $('#rounds') : $('#contacts'); ul.insertAdjacentHTML('beforeend', add.dataset.add === 'round' ? roundRow({ id: uid(), date: '', time: '', kind: 'Technical', with: '', notes: '' }) : contactRow({ id: uid(), name: '', title: '', email: '', link: '', note: '' })); ul.lastElementChild.querySelector('input').focus(); return; }
@@ -1706,7 +1710,7 @@ document.addEventListener('keydown', (e) => {
   }
   if ((e.key === 'Enter' || e.key === ' ') && !e.target.closest('button,a,select,input')) { const o = e.target.closest('li[data-open]'); if (o) { e.preventDefault(); return openDrawer(o.dataset.open); } }
   if (gPrefix && Date.now() - gPrefix < 1200) {
-    const dest = { d: 'dashboard', a: S.ui.layout === 'table' ? 'table' : 'board', b: 'board', t: 'table', l: 'inbox', o: 'docs', p: 'profile', s: 'settings' }[e.key.toLowerCase()]; gPrefix = 0;
+    const dest = { d: 'dashboard', a: appsView(), b: 'board', t: 'table', l: 'inbox', o: 'docs', p: 'profile', s: 'settings' }[e.key.toLowerCase()]; gPrefix = 0;
     if (dest) { e.preventDefault(); return go(dest); }
   }
   if (e.key === 'g' || e.key === 'G') { gPrefix = Date.now(); return; }
@@ -1765,6 +1769,7 @@ window.IAT = {
   applyTheme(themeNow());
   const { user, feed } = await Store.init();
   S = user ? migrate(user) : fresh();
+  if (!S.ui.layoutV2) { S.ui.layout = 'table'; S.ui.layoutV2 = true; } // List is the default; Board stays one click away and is remembered if you pick it
   F = normFeed(feed);
   applyClosures();
   takeDailySnapshot();

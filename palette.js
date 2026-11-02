@@ -54,9 +54,9 @@ const daysAgo = (d) => { const t = +new Date(d); return t ? (Date.now() - t) / 8
 
 function pages() {
   return [
-    ['dashboard', 'Dashboard', 'dashboard', ['G', 'D']], ['board', 'Applications', 'board', ['G', 'A'], 'Board'], ['table', 'Applications · List', 'table', ['G', 'T']],
+    ['dashboard', 'Dashboard', 'dashboard', ['G', 'D']], ['apps', 'Applications', 'table', ['G', 'A'], 'list board'], ['board', 'Applications · Board', 'board', ['G', 'B']], ['table', 'Applications · List', 'table', ['G', 'T']],
     ['inbox', 'New listings', 'inbox', ['G', 'L']], ['docs', 'Documents', 'docs', ['G', 'O']], ['profile', 'Profile', 'profile', ['G', 'P']], ['settings', 'Settings', 'settings', ['G', 'S']],
-  ].map(([v, title, icon, keys, extra]) => ({ id: 'page:' + v, group: 'Pages', title, extra: 'go to open page ' + (extra || ''), icon, keys, run: () => I.go(v) }));
+  ].map(([v, title, icon, keys, extra]) => ({ id: 'page:' + v, group: 'Pages', title, extra: 'go to open page ' + (extra || ''), icon, keys, run: () => I.go(v === 'apps' ? (I.S.ui.layout === 'board' ? 'board' : 'table') : v) }));
 }
 function actions() {
   const P = I.palette;
@@ -185,7 +185,7 @@ function emptyState(scope) {
   const q = (I.palette.queue() || []).map((x) => INDEX.byId.get(x.kind === 'app' ? 'a:' + x.a.id : 'l:' + x.l.id)).filter((d) => d && !shown.has(d.id)).slice(0, 2);
   q.forEach((d) => shown.add(d.id));
   const here = I.route();
-  const goTo = ['page:board', 'page:inbox', 'page:docs', 'page:dashboard'].filter((k) => k !== 'page:' + here && !shown.has(k)).slice(0, 2).map((k) => INDEX.byId.get(k));
+  const goTo = ['page:apps', 'page:inbox', 'page:docs', 'page:dashboard'].filter((k) => k !== 'page:' + here && !(k === 'page:apps' && (here === 'board' || here === 'table')) && !shown.has(k)).slice(0, 2).map((k) => INDEX.byId.get(k));
   const acts = ['act:add', 'act:refresh'].map((k) => INDEX.byId.get(k));
   add('Recent', recent); add('Suggested', q); add('Go to', goTo); add('Actions', acts);
   return out;

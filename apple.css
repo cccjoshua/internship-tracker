@@ -695,3 +695,5 @@ dialog.pal .pal-field input:focus-visible,dialog.pal .pal-field input:focus{outl
 /* Every row gets the same hover, saved ones included; the selected (peeking) row keeps its tint */
 .lrow.qsaved:hover,.tmatch li.qsaved:hover,.todo li:hover{background:var(--fill-3)}
 .lrow.peeking,.lrow.peeking:hover,.tmatch li.peeking,.tmatch li.peeking:hover,.todo li.peeking{background:var(--sel)}
+.tracked-note{margin:12px 4px 0;font-size:12px;color:var(--muted)}
+.tracked-note a{color:var(--accent-text)}
