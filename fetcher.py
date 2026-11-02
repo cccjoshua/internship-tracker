@@ -27,6 +27,7 @@ Saved applications whose posting closed are reported in listings.json
 ("closures") and the page moves them to Closed.
 """
 import bisect
+import contextlib
 import csv
 import datetime as dt
 import html
@@ -36,10 +37,12 @@ import math
 import os
 import re
 import socket
-import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import safeio
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -134,15 +137,11 @@ def _read_json(path):
 
 
 def _write_bytes(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+    safeio.write_bytes(path, data)
 
 
 def _write_json(path, obj):
-    _write_bytes(path, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+    safeio.write_json(path, obj)
 
 
 def http_get(url, headers=None, timeout=20, public_only=False):
@@ -232,30 +231,72 @@ def listing_key(l):
 
 
 # ---------------------------------------------------------------- data sources
-def load_feed(log):
+FEED_TRIES = (0, 2, 8)  # seconds to wait before each attempt per feed URL
+_sleep = time.sleep      # replaced in tests
+
+
+def load_feed(log, meta_out=None):
+    """The SimplifyJobs feed: each URL is tried up to 3 times (network errors and 5xx, with 2 s and 8 s waits),
+    then the next URL, then the last downloaded copy. meta_out["usingCache"] tells which one was used."""
     path, meta_path = os.path.join(CACHE, "simplify.json"), os.path.join(CACHE, "simplify.meta.json")
     meta = _read_json(meta_path) or {}
+    if meta_out is not None:
+        meta_out["usingCache"] = False
     for url in FEEDS:
         headers = {}
         if meta.get("url") == url and meta.get("etag") and os.path.exists(path):
             headers["If-None-Match"] = meta["etag"]
-        try:
-            _, h, body = http_get(url, headers, timeout=90)
-            data = json.loads(body)
-            _write_bytes(path, body)
-            _write_json(meta_path, {"url": url, "etag": h.get("ETag"), "at": now_local().isoformat()})
-            return data
-        except urllib.error.HTTPError as e:
-            if e.code == 304:
-                return _read_json(path)
-            log(f"Feed {url}: HTTP {e.code}")
-        except Exception as e:  # network or JSON problems: try the next feed
-            log(f"Feed {url}: {e}")
+        for wait in FEED_TRIES:
+            if wait:
+                _sleep(wait)
+            try:
+                _, h, body = http_get(url, headers, timeout=90)
+                data = json.loads(body)
+                _write_bytes(path, body)
+                _write_json(meta_path, {"url": url, "etag": h.get("ETag"), "at": now_local().isoformat()})
+                return data
+            except urllib.error.HTTPError as e:
+                if e.code == 304:
+                    return _read_json(path)
+                log(f"Feed {url}: HTTP {e.code}")
+                if e.code < 500:
+                    break  # 404 and friends will not get better by retrying: try the next feed
+            except ValueError as e:  # not JSON: retrying the same body will not help
+                log(f"Feed {url}: {e}")
+                break
+            except Exception as e:  # network problems: retry, then try the next feed
+                log(f"Feed {url}: {e}")
     cached = _read_json(path)
     if cached is not None:
         log("Using the last downloaded feed.")
+        if meta_out is not None:
+            meta_out["usingCache"] = True
         return cached
-    raise RuntimeError("Could not download the Simplify feed.")
+    raise RuntimeError("Could not download the Simplify feed, and there is no earlier copy.")
+
+
+@contextlib.contextmanager
+def refresh_lock(data_dir):
+    """Cross-process lock for a refresh (yields False when another process holds it). No-op where fcntl is missing."""
+    try:
+        import fcntl
+    except ImportError:
+        yield True
+        return
+    os.makedirs(data_dir, exist_ok=True)
+    fd = os.open(os.path.join(data_dir, ".refresh.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 SUFFIX = re.compile(r"\b(INC|INCORPORATED|LLC|L L C|LLP|LP|LTD|LIMITED|CORP|CORPORATION|CO|COMPANY|PLC|THE|HOLDINGS?|GROUP|USA|US|AMERICA|NA|N A|NATIONAL ASSOCIATION|SERVICES|TECHNOLOGIES|TECHNOLOGY)\b")
@@ -766,14 +807,18 @@ def upgrade_listing(l):
 
 
 # ---------------------------------------------------------------- refresh
-def refresh(user, listings_state=None, log=print):
+def refresh(user, listings_state=None, log=print, progress=None):
     """Download, gate, read and describe listings. Reads your data but never changes it.
     Returns data for apply()."""
     user = user or {}
     listings_state = listings_state or {}
     settings = user.get("settings") or {}
     window = int(_num(settings.get("windowDays"), 10) or 10)
-    feed = load_feed(log)
+    progress = progress or (lambda step, done=0, total=0: None)
+    progress("Downloading the feed")
+    feed_meta = {}
+    feed = load_feed(log, feed_meta)
+    progress("Filtering listings")
     h1b = H1B(log)
     now = now_local()
     excluded = {}
@@ -832,8 +877,10 @@ def refresh(user, listings_state=None, log=print):
     stale = [it for it, _ in pre if it["id"] in cache and (cache[it["id"]].get("at") or "") < today]
     todo = (new + stale)[:MAX_TEXT_READS]
     if todo:
+        progress("Reading postings", 0, len(todo))
         with ThreadPoolExecutor(max_workers=8) as ex:
-            for it, res in zip(todo, ex.map(lambda x: analyze_text(x.get("url", "")), todo)):
+            for n, (it, res) in enumerate(zip(todo, ex.map(lambda x: analyze_text(x.get("url", "")), todo)), 1):
+                progress("Reading postings", n, len(todo))
                 old = cache.get(it["id"])
                 # Keep what an earlier read learned if today's recheck could not read the page.
                 if old and old.get("read") and not res.get("read") and not res.get("closed"):
@@ -874,6 +921,7 @@ def refresh(user, listings_state=None, log=print):
             to_check.append(a)
     deadlines = dict(listings_state.get("savedDeadlines") or {})
     if to_check:
+        progress("Checking saved applications", 0, len(to_check))
         with ThreadPoolExecutor(max_workers=8) as ex:
             for a, res in zip(to_check, ex.map(lambda x: analyze_text(x["url"]), to_check)):
                 live[a["id"]] = today
@@ -890,7 +938,8 @@ def refresh(user, listings_state=None, log=print):
     deadlines = {k: v for k, v in deadlines.items() if k in app_ids}
 
     info = {"at": now.isoformat(timespec="seconds"), "feed": len(feed), "window": window,
-            "excluded": excluded, "textRead": read, "h1b": h1b_label() if h1b.counts else None, "error": None}
+            "excluded": excluded, "textRead": read, "h1b": h1b_label() if h1b.counts else None, "error": None,
+            "usingCache": bool(feed_meta.get("usingCache"))}
     info["deadlines"] = sum(1 for l in out if l["deadline"])
     return {"listings": out, "fetch": info, "closures": closures, "liveChecked": live, "savedDeadlines": deadlines}
 
@@ -964,7 +1013,10 @@ if __name__ == "__main__":
     import sys
     data = os.path.join(ROOT, "data")
     user = _read_json(os.path.join(data, "tracker.json")) or {}
-    res = refresh(user, _read_json(os.path.join(data, "listings.json")) or {}, log=lambda m: print(m, file=sys.stderr))
+    with refresh_lock(data) as got:
+        if not got:
+            sys.exit("A refresh is already running (the tracker server is refreshing). Try again in a minute.")
+        res = refresh(user, _read_json(os.path.join(data, "listings.json")) or {}, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(res["fetch"], indent=2))
     print("kept:", len(res["listings"]))
     st = user.get("settings") or {}

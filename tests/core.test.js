@@ -114,3 +114,23 @@ test('factCheck flags numbers, unclaimable tools and inflated verbs that the cit
   assert.deepEqual(C.factCheck('Led a 4-person team', 'Led a team of 4 students', S), []); // years and supported verbs are fine
   assert.deepEqual(C.factCheck('Used R&D data in Go', 'R&D data', S), []);                 // one- and two-letter names are skipped
 });
+
+test('save failures: what is retried and what needs you', () => {
+  assert.equal(C.saveFailure(0), 'offline');
+  assert.equal(C.saveFailure(undefined), 'offline');
+  assert.equal(C.saveFailure(409), 'conflict');
+  assert.equal(C.saveFailure(400), 'rejected');
+  assert.equal(C.saveFailure(413), 'rejected');
+  assert.equal(C.saveFailure(503), 'corrupt');
+  assert.equal(C.saveFailure(500), 'server');
+  assert.deepEqual([0, 1, 2, 3, 9].map(C.retryDelay), [5, 15, 60, 60, 60]);
+});
+
+test('budget: scoring 3,000 listings stays under 150 ms', () => {
+  const roles = ['Data Analyst Intern', 'Software Engineer Intern', 'Data Engineer Intern', 'Data Science Intern', 'BI Engineer Intern'];
+  const many = Array.from({ length: 3000 }, (_, i) => L({ company: 'Co ' + i, role: roles[i % 5], h1b: i % 7 ? i : null, skillsFound: ['Python', 'SQL', 'Tableau', 'Spark'].slice(0, 1 + (i % 4)), posted: '2026-10-' + String(10 + (i % 18)).padStart(2, '0') }));
+  C.score(many[0], {}, '2026-10-28'); // warm up
+  let best = Infinity;
+  for (let k = 0; k < 3; k++) { const t = process.hrtime.bigint(); for (const l of many) C.score(l, {}, '2026-10-28'); best = Math.min(best, Number(process.hrtime.bigint() - t) / 1e6); }
+  assert.ok(best < 150, `scoring 3,000 listings took ${best.toFixed(0)} ms`);
+});

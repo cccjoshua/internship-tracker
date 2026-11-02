@@ -136,7 +136,7 @@ function migrate(d) {
   if (ds.onboarded === undefined && (s.apps.length || legacy.length)) s.settings.onboarded = true;
   return s;
 }
-function normFeed(d) { d = d || {}; return { lrev: +d.lrev || 0, listings: (Array.isArray(d.listings) ? d.listings : []).filter((l) => l && l.company).map(upgradeListing).map((l) => Object.assign({}, l, { url: safeUrl(l.url) })), fetch: d.fetch || null, closures: Array.isArray(d.closures) ? d.closures : [], savedDeadlines: d.savedDeadlines || {} }; }
+function normFeed(d) { d = d || {}; return { lrev: +d.lrev || 0, listings: (Array.isArray(d.listings) ? d.listings : []).filter((l) => l && l.company).map(upgradeListing).map((l) => Object.assign({}, l, { url: safeUrl(l.url) })), fetch: d.fetch || null, notice: d.notice || '', closures: Array.isArray(d.closures) ? d.closures : [], savedDeadlines: d.savedDeadlines || {} }; }
 const userData = () => ({ v: SCHEMA, apps: S.apps, manualListings: S.manualListings, dismissed: S.dismissed, dismissLog: S.dismissLog, settings: S.settings, ui: Object.assign({}, S.ui, { q: '' }) });
 const listingKey = (l) => urlKey(l.url) || ('k:' + norm(l.company) + '|' + norm(l.role));
 
@@ -166,7 +166,7 @@ const Store = {
     if (destructive) this.destructive = true;
     try { localStorage.setItem(KEY, JSON.stringify(d)); } catch (e) { /* quota or private mode */ }
     if (this.mode !== 'file') { setSaved('Saved in this browser only', true); return; }
-    this.queued = d; clearTimeout(this.t); setSaved('Saving…'); this.t = setTimeout(() => this.flush(), 300);
+    this.queued = d; clearTimeout(this.t); if (this.blocked) return; setSaved('Saving…'); this.t = setTimeout(() => this.flush(), 300);
   },
   /* Resolves once nothing is queued or in flight (or after 10 s). */
   async settled() {
@@ -187,20 +187,47 @@ const Store = {
         this.queued = userData();
         if ($('#drawer').hidden) render();
         toast(conflicts ? `Merged with changes from another tab. Where both changed the same item, your version was kept (${conflicts}).` : 'Merged with changes from another tab');
-      } else if (!r.ok) throw new Error(String(r.status));
-      else {
-        const res = await r.json(); this.tries = 0; this.rev = +res.rev || this.rev; this.base = Object.assign(clone(d), { rev: this.rev });
-        setSaved('Saved to data/tracker.json'); if (bc) bc.postMessage({ rev: this.rev });
+      } else if (!r.ok) {
+        let body = {}; try { body = await r.json(); } catch (_) { /* no JSON body */ }
+        const err = new Error(body.error || 'HTTP ' + r.status); err.status = r.status; err.body = body; throw err;
+      } else {
+        const res = await r.json(); this.tries = 0; this.fails = 0; this.blocked = null; this.rev = +res.rev || this.rev; this.base = Object.assign(clone(d), { rev: this.rev });
+        setSaved('Saved to data/tracker.json'); saveIssue(null); if (bc) bc.postMessage({ rev: this.rev });
       }
     } catch (e) {
-      if (!this.queued) this.queued = d;
-      setSaved('Server not reachable; kept in this browser', true);
-      clearTimeout(this.rt); this.rt = setTimeout(() => this.flush(), 15000);
+      if (!this.queued) this.queued = d; // never drop unsaved changes; they are also in this browser's storage
+      const kind = C.saveFailure(e.status || 0);
+      clearTimeout(this.rt);
+      if (kind === 'rejected' || kind === 'corrupt' || e.message === 'conflict loop') {
+        this.blocked = { kind: e.message === 'conflict loop' ? 'rejected' : kind, msg: (e.body && e.body.error) || e.message, hint: e.body && e.body.hint, problems: (e.body && e.body.problems) || [] };
+        setSaved('Not saved · see the message above', true); saveIssue(this.blocked);
+      } else {
+        const wait = C.retryDelay((this.fails = (this.fails || 0) + 1) - 1);
+        setSaved(kind === 'offline' ? `Offline · retrying in ${wait}s` : `Server error · retrying in ${wait}s`, true);
+        saveIssue({ kind, msg: kind === 'offline' ? 'The local server is not reachable, so changes are kept in this browser for now.' : (e.body && e.body.error) || 'The local server had a problem saving.', hint: `Retrying in ${wait} seconds. Your changes are safe in this browser.` });
+        this.rt = setTimeout(() => this.flush(), wait * 1000);
+      }
       return;
     } finally { this.busy = false; }
     if (this.queued && this.tries < 5) this.flush();
   },
 };
+/* A save problem that needs you: shown above the page until it is solved. kind: offline | server | rejected | corrupt */
+function saveIssue(x) {
+  let el = $('#saveIssue');
+  if (!x) { if (el) el.hidden = true; return; }
+  if (!el) { el = document.createElement('div'); el.id = 'saveIssue'; el.className = 'saveissue'; el.setAttribute('role', 'alert'); $('#banner').after(el); }
+  const stuck = x.kind === 'rejected' || x.kind === 'corrupt';
+  el.innerHTML = `<div class="si-t"><b>${esc(x.msg || 'Not saved')}</b>${x.hint ? `<span>${esc(x.hint)}</span>` : ''}${(x.problems || []).length ? `<details><summary>Details</summary><ul>${x.problems.slice(0, 8).map((p) => `<li>${esc(p)}</li>`).join('')}</ul></details>` : ''}</div>
+    <div class="si-a">${x.kind === 'corrupt' ? '<a class="btn sm" href="#settings/data">Open Settings › Your data</a>' : ''}${stuck ? '<button class="btn sm" type="button" data-action="save-download">Download unsaved changes</button>' : ''}<button class="btn sm tint" type="button" data-action="save-retry">Retry now</button></div>`;
+  el.hidden = false;
+}
+function downloadUnsaved() {
+  const d = Store.queued || userData(), n = new Date(), p2 = (x) => String(x).padStart(2, '0'), stamp = `${iso(n)}-${p2(n.getHours())}${p2(n.getMinutes())}`;
+  const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(d, null, 2)], { type: 'application/json' }));
+  a.download = `tracker-unsaved-${stamp}.json`; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  toast('Downloaded. Restore it later in Settings › Your data.');
+}
 /* Sidebar footer: short text ("Saved · 5:52 PM"); the full detail is in the tooltip. */
 function setSaved(t, warn) {
   const el = $('#saveState'); let short = t, tip = t;
@@ -279,6 +306,7 @@ async function ingestClips() {
 async function checkRemote() {
   if (Store.mode !== 'file') return;
   ingestClips();
+  if (!pollT || !refreshing) pollFetch();
   if (!Store.busy && !Store.queued) { const l = await Store.latest(); if (l && (+l.rev || 0) > Store.rev) applyExternal(l, 'Updated from another tab'); }
   const f = await Store.latestFeed(); if (f && (+f.lrev || 0) > F.lrev) applyFeed(f, refreshMessage(f.fetch));
   const was = JSON.stringify(KIT); await loadKit();
@@ -708,7 +736,13 @@ function refreshMessage(f) {
   return `Refreshed: ${f.matched} listings, ${f.new || 0} new${f.removed ? `, ${f.removed} closed removed` : ''}`;
 }
 function fetchSummary() {
-  const f = F.fetch; if (!f) return Store.mode === 'file' ? 'Not refreshed yet' : 'Example listings only (the local server refreshes from SimplifyJobs)';
+  const P = UI.fetchProg, f = F.fetch;
+  if (refreshing && P && P.running) return `<span class="fetch-now">Refreshing… ${esc((P.step || '').toLowerCase())}${P.total ? ` ${P.done}/${P.total}` : ''}</span>`;
+  if (F.notice) return `<span class="due hot">${esc(F.notice)}</span>`;
+  if (!f) return Store.mode === 'file' ? 'Not refreshed yet' : 'Example listings only (the local server refreshes from SimplifyJobs)';
+  return fetchSummaryDone(f) + (f.usingCache && !f.error ? ' · <span class="due soon" title="SimplifyJobs could not be reached after 3 tries, so the last downloaded feed was used">feed unreachable, used the last copy</span>' : '');
+}
+function fetchSummaryDone(f) {
   const at = new Date(f.at), hrs = +S.settings.fetchHours || 2, next = new Date(at.getTime() + hrs * 3600e3);
   const t = (d) => d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   return `Refreshed ${t(at)}${at.toDateString() !== new Date().toDateString() ? ' ' + fmt(iso(at)) : ''}${f.new ? ` · ${f.new} new` : ''}${f.removed ? ` · ${f.removed} closed or expired removed` : ''} · next about ${t(next)}${f.error ? ` · <span class="due hot">last refresh failed: ${esc(f.error)}</span>` : ''}`;
@@ -743,7 +777,7 @@ R.inbox = () => {
   const exN = ex.reduce((s, e) => s + e[1], 0);
   /* One status line: count · refresh state · a quiet refresh button, and a single View menu for sort, filters and selection. */
   const head = `<div class="inbox-head" role="group" aria-label="Listings">
-    <p><b>${L.length}</b> listing${L.length === 1 ? '' : 's'}${hidden ? ` · ${hidden} without sponsorship hidden` : ''} · <span class="sub">${fetchSummary()}</span>
+    <p><b>${L.length}</b> listing${L.length === 1 ? '' : 's'}${hidden ? ` · ${hidden} without sponsorship hidden` : ''} · <span class="sub fetch-line">${fetchSummary()}</span>
       <button class="btn icon sm plain" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''} aria-label="${refreshing ? 'Refreshing' : 'Refresh listings now'}" title="${refreshing ? 'Refreshing…' : 'Refresh now'}"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true" class="${refreshing ? 'spin' : ''}"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5V5h-2.5"/></svg></button>
       ${exN ? `<details class="why exl"><summary>${exN.toLocaleString('en-US')} filtered out</summary><div class="parts">${ex.map(([k, n]) => `<span>${esc(k)} <b>${n.toLocaleString('en-US')}</b></span>`).join('')}<p class="sub">Search them with ${MOD} K, then “Search hidden listings”.</p></div></details>` : ''}</p>
     ${UI.select ? '' : `<button class="btn sm" type="button" data-action="view-menu" aria-haspopup="menu">View: ${S.ui.lsort === 'newest' ? 'Newest' : 'Priority'}${S.settings.hideNoSponsor ? ' · sponsorship only' : ''} <span aria-hidden="true">▾</span></button>`}</div>`;
@@ -961,7 +995,7 @@ R.settings = () => {
     <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor ? 'checked' : ''}> Hide listings that say they do not sponsor visas ${eff(true)}</label>
     <div class="grid2">${numField('p-window', `Show listings posted in the last (days) ${eff(false)}`, 'windowDays', 1, 60)}
       ${numField('p-hours', 'Refresh listings every (hours) <span class="eff later">applies within 5 min</span>', 'fetchHours', 1, 24)}</div>
-    <div class="row"><span class="empty">${fetchSummary()}</span><button class="btn sm" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh now'}</button></div>
+    <div class="row"><span class="empty fetch-line">${fetchSummary()}</span><button class="btn sm" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh now'}</button></div>
     <p class="empty">The refresh runs on your Mac with no AI calls. The Mac must be awake; a missed run happens within 5 minutes of waking.</p></section>
 
   <section class="panel" id="s-scoring"><h2>Scoring ${eff(true)}</h2>
@@ -1400,13 +1434,27 @@ function dismissListings(ids, reason) {
 const dismissItems = () => [...DISMISS_REASONS.map(([value, label]) => ({ value, label })), { value: '', label: 'No particular reason', sep: true }];
 function startRefresh() {
   if (Store.mode !== 'file') return toast('The local server refreshes from SimplifyJobs. This page is using example listings.');
-  if (refreshing) return; const before = F.fetch && F.fetch.at; refreshing = true; render();
-  fetch('api/fetch', { method: 'POST' }).then((r) => { if (!r.ok && r.status !== 202) throw new Error(r.status); }).catch(() => { refreshing = false; render(); toast('Could not start a refresh. Is the local server running?'); });
-  let n = 0; const poll = setInterval(async () => {
-    n++; const l = await Store.latestFeed();
-    if (l && l.fetch && l.fetch.at !== before) { clearInterval(poll); refreshing = false; if (bc) bc.postMessage({ lrev: +l.lrev || 0 }); applyFeed(l, refreshMessage(l.fetch) + ((l.fetch.savedClosed || []).length ? `; posting closed: ${l.fetch.savedClosed.join(', ')}` : '')); }
-    else if (n > 80) { clearInterval(poll); refreshing = false; render(); toast('The refresh is taking longer than usual. It will appear when it finishes.'); }
-  }, 3000);
+  if (refreshing) return; refreshing = true; UI.fetchProg = { running: true, step: 'Starting' }; render();
+  fetch('api/fetch', { method: 'POST' }).then((r) => { if (!r.ok && r.status !== 202) throw new Error(r.status); pollFetch(); })
+    .catch(() => { refreshing = false; UI.fetchProg = null; render(); toast('Could not start a refresh. Is the local server running?'); });
+}
+/* While a refresh runs (started here or by the schedule), show its progress in place, then load the new listings. */
+let pollT = null;
+async function pollFetch() {
+  clearTimeout(pollT);
+  let st = null; try { const r = await fetch('api/fetch/status', { cache: 'no-store' }); if (r.ok) st = await r.json(); } catch (_) { st = null; }
+  if (st && st.running) {
+    const was = refreshing; refreshing = true; UI.fetchProg = st;
+    if (!was && route() === 'inbox' && $('#drawer').hidden) render(); else $$('.fetch-line').forEach((el) => { el.innerHTML = fetchSummary(); });
+    $$('[data-action="refresh"]').forEach((b) => { b.disabled = true; });
+    pollT = setTimeout(pollFetch, 2000); return;
+  }
+  if (refreshing) {
+    refreshing = false; UI.fetchProg = null;
+    const l = await Store.latestFeed();
+    if (l && (+l.lrev || 0) > F.lrev) { if (bc) bc.postMessage({ lrev: +l.lrev || 0 }); applyFeed(l, refreshMessage(l.fetch) + ((l.fetch.savedClosed || []).length ? `; posting closed: ${l.fetch.savedClosed.join(', ')}` : '')); }
+    else { if (l) F = normFeed(l); render(); if (l && l.fetch && l.fetch.error) toast('Refresh failed: ' + l.fetch.error); }
+  }
 }
 
 /* ---------- notifications ---------- */
@@ -1491,6 +1539,8 @@ document.addEventListener('click', (e) => {
     if (k === 'help') return showHelp();
     if (k === 'onboarding') return showOnboarding(1);
     if (k === 'goal-cancel') { UI.editGoal = null; return render(); }
+    if (k === 'save-retry') { Store.blocked = null; Store.fails = 0; clearTimeout(Store.rt); if (!Store.queued) Store.queued = userData(); setSaved('Saving…'); return Store.flush(); }
+    if (k === 'save-download') return downloadUnsaved();
     if (k === 'attn-focus') { const el = $('#attn'); if (el) { el.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' }); const f = el.querySelector('button.what'); if (f) f.focus({ preventScroll: true }); } return; }
     if (k === 'notice-ok') { UI.closedNotice = null; return render(); }
     if (k === 'attn-all') { UI.attnAll = !UI.attnAll; return render(); }

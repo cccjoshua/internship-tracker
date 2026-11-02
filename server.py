@@ -36,7 +36,6 @@ import re
 import shutil
 import socketserver
 import sys
-import tempfile
 import threading
 import time
 import traceback
@@ -47,6 +46,7 @@ import ai
 import clips
 import fetcher
 import resume_export
+import safeio
 import search
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -96,21 +96,28 @@ def _read(path):
 
 
 def _write(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-", suffix=".json")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    safeio.write_json(path, data, indent=2)
 
 
 def load_state():
     return _read(STATE)
 
 
+LISTINGS_NOTICE = {"text": ""}
+
+
 def load_listings():
+    """listings.json can always be rebuilt by a refresh. An unreadable file is copied aside once and reported."""
     try:
-        return _read(LISTINGS) or {}
-    except (OSError, ValueError):
+        d = _read(LISTINGS) or {}
+        LISTINGS_NOTICE["text"] = ""
+        return d
+    except (OSError, ValueError) as e:
+        if os.path.exists(LISTINGS):
+            if not LISTINGS_NOTICE["text"]:
+                quarantine(LISTINGS)
+                print(f"listings.json could not be read ({e}); copied to backups/corrupt/", flush=True)
+            LISTINGS_NOTICE["text"] = "The listings file could not be read. A copy was put in data/backups/corrupt/, and the next refresh rebuilds it."
         return {}
 
 
@@ -209,52 +216,108 @@ def with_profile_filters(user):
     return dict(user or {}, settings=settings)
 
 
+FETCH_STATE = {"running": False, "startedAt": None, "step": "", "done": 0, "total": 0}
+
+
+def _progress(step, done=0, total=0):
+    FETCH_STATE.update(step=step, done=done, total=total)
+
+
+def fetch_status():
+    """What the page shows in the New listings status line, for scheduled refreshes too."""
+    f = load_listings().get("fetch") or {}
+    try:
+        hours = float(((load_state() or {}).get("settings") or {}).get("fetchHours") or 2)
+    except (OSError, ValueError, TypeError):
+        hours = 2.0
+    nxt = None
+    if f.get("at"):
+        try:
+            nxt = (dt.datetime.fromisoformat(f["at"]) + dt.timedelta(hours=max(0.5, hours))).isoformat(timespec="seconds")
+        except ValueError:
+            pass
+    return dict(FETCH_STATE, lastAt=f.get("at"), lastError=f.get("error"), usingCache=bool(f.get("usingCache")), nextAt=nxt)
+
+
 def run_fetch():
-    """Download and describe listings, then write listings.json. Never writes tracker.json."""
+    """Download and describe listings, then write listings.json. Never writes tracker.json.
+    One refresh at a time in this process (FETCH_LOCK) and across processes (a file lock in the data folder),
+    so `python3 fetcher.py` in Terminal cannot race the scheduled refresh."""
     if not FETCH_LOCK.acquire(blocking=False):
         return {"busy": True}
     try:
-        try:
-            user = load_state() or {}
-        except (OSError, ValueError):
-            user = {}
-        before = load_listings()
-        try:
-            result = fetcher.refresh(with_profile_filters(user), before, log=lambda m: print(m, flush=True))
-            error = None
-        except Exception as e:
-            print(traceback.format_exc(), flush=True)
-            result, error = None, e
-        with LISTINGS_LOCK:
-            current = load_listings()
+        with fetcher.refresh_lock(DATA_DIR) as got:
+            if not got:
+                return {"busy": True}
+            FETCH_STATE.update(running=True, startedAt=dt.datetime.now().astimezone().isoformat(timespec="seconds"), step="Starting", done=0, total=0)
             try:
-                user = load_state() or {}  # latest tracked and dismissed, read only
+                user = load_state() or {}
             except (OSError, ValueError):
-                pass
-            out = fetcher.apply(user, current, result) if result else fetcher.failed(current, error)
-            _write(LISTINGS, out)
-        return out["fetch"]
+                user = {}
+            before = load_listings()
+            try:
+                result = fetcher.refresh(with_profile_filters(user), before, log=lambda m: print(m, flush=True), progress=_progress)
+                error = None
+            except Exception as e:
+                print(traceback.format_exc(), flush=True)
+                result, error = None, e
+            _progress("Saving")
+            with LISTINGS_LOCK:
+                current = load_listings()
+                try:
+                    user = load_state() or {}  # latest tracked and dismissed, read only
+                except (OSError, ValueError):
+                    pass
+                out = fetcher.apply(user, current, result) if result else fetcher.failed(current, error)
+                _write(LISTINGS, out)
+                LISTINGS_NOTICE["text"] = ""
+            return out["fetch"]
     finally:
+        FETCH_STATE.update(running=False, step="", done=0, total=0)
         FETCH_LOCK.release()
 
 
+def refresh_due(now, last_iso, hours):
+    """Is a scheduled refresh due? `now` is an aware datetime; `last_iso` the last refresh time (ISO) or None."""
+    if not last_iso:
+        return True
+    try:
+        last = dt.datetime.fromisoformat(last_iso)
+    except ValueError:
+        return True
+    if last.tzinfo is None:
+        last = last.astimezone()
+    try:
+        hours = float(hours or 2)
+    except (TypeError, ValueError):
+        hours = 2.0
+    return now - last >= dt.timedelta(hours=max(0.5, hours)) or last > now + dt.timedelta(minutes=5)  # clock moved back: refresh
+
+
+TICK = 30  # seconds
+
+
 def scheduler():
+    """Checks every 30 seconds against the wall clock, so after the Mac wakes a due refresh starts within about 30 s.
+    Posting change checks run at most every 5 minutes (they decide themselves whether a day has passed)."""
     time.sleep(5)
+    last_wall, last_changes = time.time(), 0.0
     while True:
         try:
+            now_wall = time.time()
+            if now_wall - last_wall > TICK + 120:
+                print(f"Woke up after {int((now_wall - last_wall) / 60)} min; checking whether a refresh is due.", flush=True)
+            last_wall = now_wall
             state = load_state() or {}
-            hours = float((state.get("settings") or {}).get("fetchHours") or 2)
             last = (load_listings().get("fetch") or {}).get("at")
-            due = True
-            if last:
-                elapsed = dt.datetime.now().astimezone() - dt.datetime.fromisoformat(last)
-                due = elapsed >= dt.timedelta(hours=max(0.5, hours))
-            if due:
+            if refresh_due(dt.datetime.now().astimezone(), last, (state.get("settings") or {}).get("fetchHours")):
                 run_fetch()
-            ai.check_changes(log=lambda m: print(m, flush=True))  # once a day: did analyzed postings change or close? (no AI calls)
+            if now_wall - last_changes >= 300:
+                last_changes = now_wall
+                ai.check_changes(log=lambda m: print(m, flush=True))  # once a day: did analyzed postings change or close? (no AI calls)
         except Exception:
             print(traceback.format_exc(), flush=True)
-        time.sleep(300)
+        time.sleep(TICK)
 
 
 def import_h1b(data, filename):
@@ -346,6 +409,47 @@ def calendar(state, now=None):
 
 
 # ---------------------------------------------------------------- profile
+STATUSES = {"saved", "applied", "oa", "interview", "offer", "rejected", "withdrawn", "missed", "ghosted", "expired"}
+_STR_FIELDS = ("company", "role", "track", "location", "url", "posted", "deadline", "applied", "resume", "notes", "nextText", "nextDate", "followedUp", "snoozeUntil")
+_LIST_FIELDS = ("history", "rounds", "contacts", "followLog")
+
+
+def validate_state(data):
+    """Type checks for tracker.json: what the page relies on, nothing more. Unknown fields are allowed and kept.
+    Returns a list of problems such as 'apps[3].status: "done" is not a known stage' (empty when fine)."""
+    out = []
+    if not isinstance(data, dict):
+        return ["the data must be an object"]
+    apps = data.get("apps")
+    if not isinstance(apps, list):
+        return ["apps: must be a list"]
+    for i, a in enumerate(apps):
+        where = f"apps[{i}]"
+        if not isinstance(a, dict):
+            out.append(f"{where}: must be an object")
+            continue
+        if not isinstance(a.get("id"), str) or not a.get("id"):
+            out.append(f"{where}.id: must be a non-empty string")
+        if a.get("status") not in STATUSES:
+            out.append(f'{where}.status: {json.dumps(a.get("status"))} is not a known stage')
+        for k in _STR_FIELDS:
+            if k in a and a[k] is not None and not isinstance(a[k], str):
+                out.append(f"{where}.{k}: must be text")
+        for k in _LIST_FIELDS:
+            if k in a and a[k] is not None and not isinstance(a[k], list):
+                out.append(f"{where}.{k}: must be a list")
+        if len(out) >= 20:
+            out.append("…and more")
+            return out
+    for k in ("settings", "ui"):
+        if k in data and data[k] is not None and not isinstance(data[k], dict):
+            out.append(f"{k}: must be an object")
+    for k in ("manualListings", "dismissed", "dismissLog"):
+        if k in data and data[k] is not None and not isinstance(data[k], list):
+            out.append(f"{k}: must be a list")
+    return out
+
+
 class Corrupt(Exception):
     """A data file exists but cannot be read. It is kept (and copied aside) and never overwritten."""
 
@@ -573,7 +677,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Corrupt as e:
                     return self._json(503, {"error": str(e), "corrupt": True})
             if path == "/api/listings":
-                return self._json(200, load_listings())
+                d = load_listings()
+                if LISTINGS_NOTICE["text"]:
+                    d = dict(d, notice=LISTINGS_NOTICE["text"])
+                return self._json(200, d)
+            if path == "/api/fetch/status":
+                return self._json(200, fetch_status())
             if path == "/api/profile":
                 try:
                     return self._json(200, read_checked(PROFILE))
@@ -625,7 +734,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 extra = {"Content-Disposition": 'attachment; filename="internship-tracker.ics"'} if "download=1" in self.path else None
                 return self._send(200, body, "text/calendar; charset=utf-8", extra)
         except (OSError, ValueError) as e:
-            return self._json(500, {"error": f"Could not read data: {e}"})
+            return self._json(500, {"error": f"Could not read data: {e}", "hint": "Check that the data folder is readable, then reload."})
         if path in ("/", "", "/" + PAGE):
             return self._file(os.path.join(ROOT, PAGE), "text/html; charset=utf-8")
         if path in STATIC:
@@ -759,7 +868,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(e.code, {"error": str(e)})
         except Exception as e:  # never leave the page hanging
             print(traceback.format_exc(), flush=True)
-            self._json(500, {"error": f"Server error: {e}"})
+            self._json(500, {"error": f"Something went wrong on the local server ({type(e).__name__}).", "hint": "Try again. The details are in server.log."})
         return True
 
     def do_POST(self):
@@ -789,13 +898,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self._json(403, {"error": "Cross-origin writes are not allowed."})
         length = self._length()
         if length <= 0 or length > MAX_BODY:
-            return self._json(413, {"error": "Body is empty or too large."})
+            return self._json(413, {"error": "Not saved: the data is empty or larger than 20 MB.", "hint": "Download your unsaved changes and remove large notes or attachments."})
         try:
             data = json.loads(self.rfile.read(length).decode("utf-8"))
-            if not isinstance(data, dict) or not isinstance(data.get("apps"), list):
-                raise ValueError("expected an object with an 'apps' list")
         except ValueError as e:
-            return self._json(400, {"error": f"Invalid data: {e}"})
+            return self._json(400, {"error": f"Invalid data: {e}", "hint": "The page sent something that is not JSON. Reload the page; your last saved version is unchanged."})
+        problems = validate_state(data)
+        if problems:
+            return self._json(400, {"error": "Not saved: the data has the wrong shape.", "problems": problems,
+                                    "hint": "Your last saved version is unchanged. Download your unsaved changes, then reload the page."})
         base = data.pop("baseRev", None)
         try:
             base = None if base is None else int(base)
@@ -826,7 +937,7 @@ class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
-CODE = ("server.py", "ai.py", "clips.py", "fetcher.py", "resume_export.py", "fontmetrics.py")
+CODE = ("server.py", "ai.py", "clips.py", "fetcher.py", "resume_export.py", "fontmetrics.py", "search.py", "safeio.py")
 
 
 def code_watcher():

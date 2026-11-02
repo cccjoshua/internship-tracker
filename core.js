@@ -510,6 +510,18 @@
     return out;
   }
 
+  /* What a failed save means for the page. status 0 = the request never reached the server.
+     'offline' and 'server' are retried with backoff; 'rejected' and 'corrupt' are not (retrying cannot fix them). */
+  function saveFailure(status) {
+    if (!status) return 'offline';
+    if (status === 409) return 'conflict';
+    if (status === 503) return 'corrupt';
+    if (status >= 400 && status < 500) return 'rejected';
+    return 'server';
+  }
+  const RETRY_SECONDS = [5, 15, 60];
+  const retryDelay = (n) => RETRY_SECONDS[Math.min(Math.max(0, n), RETRY_SECONDS.length - 1)];
+
   return { WEIGHT_KEYS, SKILL_NAMES, DEFAULTS, inferTrack, degreesOf, sponsorOf, trackOf, daysBetween, components, score, action, merge3, mergeById, mergeSet, mergeObject, mergeDeep, stable,
-    FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, nk, splitTerms, factCheck, OPT_EXCLUDED };
+    FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, nk, splitTerms, factCheck, OPT_EXCLUDED, saveFailure, retryDelay };
 });

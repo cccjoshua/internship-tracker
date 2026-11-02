@@ -163,6 +163,18 @@ class StudioTest(unittest.TestCase):
         flags = [b["unverified"] for b in r["result"]["experience"][0]["bullets"]]
         self.assertEqual(flags, [False, True, True])
 
+    def test_contact_details_are_never_sent_to_claude(self):
+        contact = {"name": "Test Person", "email": "private.person@example.edu", "phone": "+1 555 010 0199",
+                   "linkedin": "linkedin.com/in/private-person-x", "github": "github.com/private-person-x", "website": "private-person.example", "location": "Houston, TX"}
+        self.req("POST", "/api/ai/key", {"key": KEY})
+        self.req("PUT", "/api/profile", {"profile": dict(PROFILE, basics=contact), "baseRev": 0})
+        self.j("POST", "/api/ai/analyze", self.job())
+        self.assertEqual(self.j("POST", "/api/ai/tailor", self.job(track="DA"))[0], 200)
+        sent = json.dumps(self.calls)
+        for k in ("email", "phone", "linkedin", "github", "website"):
+            self.assertNotIn(contact[k], sent, k)
+        self.assertNotIn("HIDDEN ENTRY POINT", sent)
+
     def test_tailor_follows_the_activities_choice_and_one_page_budget(self):
         self.req("POST", "/api/ai/key", {"key": KEY})
         self.j("POST", "/api/ai/analyze", self.job())

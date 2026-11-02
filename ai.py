@@ -29,6 +29,7 @@ import urllib.error
 import urllib.request
 
 import fetcher
+import safeio
 
 API = "https://api.anthropic.com/v1"
 VERSION = "2023-06-01"
@@ -76,13 +77,7 @@ def _read(path, default=None):
 
 
 def _write(path, obj, private=False):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-", suffix=".json")
-    with os.fdopen(fd, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=1)
-    if private:
-        os.chmod(tmp, 0o600)
-    os.replace(tmp, path)
+    safeio.write_json(path, obj, indent=1, private=private)
 
 
 def now():

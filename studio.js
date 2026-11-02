@@ -1042,7 +1042,7 @@ async function tailor() {
     ev.preventDefault();
     const track = $('#tlTrack').value, instructions = $('#tlIns').value, inc = $('#tlPost').checked;
     I.dlg.close();
-    if (inc !== cfg.includePosting) { try { AI.status = await api('POST', 'api/ai/config', { includePosting: inc }); } catch (_) { /* ignore */ } }
+    if (inc !== cfg.includePosting) { try { AI.status = await api('POST', 'api/ai/config', { includePosting: inc }); } catch (e) { I.toast('Could not save this choice: ' + e.message + ' Try again.'); } }
     ST.busy = 'tailor'; ST.busyKey = J.key; I.render();
     try {
       if (ST.model) await saveVersion('Before tailoring', 'you', J, ST.model);
@@ -1090,7 +1090,7 @@ async function exportDoc(model, fmt, template, after, kind) {
     const blob = await r.blob(), a = document.createElement('a');
     a.href = URL.createObjectURL(blob); a.download = `${name}.${fmt}`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     if (after) await after(name);
-    try { const d = await api('GET', 'api/job?key=' + encodeURIComponent(J.key)); const st = JOBS.get(J.key); if (st) { st.resume = d.resume; st.letter = d.letter; } } catch (_) { /* state refreshes on the next load */ }
+    try { const d = await api('GET', 'api/job?key=' + encodeURIComponent(J.key)); const st = JOBS.get(J.key); if (st) { st.resume = d.resume; st.letter = d.letter; } } catch (_) { I.toast('Exported. The “exported” mark updates after a reload.'); }
     I.loadKit(); if (JOB && JOB.key === J.key) I.render();
     I.toast(`Downloaded ${name}.${fmt} · a copy is in data/exports`);
   } catch (e) { I.toast(e.message); }

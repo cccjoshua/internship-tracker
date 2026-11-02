@@ -46,11 +46,11 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.jreq("GET", "/api/state"), (200, None))
         code, res = self.jreq("PUT", "/api/state", {"apps": [], "baseRev": 0})
         self.assertEqual((code, res["rev"]), (200, 1))
-        code, res = self.jreq("PUT", "/api/state", {"apps": [{"id": "a"}], "baseRev": 1})
+        code, res = self.jreq("PUT", "/api/state", {"apps": [{"id": "a", "status": "saved"}], "baseRev": 1})
         self.assertEqual(res["rev"], 2)
         code, res = self.jreq("PUT", "/api/state", {"apps": [], "baseRev": 1})  # stale
         self.assertEqual(code, 409)
-        self.assertEqual(res["state"]["apps"], [{"id": "a"}])  # the latest version comes back for merging
+        self.assertEqual(res["state"]["apps"], [{"id": "a", "status": "saved"}])  # the latest version comes back for merging
         code, res = self.jreq("PUT", "/api/state", {"apps": [], "listings": [1], "fetch": {}})
         self.assertNotIn("listings", server.load_state())  # listings never go into tracker.json
 
