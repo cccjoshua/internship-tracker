@@ -739,6 +739,7 @@ function studioPanel(J, st) {
     ${n && (n.changes || []).length ? `<details class="why rs-notes"><summary>What Claude changed (${n.changes.length})${(n.questions || []).length ? ` · <span class="warn-t">${plural(n.questions.length, 'question')} for you</span>` : ''}</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${(n.questions || []).length ? `<div class="notice"><span><b>Need from you:</b> ${n.questions.map(esc).join(' · ')} <a href="#profile">Add to Profile →</a></span></div>` : ''}
       ${(n.keywordsSkipped || []).length ? `<p class="sub">Left out (not supported by your Profile): ${n.keywordsSkipped.map(esc).join(', ')}</p>` : ''}</details>` : ''}
+    ${revisePanel(J, a, canTailor, why)}
     <div class="rs-grid"><div class="rs-left">${rsEditor(ST.model)}</div>
       <div class="rs-right"><div class="rs-sticky"><div class="row rs-exp"><span id="rsFit">${fitText()}</span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-jb="docx">.docx</button><button type="button" data-jb="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-jb="copy">Copy text</button></div>
         <div id="rsPaper" class="rs-paper">${paper(ST.model, ST.fit && ST.fit.size)}</div><div id="rsKw" class="rs-kw">${kwPanel()}</div><div id="rsChecks">${checksBox(resumeChecks(ST.model, ST.fit), 'Resume checklist')}</div></div></div></div></section>
@@ -1043,6 +1044,45 @@ function syncApp(app, a) {
   if (!app.deadline && a.timing && /^\d{4}-\d{2}-\d{2}$/.test(a.timing.deadline || '')) { app.deadline = a.timing.deadline; ch = true; }
   if (ch) I.save();
 }
+/* One Claude call that writes or revises the resume for job J. revise: apply one request to the current draft and keep the rest. */
+async function runTailor(J, track, instructions, revise) {
+  const st = JOBS.get(J.key);
+  ST.busy = revise ? 'revise' : 'tailor'; ST.busyKey = J.key; I.render();
+  try {
+    const before = ST.model && JOB && JOB.key === J.key ? { model: I.clone(ST.model), notes: ST.notes ? I.clone(ST.notes) : null } : null;
+    if (ST.model) await saveVersion(revise ? 'Before revising' : 'Before tailoring', 'you', J, ST.model);
+    /* The current draft (or the master resume) goes along as approved wording, so tailoring improves it instead of starting over. */
+    const baseline = resumeText(ST.model || baseResume(P.data, track));
+    const r = await api('POST', 'api/ai/tailor', Object.assign(meta(J), { track, instructions, baseline, revise: !!revise }));
+    AI.status = r.status;
+    /* Bound to J: if you opened another job meanwhile, the result is saved to this job and that editor is not touched. */
+    const model = fromAI(r.result, P.data);
+    const trimmed = await fitOnePage(model, (st.job && st.job.analysis && st.job.analysis.keywords) || []);
+    const notes = { changes: r.result.changes, questions: r.result.questions, keywordsSkipped: r.result.keywordsSkipped, keywordsUsed: r.result.keywordsUsed, model: (AI.status.modelLabels[r.usage.model] || r.usage.model) + (r.usage.provider === 'pro' ? ' via Claude Pro' : ''), cost: r.usage.cost, track };
+    if (revise) notes.request = instructions.trim();
+    await saveVersion(`Claude · ${notes.model}${instructions ? (revise ? ' · revise: ' : ' · ') + instructions.slice(0, 40) : ''}`, 'ai', J, model, notes);
+    const unv = model.sections.reduce((n, s) => n + (s.entries || []).reduce((m, e) => m + e.bullets.filter((b) => needsCheck(b)).length, 0), 0);
+    const here = JOB && JOB.key === J.key;
+    if (here) { ST.model = model; ST.notes = notes; ST.trimmed = trimmed; ST.undo = revise && before ? Object.assign(before, { key: J.key }) : null; ST.revText = revise ? '' : ST.revText; scheduleFit(); }
+    I.toast(`${here ? (revise ? 'Revised' : 'Tailored') : `Resume for ${J.company} ${revise ? 'revised' : 'tailored'}`} · ${usedText(r.usage)}${trimmed.length ? ' · trimmed to one page' : ''}${unv ? ` · ${unv} bullet${unv > 1 ? 's' : ''} to check` : ''}`);
+  } catch (e) { I.toast(e.message); }
+  finally { ST.busy = ''; ST.busyKey = null; I.render(); }
+}
+/* Ask Claude for a change in your own words, applied to the current draft. Sits under the resume header once there is a draft. */
+const REVISE_IDEAS = ['Use more of the posting’s required skills, where true', 'Stronger numbers and results', 'Shorten every bullet to one line', 'Swap in my most relevant project'];
+function revisePanel(J, a, canTailor, why) {
+  if (!a) return '';
+  const busy = ST.busy === 'revise' && ST.busyKey === J.key, undo = ST.undo && ST.undo.key === J.key;
+  const req = ST.notes && ST.notes.request;
+  return `<form class="revise" id="rvForm" aria-label="Ask Claude to revise this resume">
+    <label for="rvIns" class="rv-l"><b>Ask Claude to revise</b><span class="sub">Describe the change. Claude edits this draft, keeps the rest, and still uses only your Profile’s facts.</span></label>
+    <div class="rv-box"><textarea id="rvIns" rows="2" maxlength="1500" placeholder="e.g. Lead with my internship and mention SQL in its first bullet" ${busy ? 'disabled' : ''}>${esc(ST.revText || '')}</textarea>
+      <button class="btn primary" type="submit" ${canTailor && !busy ? '' : 'disabled'} title="${esc(why || '')}">${busy ? `Revising… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : 'Revise'}</button></div>
+    <div class="rv-foot"><div class="rv-ideas" role="group" aria-label="Ideas">${REVISE_IDEAS.map((x) => `<button type="button" class="chip rv-idea" data-rv="${esc(x)}" ${busy ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
+      <span class="sub">${why ? esc(why) : `${usesPro('tailor') ? 'Claude Pro · no API cost' : 'about the cost of a tailor'} · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}↵ to send`}</span></div>
+    ${req || undo ? `<div class="rv-last">${req ? `<span class="sub">Last request: “${esc(req)}”</span>` : ''}${undo ? `<button class="btn sm ghost" type="button" data-jb="rv-undo">Undo revision</button>` : ''}</div>` : ''}
+  </form>`;
+}
 async function tailor() {
   const J = JOB, st = JOBS.get(J.key);
   const trackOpts = TRACKS.map((t) => `<option value="${t}" ${t === J.track ? 'selected' : ''}>${t} · ${I.TRACK_NAME[t]}</option>`).join('');
@@ -1059,23 +1099,7 @@ async function tailor() {
     const track = $('#tlTrack').value, instructions = $('#tlIns').value, inc = $('#tlPost').checked;
     I.dlg.close();
     if (inc !== cfg.includePosting) { try { AI.status = await api('POST', 'api/ai/config', { includePosting: inc }); } catch (e) { I.toast('Could not save this choice: ' + e.message + ' Try again.'); } }
-    ST.busy = 'tailor'; ST.busyKey = J.key; I.render();
-    try {
-      if (ST.model) await saveVersion('Before tailoring', 'you', J, ST.model);
-      /* The current draft (or the master resume) goes along as approved wording, so tailoring improves it instead of starting over. */
-      const baseline = resumeText(ST.model || baseResume(P.data, track));
-      const r = await api('POST', 'api/ai/tailor', Object.assign(meta(J), { track, instructions, baseline }));
-      AI.status = r.status;
-      /* Bound to J: if you opened another job meanwhile, the result is saved to this job and that editor is not touched. */
-      const model = fromAI(r.result, P.data);
-      const trimmed = await fitOnePage(model, (st.job && st.job.analysis && st.job.analysis.keywords) || []);
-      const notes = { changes: r.result.changes, questions: r.result.questions, keywordsSkipped: r.result.keywordsSkipped, keywordsUsed: r.result.keywordsUsed, model: (AI.status.modelLabels[r.usage.model] || r.usage.model) + (r.usage.provider === 'pro' ? ' via Claude Pro' : ''), cost: r.usage.cost };
-      await saveVersion(`Claude · ${notes.model}${instructions ? ' · ' + instructions.slice(0, 40) : ''}`, 'ai', J, model, notes);
-      const unv = model.sections.reduce((n, s) => n + (s.entries || []).reduce((m, e) => m + e.bullets.filter((b) => needsCheck(b)).length, 0), 0);
-      if ((JOB && JOB.key === J.key)) { ST.model = model; ST.notes = notes; ST.trimmed = trimmed; scheduleFit(); }
-      I.toast(`${(JOB && JOB.key === J.key) ? 'Tailored' : `Resume for ${J.company} tailored`} · ${usedText(r.usage)}${trimmed.length ? ' · trimmed to one page' : ''}${unv ? ` · ${unv} bullet${unv > 1 ? 's' : ''} to check` : ''}`);
-    } catch (e) { I.toast(e.message); }
-    finally { ST.busy = ''; ST.busyKey = null; I.render(); }
+    await runTailor(J, track, instructions);
   });
 }
 async function rewrite(bid) {
@@ -1199,6 +1223,12 @@ async function jobAction(k) {
   if (k === 'paste-cancel') { ST.paste = false; ST.pasteText = ''; return I.render(); }
   if (k === 'analyze-paste') { const t = ($('#jbPaste') || {}).value || ''; if (t.trim().length < 200) return I.toast('Paste the full job description (at least a few paragraphs).'); return analyze(t); }
   if (k === 'tailor') return tailor();
+  if (k === 'rv-undo') {
+    const u = ST.undo; if (!u || u.key !== J.key) return;
+    await saveVersion('Revision undone', 'you'); ST.model = u.model; ST.notes = u.notes; ST.undo = null; ST.trimmed = null;
+    try { await putDoc('resume', J, ST.model, { notes: ST.notes || {} }); I.loadKit(); } catch (_) { scheduleSave(); }
+    scheduleFit(); I.render(); return I.toast('Revision undone · the revised draft is kept as a version');
+  }
   if (k === 'base') {
     if (!P.data || !P.data.basics.name) return I.toast('Fill in your Profile first.');
     if (ST.model) await saveVersion('Before reset to master', 'you');
@@ -1456,5 +1486,26 @@ I.HOOKS.afterRender.push((v) => {
   if (v === 'profile') { const sub = location.hash.split('/')[1]; if (sub && !rProfile.scrolled) { rProfile.scrolled = true; const el = document.getElementById('s-' + sub); if (el) el.scrollIntoView({ block: 'start' }); } }
   if (v !== 'profile') rProfile.scrolled = false;
 });
+/* Revise box: keep the typed request across re-renders, fill it from an idea, send with the button or ⌘↵ / Ctrl+↵. */
+function sendRevise() {
+  const J = JOB, i = $('#rvIns'); if (!J || !i) return;
+  const text = i.value.trim();
+  if (!text) { i.focus(); return I.toast('Write what you want changed first.'); }
+  if (ST.busy) return;
+  const track = (ST.notes && ST.notes.track) || J.track;
+  ST.revText = i.value;
+  return runTailor(J, track, text, true);
+}
+document.addEventListener('input', (e) => { if (e.target.id === 'rvIns') ST.revText = e.target.value; });
+document.addEventListener('submit', (e) => { if (e.target.id === 'rvForm') { e.preventDefault(); sendRevise(); } });
+document.addEventListener('keydown', (e) => { if (e.target.id === 'rvIns' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); sendRevise(); } });
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-rv]'); if (!b) return;
+  const i = $('#rvIns'); if (!i) return;
+  const v = i.value.trim(), add = b.dataset.rv;
+  i.value = v ? (v.replace(/[.;,\s]+$/, '') + '; ' + add.charAt(0).toLowerCase() + add.slice(1)) : add;
+  ST.revText = i.value; i.focus(); i.setSelectionRange(i.value.length, i.value.length);
+});
+
 window.IATStudio = { boot: async () => { await Promise.all([loadProfile(), refreshStatus()]); }, get P() { return P; }, get ST() { return ST; }, baseResume, fromAI, resumeText };
 })();

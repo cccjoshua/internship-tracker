@@ -57,6 +57,20 @@ const api = async (p, path) => p.evaluate(async (u) => (await fetch(u, { cache: 
   if (shots) await p.screenshot({ path: shots + '/e2e-resume.png' });
   step('tailored (stub), edited a bullet, autosaved');
 
+  // 4b. revise in your own words, then undo it
+  await p.locator('.rv-idea').first().click();
+  assert.equal(await p.inputValue('#rvIns'), await p.locator('.rv-idea').first().getAttribute('data-rv'), 'an idea fills the box');
+  await p.fill('#rvIns', 'Put SQL first');
+  await p.press('#rvIns', 'Control+Enter');
+  await p.locator('.rv-last', { hasText: 'Last request: “Put SQL first”' }).waitFor({ timeout: 15000 });
+  assert.equal(await p.inputValue('#rvIns'), '', 'the box clears after a revision');
+  assert.ok(!(await p.inputValue('textarea[data-rs*="bullets"] >> nth=0')).includes('(edited)'), 'the revised draft replaced the edited one');
+  await p.locator('[data-jb="rv-undo"]').click();
+  await p.waitForFunction(() => [...document.querySelectorAll('textarea[data-rs*="bullets"]')].some((t) => t.value.includes('(edited)')));
+  assert.equal(await p.locator('[data-jb="rv-undo"]').count(), 0, 'undo is offered once');
+  if (shots) await p.screenshot({ path: shots + '/e2e-revise.png' });
+  step('revised with a request (⌘/Ctrl+↵), then undone');
+
   // 5. race: edit, then switch to another job before the debounce fires; the edit must land on the right job only
   await bullet.fill('RACE EDIT for Mesa Verde');
   const other = await p.evaluate(() => window.IAT.S.apps.find((a) => a.company === 'Copperline Telecom').id);

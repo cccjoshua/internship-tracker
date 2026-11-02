@@ -905,7 +905,7 @@ ACTIVITIES_RULE = {
 }
 
 
-def tailor(meta, profile, track, lead_with="", instructions="", rules_extra=None, activities="auto", baseline=""):
+def tailor(meta, profile, track, lead_with="", instructions="", rules_extra=None, activities="auto", baseline="", revise=False):
     rec = load_job(meta["key"]) or {}
     a = rec.get("analysis")
     if not a:
@@ -923,7 +923,14 @@ def tailor(meta, profile, track, lead_with="", instructions="", rules_extra=None
             f"Keywords (* = importance 1-3): {kw}"]
     if c.get("includePosting") and rec.get("text"):
         job.append(f"\nPosting excerpt:\n<posting>\n{rec['text'][:EXCERPT_CHARS]}\n</posting>")
-    if instructions:
+    if revise and not (instructions.strip() and baseline.strip()):
+        raise AIError("Write what you want changed, and have a draft to revise.", 422)
+    if revise:
+        job.append(f"\nREVISION REQUEST from the candidate (apply it to the CURRENT DRAFT): {instructions.strip()[:1500]}\n"
+                   "Change only what this request needs and keep every other section, entry and bullet as it is in the draft. "
+                   "The truth rules still win: if the request asks for something the profile does not support, do the supported part "
+                   "and say in \"changes\" what you could not do and why.")
+    elif instructions:
         job.append(f"\nCandidate's instructions for this version: {instructions.strip()[:1500]}")
     if baseline:
         job.append(f"\nCURRENT DRAFT (approved wording; improve it for this posting, do not copy it blindly):\n<draft>\n{baseline.strip()[:6000]}\n</draft>")

@@ -218,6 +218,21 @@ class StudioTest(unittest.TestCase):
             self.assertIn(phrase, system)
             self.assertIn("fill one page", system)
 
+    def test_revise_applies_one_request_to_the_draft(self):
+        self.req("POST", "/api/ai/key", {"key": KEY})
+        self.req("PUT", "/api/profile", {"profile": PROFILE, "baseRev": 0})
+        self.j("POST", "/api/ai/analyze", self.job())
+        self.assertEqual(self.j("POST", "/api/ai/tailor", self.job(track="SWE", revise=True, baseline="DRAFT"))[0], 422)  # no request
+        code, _ = self.j("POST", "/api/ai/tailor", self.job(track="SWE", revise=True, baseline="MY DRAFT LINE", instructions="Put SQL first"))
+        self.assertEqual(code, 200)
+        body = self.calls[-1]
+        user = body["messages"][0]["content"] if isinstance(body["messages"][0]["content"], str) else " ".join(c.get("text", "") for c in body["messages"][0]["content"])
+        self.assertIn("REVISION REQUEST from the candidate (apply it to the CURRENT DRAFT): Put SQL first", user)
+        self.assertIn("keep every other section", user)
+        self.assertIn("MY DRAFT LINE", user)
+        system = " ".join(b["text"] for b in body["system"])
+        self.assertNotIn("SECRET UNCONFIRMED CLAIM", system)  # the truth rules and profile filter still apply
+
     def test_tailor_sends_the_current_draft_and_the_selection_rules(self):
         self.req("POST", "/api/ai/key", {"key": KEY})
         self.req("PUT", "/api/profile", {"profile": PROFILE, "baseRev": 0})
