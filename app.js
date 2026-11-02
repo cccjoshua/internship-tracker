@@ -359,7 +359,7 @@ function findDup(company, role, url, exceptId) {
 }
 const inferTrack = (role) => { const t = C.inferTrack(role); return TRACKS.includes(t) ? t : ''; };
 /* Every listing scored under the current settings (cached until data or settings change). */
-const UI = { expanded: new Set(), limits: {}, attnAll: false, tableLimit: 25, scoredRev: 0, cache: null, select: false, selected: new Set(), closedNotice: null, editGoal: null, baseline: null, peek: null, lastPick: null };
+const UI = { justSaved: new Set(), expanded: new Set(), limits: {}, attnAll: false, tableLimit: 25, scoredRev: 0, cache: null, select: false, selected: new Set(), closedNotice: null, editGoal: null, baseline: null, peek: null, lastPick: null };
 function scored() {
   const key = UI.scoredRev + '|' + iso(TODAY) + '|' + JSON.stringify(S.settings) + '|' + S.apps.length + '|' + S.dismissed.length + '|' + S.manualListings.length;
   if (UI.cache && UI.cache.key === key) return UI.cache.list;
@@ -770,9 +770,12 @@ R.inbox = () => {
     const toks = qTokens(t), ph = sNorm(t), rel = (l) => { const cr = sNorm(l.company + ' ' + l.role); return cr.includes(ph) ? 3 : qMatch(cr, toks) ? 2 : qMatch(sNorm(l.company + ' ' + l.role + ' ' + l.location), toks) ? 1 : 0; };
     L = L.filter((l) => qMatch(listingHay(l), toks)); L.forEach((l) => { l._rel = rel(l); });
   }
+  /* A listing you just saved stays in place (now marked Saved, with its next step) until you leave the page,
+     so it does not vanish from under the pointer. */
+  const gone = (l) => !!l.dup && !UI.justSaved.has(l.id);
   const relCmp = (a, b) => t ? (b._rel || 0) - (a._rel || 0) : 0;
-  L = L.slice().sort((a, b) => (!!a.dup - !!b.dup) || relCmp(a, b) || b.total - a.total);
-  if (S.ui.lsort === 'newest') L.sort((a, b) => (!!a.dup - !!b.dup) || relCmp(a, b) || (b.posted || '').localeCompare(a.posted || '') || b.total - a.total);
+  L = L.slice().sort((a, b) => (gone(a) - gone(b)) || relCmp(a, b) || b.total - a.total);
+  if (S.ui.lsort === 'newest') L.sort((a, b) => (gone(a) - gone(b)) || relCmp(a, b) || (b.posted || '').localeCompare(a.posted || '') || b.total - a.total);
   const ex = F.fetch && F.fetch.excluded ? Object.entries(F.fetch.excluded).sort((a, b) => b[1] - a[1]) : [];
   const exN = ex.reduce((s, e) => s + e[1], 0);
   /* One status line: count · refresh state · a quiet refresh button, and a single View menu for sort, filters and selection. */
@@ -789,15 +792,15 @@ R.inbox = () => {
   const rest = L;
   const fOn = filtersOn();
   const groups = fOn ? [['results', 'Results', [S.ui.q ? `“${S.ui.q.trim()}”` : '', S.ui.track ? TRACK_NAME[S.ui.track] || S.ui.track : '', S.ui.sponsor ? SPONSOR[S.ui.sponsor] : ''].filter(Boolean).join(' · '), L, true]] : [
-    ['new', 'New since the last refresh', '', rest.filter((l) => !l.dup && l.isNew && l.total >= minS), true],
-    ['top', 'Top priority', `priority ${topS}+`, rest.filter((l) => !l.dup && !l.isNew && l.total >= topS), true],
-    ['more', 'Worth a look', `priority ${minS}–${topS - 1}`, rest.filter((l) => !l.dup && !l.isNew && l.total >= minS && l.total < topS), false],
-    ['low', 'Lower priority', `below ${minS}`, rest.filter((l) => !l.dup && l.total < minS), false],
-    ['dup', 'Already tracking', '', rest.filter((l) => l.dup), false]].filter((g) => g[3].length);
+    ['new', 'New since the last refresh', '', rest.filter((l) => !gone(l) && l.isNew && l.total >= minS), true],
+    ['top', 'Top priority', `priority ${topS}+`, rest.filter((l) => !gone(l) && !l.isNew && l.total >= topS), true],
+    ['more', 'Worth a look', `priority ${minS}–${topS - 1}`, rest.filter((l) => !gone(l) && !l.isNew && l.total >= minS && l.total < topS), false],
+    ['low', 'Lower priority', `below ${minS}`, rest.filter((l) => !gone(l) && l.total < minS), false],
+    ['dup', 'Already tracking', '', rest.filter((l) => gone(l)), false]].filter((g) => g[3].length);
   const vis = [];
   const body = `<div style="margin-top:12px">${appsSec}${A.length ? '<div style="height:12px"></div>' : ''}${groups.map(([k, title, hint, items, def]) => {
     const isOpen = k === 'results' || (open[k] !== undefined ? open[k] : def), lim = UI.limits['sec-' + k] || (k === 'results' ? 50 : 25);
-    if (isOpen) vis.push(...items.slice(0, lim).filter((l) => !l.dup));
+    if (isOpen) vis.push(...items.slice(0, lim).filter((l) => !gone(l)));
     if (k === 'results') return `<section class="lsec" aria-label="Search results"><div class="lsec-h"><span>${plural(items.length, 'result')}</span><span class="hint">${esc(hint)}${items.some((l) => l.dup) ? ' · already-tracked jobs last' : ''}</span><button class="btn sm ghost" type="button" data-action="clear-filters" style="margin-left:auto">Clear search</button></div>
       ${items.slice(0, lim).map(lrow).join('')}${items.length > lim ? `<button class="more" type="button" data-more="sec-${k}">Show ${Math.min(50, items.length - lim)} more of ${items.length - lim}</button>` : ''}</section>`;
     return `<section class="lsec" aria-label="${esc(title)}"><button class="lsec-h" type="button" data-sec="${k}" aria-expanded="${isOpen}">${esc(title)} <span class="cnt">${items.length}</span>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}<span class="car" aria-hidden="true">›</span></button>
@@ -845,7 +848,7 @@ function srow(a) {
 /* The one fact that most changes the decision for a listing, if any. */
 function decisive(l) {
   const [ak] = action(l);
-  if (l.dup) return `<span>Tracking · ${esc(LABEL[l.dup.status])}</span>`;
+  if (l.dup) return UI.justSaved.has(l.id) ? `<span class="saved-t">✓ ${esc(LABEL[l.dup.status])} · in Applications</span>` : `<span>Tracking · ${esc(LABEL[l.dup.status])}</span>`;
   if (ak === 'blocked') return `<span class="neg" title="${esc(((eligOf(l) || {}).blockers || []).join('; '))}">Not eligible</span>`;
   const n = daysFrom(l.deadline);
   if (n !== null && n <= 7) return dlTag(l.deadline);
@@ -942,11 +945,10 @@ const docked = () => route() === 'inbox' && window.innerWidth >= DOCK_MIN && !UI
 function renderPeek() {
   const el = $('#peek'), it = peekItem(), dock = docked();
   document.body.classList.toggle('peek-open', !!it && !dock);
-  document.body.classList.toggle('dock', dock);
+  document.body.classList.toggle('dock', dock && !!it); // the pane docks only while a listing is selected
   if (!it) {
     if (UI.peek) UI.peek = null;
-    if (dock) { el.hidden = false; el.innerHTML = `<div class="pk-empty"><p><b>No listing selected</b></p><p class="sub">Select a listing to see why it ranks where it does, what to add to your resume, and its progress. ${'<span class="kbd">J</span> <span class="kbd">K</span>'} move through the list.</p></div>`; return; }
-    el.hidden = true; el.innerHTML = ''; return;
+    document.body.classList.remove('dock'); el.hidden = true; el.innerHTML = ''; return;
   }
   const { a, l } = it, x = a || l, ref = UI.peek, key = listingKey({ url: x.url, company: x.company, role: x.role }), k = KIT[key] || {};
   const dl = x.deadline, sp = (a ? a.sponsor : l.sponsor), id = a ? a.id : l.id;
@@ -964,7 +966,7 @@ function renderPeek() {
         ${A.timing && (A.timing.term || A.timing.deadline) ? `<dt>Timing</dt><dd>${esc([A.timing.term, A.timing.deadline ? 'apply by ' + fmt(A.timing.deadline) : ''].filter(Boolean).join(' · '))}</dd>` : ''}
         ${(A.requiredSkills || []).length ? `<dt>Required</dt><dd>${esc(A.requiredSkills.slice(0, 8).join(', '))}</dd>` : ''}</dl>`;
   el.innerHTML = `<div class="pk-head"><div class="pk-t"><h2 id="pkTitle" tabindex="-1">${esc(x.company)}</h2><p>${esc(x.role)}</p></div>
-      ${dock ? '' : '<button class="btn icon ghost" type="button" data-pkclose aria-label="Close preview" title="Close (Esc)">✕</button>'}</div>
+      <button class="btn icon ghost" type="button" data-pkclose aria-label="Close preview" title="Close (Esc)">✕</button></div>
     <div class="pk-meta">${meta}</div>
     <div class="pk-acts">${primaryFor(ref, 'btn')}${secondary}${safeUrl(x.url) ? link(x.url, 'Posting ↗', 'btn ghost') : ''}${moreBtn(ref, x.company).replace('btn sm ghost icon', 'btn ghost icon')}</div>
     <a class="pk-open" href="${jobHref(id)}"><span><b>Open the job page</b><span class="sub">Analyze the posting, tailor the resume, write the cover letter, apply</span></span><span aria-hidden="true">→</span></a>
@@ -972,7 +974,7 @@ function renderPeek() {
     <section class="pk-sec"><h3>${l ? `Listing priority ${l.total}` : typeof a.score === 'number' ? `Listing priority ${a.score} when saved` : 'Priority'}</h3>${l ? `${parts}${evidence(l)}${skillLine(l)}` : `<p class="sub">Added by hand, so there is no listing score.</p>`}</section>
     <section class="pk-sec"><h3>Claude’s analysis</h3>${ai}</section>
     ${a && a.notes ? `<section class="pk-sec"><h3>Notes</h3><p class="pk-notes">${esc(a.notes)}</p></section>` : ''}
-    <p class="pk-keys"><span class="kbd">J</span> <span class="kbd">K</span> next / previous · <span class="kbd">Esc</span> ${dock ? 'clear' : 'close'}</p>`;
+    <p class="pk-keys"><span class="kbd">J</span> <span class="kbd">K</span> next / previous · <span class="kbd">Esc</span> close</p>`;
   el.hidden = false;
 }
 
@@ -1114,11 +1116,13 @@ function render() {
   if (v === 'dashboard') fitChart();
   for (const f of HOOKS.afterRender) f(v);
   if (!['inbox', 'dashboard'].includes(v)) UI.peek = null;
+  if (v !== 'inbox') UI.justSaved.clear();
   renderPeek();
   spyToc();
   $('#q').placeholder = v === 'inbox' ? 'Search company, role, location, skill' : 'Search company, role, notes';
   if (v !== 'settings') UI.baseline = null;
   if (v !== lastView && lastView !== null) window.scrollTo(0, 0);
+  if (v !== lastView && document.activeElement && document.activeElement.closest && document.activeElement.closest('.rail')) $('#view').focus({ preventScroll: true });
   lastView = v;
 }
 /* Settings are panes, one per category (like System Settings): the sidebar list picks the pane. */
@@ -1142,8 +1146,8 @@ function spyToc() {
 }
 function focusCard(id) { const el = $(`.card[data-id="${CSS.escape(id)}"]`); if (el) el.focus(); }
 /* Every change you can take back shows Undo for 10 seconds (the timer pauses while the pointer or focus is on it); ⌘Z / Ctrl+Z works any time. */
-function toast(msg, undoable) {
-  const t = $('#toast'); t.innerHTML = `<span>${esc(msg)}</span>${undoable ? `<button type="button" class="tbtn" data-action="undo">Undo</button><span class="tkey">${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘Z' : 'Ctrl+Z'}</span>` : ''}`;
+function toast(msg, undoable, link) {
+  const t = $('#toast'); t.innerHTML = `<span>${esc(msg)}</span>${link ? `<a class="tbtn" href="${esc(link[0])}">${esc(link[1])}</a>` : ''}${undoable ? `<button type="button" class="tbtn" data-action="undo">Undo</button><span class="tkey">${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘Z' : 'Ctrl+Z'}</span>` : ''}`;
   t.hidden = false; toast.ms = undoable ? 10000 : 3500; toastTimer();
 }
 function toastTimer() { clearTimeout(toast.t); toast.t = setTimeout(() => { $('#toast').hidden = true; }, toast.ms); }
@@ -1411,12 +1415,12 @@ function trackListings(ids, status) {
       l.matched.length ? `Skills to highlight: ${l.matched.join(', ')}.` : '', l.missing.length ? `Not on resume: ${l.missing.join(', ')}.` : ''].filter(Boolean).join(' ');
     const a = blankApp({ company: l.company, role: l.role, track: tr, location: l.location, url: safeUrl(l.url), posted: l.posted, deadline: l.deadline || '', sponsor: l.sponsor, sample: l.sample, priority: l.total >= 80 ? 3 : l.total >= 65 ? 2 : 1, notes: note, score: l.total, listingId: l.id, history: [{ s: 'saved', d: iso(TODAY) }] });
     if (status === 'applied') setStatus(a, 'applied');
-    S.apps.push(a); added.push(l.company); UI.expanded.delete(id); UI.selected.delete(id);
+    S.apps.push(a); added.push(l.company); UI.expanded.delete(id); UI.selected.delete(id); UI.justSaved.add(id);
   }
   if (!added.length) { undoStack.pop(); return; }
   UI.scoredRev++; save(); render();
   const nS = savedApps().length, lim = +S.settings.savedLimit || 15, over = nS > lim ? ` · ${nS} saved, over your limit of ${lim}` : '';
-  toast(added.length > 1 ? `${added.length} listings saved${over}` : status === 'applied' ? `${added[0]} added as Applied today · ${appliedOn(iso(TODAY))}/${+S.settings.dailyGoal || 3} today` : `${added[0]} saved · added to today’s queue${over}`, true);
+  toast(added.length > 1 ? `${added.length} listings saved to Applications${over}` : status === 'applied' ? `${added[0]} added to Applications as Applied today · ${appliedOn(iso(TODAY))}/${+S.settings.dailyGoal || 3} today` : `${added[0]} saved to Applications › Saved${over}`, true, ['#board', 'Show']);
   notifyCheck();
 }
 function dismissListings(ids, reason) {
