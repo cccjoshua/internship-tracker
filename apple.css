@@ -692,3 +692,6 @@ dialog.pal .pal-field input:focus-visible,dialog.pal .pal-field input:focus{outl
 @media (min-width:1100px){body.dock .peek{animation:pk-dock .18s cubic-bezier(.2,.8,.2,1)}}
 @keyframes pk-dock{from{opacity:0;transform:translateX(12px)}}
 @media (prefers-reduced-motion:reduce){body.dock .peek{animation:none}}
+/* Every row gets the same hover, saved ones included; the selected (peeking) row keeps its tint */
+.lrow.qsaved:hover,.tmatch li.qsaved:hover,.todo li:hover{background:var(--fill-3)}
+.lrow.peeking,.lrow.peeking:hover,.tmatch li.peeking,.tmatch li.peeking:hover,.todo li.peeking{background:var(--sel)}
