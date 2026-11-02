@@ -22,7 +22,7 @@
   /* System blue for tints, selection and focus (never for text on white: 4.0:1). --accent is the filled-button blue (4.7:1 with white). */
   --tint:#007AFF; --sel:color-mix(in srgb,#007AFF 12%,transparent); --sel-strong:color-mix(in srgb,#007AFF 18%,transparent);
   /* Application stages: grey → blue → indigo → purple → green, like system colours */
-  --st-saved:#77777C; --st-applied:#0064D2; --st-oa:#5856D6; --st-interview:#AF52DE; --st-offer:#1E7A34; --st-rejected:#77777C; --st-withdrawn:#77777C;
+  --st-saved:#77777C; --st-applied:#0064D2; --st-oa:#5856D6; --st-interview:#5856D6; --st-offer:#1E7A34; --st-rejected:#77777C; --st-withdrawn:#77777C;
   --good:#1E7A34; --warn:#C93400; --bad:#D70015; --hl:#FF9F0A; --hl-soft:#FFF4E5;
   --score-hi:#34C759; --score-mid:#FF9F0A; --score-lo:#AEAEB2;
   /* Elevation and materials */
@@ -44,7 +44,7 @@
   --bg:#1A1A1C; --surface:#242426; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
   --ink:#F5F5F7; --muted:#AEAEB2; --faint:#98989D; --line:#38383A; --line-strong:#48484A; --hair:rgba(255,255,255,.08);
   --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --tint:#0A84FF; --sel:color-mix(in srgb,#0A84FF 22%,transparent); --sel-strong:color-mix(in srgb,#0A84FF 30%,transparent); --accent-text:#64B5FF; --link:#64B5FF;
-  --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#BF5AF2; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
+  --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#5E5CE6; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
   --good:#30D158; --warn:#FF9F0A; --bad:#FF6961; --hl:#FF9F0A; --hl-soft:#3A2A10;
   --score-hi:#30D158; --score-mid:#FF9F0A; --score-lo:#636366;
   --card-shadow:none; --lift-shadow:0 0 0 .5px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.5);
@@ -55,7 +55,7 @@
   --bg:#1A1A1C; --surface:#242426; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
   --ink:#F5F5F7; --muted:#AEAEB2; --faint:#98989D; --line:#38383A; --line-strong:#48484A; --hair:rgba(255,255,255,.08);
   --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --tint:#0A84FF; --sel:color-mix(in srgb,#0A84FF 22%,transparent); --sel-strong:color-mix(in srgb,#0A84FF 30%,transparent); --accent-text:#64B5FF; --link:#64B5FF;
-  --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#BF5AF2; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
+  --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#5E5CE6; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
   --good:#30D158; --warn:#FF9F0A; --bad:#FF6961; --hl:#FF9F0A; --hl-soft:#3A2A10;
   --score-hi:#30D158; --score-mid:#FF9F0A; --score-lo:#636366;
   --card-shadow:none; --lift-shadow:0 0 0 .5px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.5);
@@ -584,3 +584,33 @@ dialog::backdrop{background:rgba(0,0,0,.2);-webkit-backdrop-filter:none;backdrop
 }
 @media (min-width:1100px){body.dock:has(#stubBanner) .peek{top:30px}}
 .peek .sk .chip.v-yes{background:var(--fill);color:var(--ink)}
+
+/* Applications: board columns shrink when empty; cards carry a quiet action; list filters use the selection tint */
+.board{gap:10px}
+.col{flex:1 1 0;min-width:200px;padding:0 8px 8px;min-height:0;background:var(--fill-3);border-radius:var(--r)}
+.col.is-empty,.col.collapsed{flex:0 0 132px;min-width:132px}
+.col .empty{border:0;padding:4px 6px 8px;text-align:left;color:var(--faint);font-size:12px}
+.col.over .empty{color:var(--accent-text)}
+.col h2{font-size:13px;padding:10px 4px 8px}
+.col h2 .dot{width:7px;height:7px}
+.card{border-radius:10px;padding:10px 12px;gap:4px;box-shadow:0 0 0 .5px var(--line),0 1px 2px rgba(0,0,0,.04)}
+.card:hover{box-shadow:0 0 0 .5px var(--line-strong),0 2px 6px rgba(0,0,0,.06)}
+.card-top strong{font-weight:590}
+.card .meta{font-size:12px;gap:2px 8px}
+.card .qacts{justify-content:space-between;margin:2px -6px -4px}
+.card .qacts .btn.plain{min-width:0;padding:0 6px;font-weight:590}
+.prio i{background:var(--fill-2)}.prio i.on{background:var(--muted)}
+.stagef{gap:2px;background:var(--fill);border-radius:7px;padding:2px}
+.stagef button{background:transparent;border:0;border-radius:5px;padding:3px 10px;font-size:12px;color:var(--ink)}
+.stagef button:hover{background:var(--fill-3)}
+.stagef button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:590;box-shadow:0 0 0 .5px var(--line),0 1px 2px rgba(0,0,0,.08)}
+:root[data-theme="dark"] .stagef button[aria-pressed="true"],:root[data-theme="dark"] .segctl a[aria-current]{background:var(--fill-2)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .stagef button[aria-pressed="true"],:root:not([data-theme="light"]) .segctl a[aria-current]{background:var(--fill-2)}}
+.stagef .c{color:var(--muted);opacity:1}
+.stwrap{display:inline-flex;align-items:center;gap:6px}
+.stwrap .dot{width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
+.stwrap select.stsel{color:var(--ink)!important;background-color:transparent!important;font-weight:400;padding:2px 18px 2px 4px;border-radius:6px;min-height:24px;font-size:13px}
+.stwrap select.stsel:hover{background-color:var(--fill-3)!important}
+.tsec.s-todo .tablewrap{border-color:var(--line)}
+td.rs{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsec-h .tsec-t{font-size:15px}

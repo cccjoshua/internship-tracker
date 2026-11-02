@@ -396,7 +396,7 @@ const upcomingRounds = (a) => (a.rounds || []).filter((r) => parse(r.date) && da
 /* ---------- small renderers ---------- */
 const stChip = (s) => `<span class="chip st s-${s}">${LABEL[s]}</span>`;
 const spChip = (s) => `<span class="chip v-${s}">${SPONSOR[s] || SPONSOR.unknown}</span>`;
-const prio = (p) => `<span class="prio" role="img" aria-label="Priority ${p} of 3">${[1, 2, 3].map((i) => `<i class="${i <= p ? 'on' : ''}"></i>`).join('')}</span>`;
+const prio = (p) => `<span class="prio" role="img" aria-label="Your priority ${p} of 3" title="Your priority: ${['', 'low', 'medium', 'high'][p] || p}">${[1, 2, 3].map((i) => `<i class="${i <= p ? 'on' : ''}"></i>`).join('')}</span>`;
 const opts = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('');
 const link = (u, txt, cls = 'btn sm ghost') => { u = safeUrl(u); return u ? `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${txt}</a>` : ''; };
 const eff = (now) => now ? '<span class="eff now" title="Takes effect as soon as you change it">Instant</span>' : '<span class="eff later" title="Takes effect from the next listings refresh">Next refresh</span>';
@@ -563,7 +563,7 @@ function urgency(a) {
 }
 function card(a) {
   let meta = '';
-  if (a.status === 'saved') { const old = savedDays(a) >= (+S.settings.savedStaleDays || 7); meta = (a.deadline ? `<span class="due ${dueCls(daysFrom(a.deadline))}">Deadline ${fmt(a.deadline)}</span>` : '<span>No deadline</span>') + `<span class="${old ? 'due soon' : ''}">Saved ${savedAgo(a)}</span>`; }
+  if (a.status === 'saved') { const old = savedDays(a) >= (+S.settings.savedStaleDays || 7); meta = (a.deadline ? `<span class="due ${dueCls(daysFrom(a.deadline))}">Deadline ${fmt(a.deadline)}</span>` : '') + `<span class="${old ? 'due soon' : ''}">Saved ${savedAgo(a)}</span>`; }
   else if (a.applied) meta = `<span>Applied ${ago(a.applied)}</span>`;
   if (a.status === 'applied' && quietDays(a) >= (+S.settings.followUpDays || 14)) meta += `<span class="due soon">No reply for ${quietDays(a)} days</span>`;
   if (followText(a) && !CLOSED.includes(a.status)) meta += `<span class="fu-done">✓ ${followText(a)}</span>`;
@@ -575,7 +575,7 @@ function card(a) {
     <div class="role">${esc(a.role)}</div>
     <div class="chips">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${a.sponsor !== 'unknown' ? spChip(a.sponsor) : ''}${CLOSED.includes(a.status) ? stChip(a.status) : ''}</div>
     <div class="meta">${meta}</div>
-    ${a.status === 'saved' ? `<div class="qacts">${primaryFor('a:' + a.id)}${moreBtn('a:' + a.id, a.company)}</div>` : ''}
+    ${a.status === 'saved' ? `<div class="qacts">${primaryFor('a:' + a.id, 'btn sm').replace('btn sm tint', 'btn sm plain')}${moreBtn('a:' + a.id, a.company)}</div>` : ''}
     <select class="move" data-status-for="${a.id}" aria-label="Move ${esc(a.company)} to stage">${opts(STAGES, a.status)}</select></li>`;
 }
 const COL_LIMIT = 6;
@@ -596,7 +596,7 @@ R.board = () => {
     const name = s === 'closed' ? 'Closed' : LABEL[s];
     if (s === 'closed' && !S.ui.closedOpen) return `<section class="col collapsed s-closed" data-drop="closed" aria-label="Closed, ${items.length} applications, collapsed"><h2><span class="dot"></span>Closed<span class="count">${items.length}</span></h2><button class="colbtn" type="button" data-action="closed-toggle">Show</button></section>`;
     const lim = UI.limits['col-' + s] || COL_LIMIT, vis = items.slice(0, lim);
-    return `<section class="col s-${s}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length ? `<ul class="cards">${vis.map(card).join('')}</ul>` : '<p class="empty">Drop a card here</p>'}${items.length > lim ? `<button class="colbtn" type="button" data-more="col-${s}">Show ${items.length - lim} more</button>` : ''}${s === 'closed' ? '<button class="colbtn" type="button" data-action="closed-toggle">Hide closed</button>' : ''}</section>`;
+    return `<section class="col s-${s}${items.length ? '' : ' is-empty'}" data-drop="${s}" aria-label="${name}, ${items.length} applications"><h2><span class="dot"></span>${name}<span class="count">${items.length}</span></h2>${items.length ? `<ul class="cards">${vis.map(card).join('')}</ul>` : '<p class="empty">None</p>'}${items.length > lim ? `<button class="colbtn" type="button" data-more="col-${s}">Show ${items.length - lim} more</button>` : ''}${s === 'closed' ? '<button class="colbtn" type="button" data-action="closed-toggle">Hide closed</button>' : ''}</section>`;
   }).join('')}</div>`;
 };
 function emptyState() {
@@ -632,7 +632,7 @@ const TSEC = {
     cols: [['company', 'Company · Role'], ['score', 'Score'], ['deadline', 'Deadline'], ['saved', 'Saved'], ['resume', 'Resume'], ['', ' ']],
     empty: 'Nothing saved. Press Save on a listing in New listings or the dashboard queue.' },
   active: { title: 'In progress', hint: 'applied, waiting or interviewing', filter: (a) => ['applied', 'oa', 'interview', 'offer'].includes(a.status), def: { key: 'action', dir: 1 },
-    cols: [['company', 'Company · Role'], ['status', 'Status'], ['applied', 'Applied'], ['action', 'Next action'], ['resume', 'Resume'], ['sponsor', 'Visa']],
+    cols: [['company', 'Company · Role'], ['status', 'Status'], ['applied', 'Applied'], ['action', 'Next action'], ['resume', 'Resume'], ['sponsor', 'Sponsors visa']],
     empty: 'No applications in progress yet.' },
   closed: { title: 'Closed', hint: 'rejected, withdrawn, no response, posting closed', filter: (a) => CLOSED.includes(a.status), def: { key: 'closed', dir: -1 },
     cols: [['company', 'Company · Role'], ['status', 'Status'], ['applied', 'Applied'], ['closed', 'Closed on'], ['resume', 'Resume']],
@@ -654,7 +654,7 @@ function sortRows(rows, { key, dir }) {
 const appliedCell = (a) => { if (!a.applied) return '—'; const n = -daysFrom(a.applied); return `${fmt(a.applied)}<span class="na-s">${n <= 0 ? 'today' : n + 'd ago'}</span>`; };
 const resumeCell = (a) => `<td class="rs" title="${esc(a.resume || resumeFor(a))}">${a.resume ? esc(a.resume) : `<span style="color:var(--faint)">${esc(resumeFor(a))} (base)</span>`}</td>`;
 const coCell = (a) => `<td class="co ${urgency(a)}"><button type="button" data-open="${a.id}">${esc(a.company)}</button><span class="sub2">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${esc(a.role)}</span></td>`;
-const stCell = (a) => `<td><select class="stsel s-${a.status}" data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES, a.status)}</select></td>`;
+const stCell = (a) => `<td><span class="stwrap s-${a.status}"><span class="dot" aria-hidden="true"></span><select class="stsel" data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES, a.status)}</select></span></td>`;
 function rowFor(k, a) {
   if (k === 'todo') {
     const n = daysFrom(a.deadline), d = savedDays(a), old = d >= (+S.settings.savedStaleDays || 7);
