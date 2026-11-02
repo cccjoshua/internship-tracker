@@ -186,7 +186,10 @@ _PUBLIC_OPENER = urllib.request.build_opener(_PublicRedirects)
 
 
 def strip_html(s):
-    s = re.sub(r"(?is)<style.*?</style>", " ", s or "")
+    # Page code is not posting text: on career sites like amazon.jobs it can fill most of the 14,000 characters
+    # sent for analysis and push the qualifications out. (Workday/Greenhouse/Lever API text has no such blocks.)
+    s = re.sub(r"(?is)<(script|style|noscript|template|svg)\b.*?</\1\s*>", " ", s or "")
+    s = re.sub(r"(?is)<!--.*?-->", " ", s)
     s = re.sub(r"(?s)<[^>]+>", " ", s)
     return re.sub(r"\s+", " ", html.unescape(s)).strip()
 

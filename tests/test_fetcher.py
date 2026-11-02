@@ -234,5 +234,18 @@ class Refresh(unittest.TestCase):
         self.assertEqual(out["lrev"], 3)
 
 
+class StripHtml(unittest.TestCase):
+    def test_page_code_is_not_posting_text(self):
+        page = ('<html><head><script>window.AwsRumClient = {q: []}; if (a < b) {}</script>'
+                '<script type="text/javascript">var x = "<div>";</script><style>p{color:red}</style></head>'
+                '<body><noscript><iframe src="gtm"></iframe></noscript><!-- tracking -->'
+                '<svg><path d="M0 0"/></svg><h2>Basic qualifications</h2><ul><li>Python, Java or C++</li></ul>'
+                '<template><p>hidden</p></template></body></html>')
+        self.assertEqual(fetcher.strip_html(page), "Basic qualifications Python, Java or C++")
+
+    def test_text_without_markup_is_unchanged(self):
+        self.assertEqual(fetcher.strip_html("Use SQL &amp; Python;  a < b"), "Use SQL & Python; a < b")
+
+
 if __name__ == "__main__":
     unittest.main()
