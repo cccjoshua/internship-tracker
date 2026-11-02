@@ -683,3 +683,5 @@ html{background:var(--bg)}
 .saveissue .si-a{display:flex;gap:6px;flex-wrap:wrap;flex:none}
 .fetch-now{color:var(--accent-text);font-weight:590}
 .savestate.warn{color:var(--warn)}
+/* The palette field is the only control in the panel and shows a caret, like Spotlight: no focus ring. */
+dialog.pal .pal-field input:focus-visible,dialog.pal .pal-field input:focus{outline:none;box-shadow:none;border:0}
