@@ -50,7 +50,8 @@ DEFAULT_CONFIG = {
     "providers": {"analyze": "api", "tailor": "pro", "cover": "pro", "rewrite": "api"},
     "fallback": False,  # when Claude Pro is unavailable or at its limit, use the (billed) API instead: off until you turn it on
 }
-MAX_TOKENS = {"analyze": 2500, "tailor": 7000, "rewrite": 1200, "cover": 3500}
+MAX_TOKENS = {"analyze": 4000, "tailor": 7000, "rewrite": 1200, "cover": 3500}  # analyze was 2500: long postings (many locations and requirements) were cut off
+MAX_TOKENS_CAP = 16000  # one automatic retry with twice the limit, never above this
 POSTING_CHARS = 14000   # analysis input cap (~3.5K tokens)
 EXCERPT_CHARS = 6000    # tailoring excerpt cap
 TASK_LABEL = {"analyze": "Job analysis", "tailor": "Resume tailoring", "rewrite": "Rewrite", "cover": "Cover letter"}
@@ -428,22 +429,28 @@ def run_api(task, system, user, schema, target, model=None, max_tokens=None, cac
     c = config()
     model = model or c["models"][task]
     mt = max_tokens or MAX_TOKENS[task]
-    worst = worst_case_cost(model, sum(len(x) for x in system) + len(user), mt)
-    reserve(worst, c["monthlyBudget"])
     sys_blocks = [{"type": "text", "text": s} for s in system]
     if cache_system and sys_blocks:
         sys_blocks[cache_at]["cache_control"] = {"type": "ephemeral"}  # stable prefix: reused within 5 minutes at 0.1x price
-    body = {"model": model, "max_tokens": mt, "system": sys_blocks,
-            "messages": [{"role": "user", "content": user}],
-            "output_config": {"format": {"type": "json_schema", "schema": schema}}}
-    try:
-        res = call_api(body, k)
-    finally:
-        release(worst)
-    u = res.get("usage") or {}
-    row = record_usage(task, model, u, target)
-    if res.get("stop_reason") == "max_tokens":
-        raise AIError("The answer was cut off (output limit reached). Try again, or shorten the instructions.", 502)
+    # An answer cut off at the output limit is useless (half a JSON object), so retry once with twice the limit.
+    for attempt in range(2):
+        worst = worst_case_cost(model, sum(len(x) for x in system) + len(user), mt)
+        reserve(worst, c["monthlyBudget"])
+        body = {"model": model, "max_tokens": mt, "system": sys_blocks,
+                "messages": [{"role": "user", "content": user}],
+                "output_config": {"format": {"type": "json_schema", "schema": schema}}}
+        try:
+            res = call_api(body, k)
+        finally:
+            release(worst)
+        u = res.get("usage") or {}
+        row = record_usage(task, model, u, target)
+        if res.get("stop_reason") != "max_tokens":
+            break
+        if attempt == 0 and mt < MAX_TOKENS_CAP:
+            mt = min(mt * 2, MAX_TOKENS_CAP)
+            continue
+        raise AIError(f"The answer was still cut off at {mt} tokens, so nothing was saved. Try again, or paste a shorter job description.", 502)
     if res.get("stop_reason") == "refusal":
         raise AIError("Claude declined this request.", 502)
     text = "".join(b.get("text", "") for b in res.get("content") or [] if b.get("type") == "text")

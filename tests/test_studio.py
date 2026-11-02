@@ -9,6 +9,7 @@ import tempfile
 import threading
 import unittest
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 
@@ -162,6 +163,36 @@ class StudioTest(unittest.TestCase):
         self.assertEqual(body["system"][0].get("cache_control"), {"type": "ephemeral"})
         flags = [b["unverified"] for b in r["result"]["experience"][0]["bullets"]]
         self.assertEqual(flags, [False, True, True])
+
+    def test_a_cut_off_analysis_is_retried_with_a_larger_limit_and_saved(self):
+        self.req("POST", "/api/ai/key", {"key": KEY})
+        sent, real = [], ai.call_api
+
+        def cut_once(body, key, timeout=180):
+            sent.append(body["max_tokens"])
+            if len(sent) == 1:  # a long posting: the first answer stops at the output limit
+                return {"content": [{"type": "text", "text": '{"summary": "half an obj'}], "stop_reason": "max_tokens", "usage": {"input_tokens": 9000, "output_tokens": body["max_tokens"]}}
+            return real(body, key, timeout)
+        ai.call_api = cut_once
+        try:
+            code, r = self.j("POST", "/api/ai/analyze", self.job())
+        finally:
+            ai.call_api = real
+        self.assertEqual(code, 200)
+        self.assertEqual(sent, [ai.MAX_TOKENS["analyze"], ai.MAX_TOKENS["analyze"] * 2])
+        self.assertTrue(self.j("GET", "/api/job?key=" + urllib.parse.quote(self.job()["key"]))[1]["job"]["analysis"])
+
+    def test_an_analysis_cut_off_twice_says_so_and_saves_nothing(self):
+        self.req("POST", "/api/ai/key", {"key": KEY})
+        real = ai.call_api
+        ai.call_api = lambda body, key, timeout=180: {"content": [{"type": "text", "text": "{"}], "stop_reason": "max_tokens", "usage": {"input_tokens": 9000, "output_tokens": body["max_tokens"]}}
+        try:
+            code, r = self.j("POST", "/api/ai/analyze", self.job())
+        finally:
+            ai.call_api = real
+        self.assertEqual(code, 502)
+        self.assertIn("cut off", r["error"])
+        self.assertFalse((self.j("GET", "/api/job?key=" + urllib.parse.quote(self.job()["key"]))[1]["job"] or {}).get("analysis"))
 
     def test_contact_details_are_never_sent_to_claude(self):
         contact = {"name": "Test Person", "email": "private.person@example.edu", "phone": "+1 555 010 0199",

@@ -719,3 +719,6 @@ a.brand:active .brand-mark{filter:brightness(.95)}
 .brand-t{display:flex;flex-direction:column;gap:1px;min-width:0}
 .brand-t b{font-size:15px;font-weight:700;letter-spacing:-.016em;white-space:nowrap;color:var(--ink)}
 .brand-t span{font-size:12px;color:var(--faint)}
+.job-err{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.45;background:color-mix(in srgb,var(--bad) 8%,var(--surface));color:var(--ink)}
+.job-err b{color:var(--bad)}
+.busy-t{color:var(--accent-text)}

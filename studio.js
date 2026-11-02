@@ -272,7 +272,7 @@ function download(name, text, type) { const a = document.createElement('a'); a.h
 
 /* ---------- jobs ---------- */
 const JOBS = new Map(); // key -> { loading, job, resume, error }
-const ST = { key: null, model: null, notes: null, fit: null, fitT: null, saveT: null, busy: '', rw: null, paste: false, sec: {} };
+const ST = { key: null, model: null, notes: null, fit: null, fitT: null, saveT: null, busy: '', rw: null, paste: false, sec: {}, err: null };
 function resolveJob(id) {
   const S = I.S, L = I.scored();
   let app = S.apps.find((a) => a.id === id) || null;
@@ -519,6 +519,7 @@ function factsPanel(J, a, job) {
     return `<section class="panel jb-facts"><h2>Job facts <small>${known.length ? 'from the free refresh' : ''}</small></h2>
       ${known.length ? `<dl class="facts">${known.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
         : job && job.textSource === 'extension' ? `<p class="empty">Added with the Chrome extension${J.app && J.app.source ? ' from ' + esc(J.app.source) : ''}. The job description is saved (${Number((job.text || '').length).toLocaleString('en-US')} characters), so analysis reads it without opening the page.</p>`
+          : J.app && typeof J.app.score === 'number' ? `<p class="empty">Saved from New listings. The listing's free facts were kept in its notes${job && job.text ? `, and the posting text is saved (${Number(job.text.length).toLocaleString('en-US')} characters)` : ''}.</p>`
           : '<p class="empty">This application was added by hand, so no posting facts are stored yet.</p>'}
       <p class="empty">Analyze the posting to see who it is for, dates, sponsorship evidence, keywords and responsibilities.</p></section>`;
   }
@@ -547,7 +548,13 @@ function factsPanel(J, a, job) {
 function matchPanel(J, a) {
   if (!a) {
     const l = J.l;
-    if (!l) return `<section class="panel jb-match"><h2>Match</h2><p class="empty">Added by hand, so there is no listing score. Analyze the posting to get a fit score.</p></section>`;
+    if (!l) {
+      /* Saved listings leave the feed at the next refresh (they live in Applications), so fall back to the score kept when saved. */
+      const sc = J.app && typeof J.app.score === 'number' ? J.app.score : null;
+      return sc !== null
+        ? `<section class="panel jb-match"><h2>Listing priority <small>when you saved it · not your fit</small></h2><div class="kw-head">${I.ring(sc)}<div><b>${sc} of 100</b><div class="sub">Saved from New listings on ${I.fmt(((J.app.history || []).find((h) => h.s === 'saved') || {}).d || '')}. Analyze the posting to get a fit score against your Profile.</div></div></div></section>`
+        : `<section class="panel jb-match"><h2>Match</h2><p class="empty">Added by hand, so there is no listing score. Analyze the posting to get a fit score.</p></section>`;
+    }
     return `<section class="panel jb-match"><h2>Listing priority <small>what to look at first · not your fit · before analysis</small></h2><div class="kw-head">${I.ring(l.total)}<div><b>${l.total} of 100</b><div class="sub">From the title, skills named in the posting, H-1B history, recency, degree and location.</div></div></div>
       <div class="fps">${l.parts.map((p) => { const v = p.max ? p.pts / p.max : 0; return `<div class="fp"><span class="fp-l">${({ fit: 'Role fit', skills: 'Skill match', sponsor: 'Sponsorship', recency: 'Recency', degree: 'Degree', location: 'Location' })[p.k]}</span><span class="fbar"><span style="width:${Math.round(v * 100)}%;background:${v >= 0.8 ? 'var(--score-hi)' : v >= 0.5 ? 'var(--score-mid)' : 'var(--bad)'}"></span></span><span class="num fp-n">${Math.round(p.pts)}/${Math.round(p.max)}</span></div>`; }).join('')}</div></section>`;
   }
@@ -603,7 +610,8 @@ function stepHero(J) {
   const gets = [['Eligibility', 'degree, graduation window and sponsorship, with quotes from the posting'], ['Fit score', 'your Profile against its requirements'], ['Keywords', 'what your resume should cover'], ['Responsibilities', 'for your cover letter and interviews']];
   const act = ready('analyze')
     ? `<button class="btn primary lg" type="button" data-jb="analyze" ${ST.busy ? 'disabled' : ''}>${ST.busy === 'analyze' ? 'Reading the posting…' : 'Analyze with Claude'}</button>
-      <span class="sub">${costLabel('analyze', e)} · about 10 seconds · saved, so it runs once per job</span>
+      ${ST.busy === 'analyze' ? '<span class="sub busy-t" role="status">Claude is reading the posting. This usually takes 10–30 seconds; you can keep working.</span>' : `<span class="sub">${costLabel('analyze', e)} · about 10 seconds · saved, so it runs once per job</span>`}
+      ${ST.err && ST.err.task === 'analyze' && ST.err.key === J.key && !ST.busy ? `<div class="job-err" role="alert"><b>The analysis did not finish.</b> <span>${esc(ST.err.msg)}</span></div>` : ''}
       <button class="linkbtn" type="button" data-jb="paste">Posting won’t load? Paste the description</button>`
     : `<a class="btn primary lg" href="#settings/claude">Connect Claude</a><span class="sub">${esc(notReadyTip('analyze'))}</span>`;
   return `<section class="panel step-hero"><div class="sh-main"><span class="eyebrow">Step 1 of 4</span><h2>Analyze the posting</h2>
@@ -1007,7 +1015,7 @@ async function letterAction(k, el) {
 
 /* ---------- actions ---------- */
 async function analyze(pasted, refetch) {
-  const J = JOB; ST.busy = 'analyze'; I.render();
+  const J = JOB; ST.busy = 'analyze'; ST.err = null; I.render();
   try {
     const r = await api('POST', 'api/ai/analyze', Object.assign(meta(J), { text: pasted || undefined, refetch: !!refetch }));
     const st = JOBS.get(J.key); if (st) st.job = r.job; AI.status = r.status; if ((JOB && JOB.key === J.key)) { ST.paste = false; ST.pasteText = ""; }
@@ -1016,6 +1024,7 @@ async function analyze(pasted, refetch) {
     I.toast(`Analyzed · ${usedText(r.usage)} · ${r.usage.in + r.usage.cacheRead + r.usage.cacheWrite} in / ${r.usage.out} out tokens`);
   } catch (e) {
     if (e.status === 422) ST.paste = true;
+    ST.err = { task: 'analyze', key: J.key, msg: e.message || 'The local server did not answer.' }; // stays on the page until you retry
     I.toast(e.message);
   } finally { ST.busy = ''; I.render(); }
 }
