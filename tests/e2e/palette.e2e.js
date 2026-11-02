@@ -92,7 +92,7 @@ const step = (m) => console.log('✓ palette: ' + m);
   await p.fill('#palIn', 'recency half-life');
   assert.equal(await active(), 'Recency half-life (days)');
   await p.keyboard.press('Enter'); await p.waitForTimeout(600);
-  assert.equal(await p.evaluate(() => location.hash), '#settings');
+  assert.equal(await p.evaluate(() => location.hash), '#settings/scoring', 'opens the pane that holds the setting');
   assert.equal(await p.evaluate(() => document.activeElement.id), 'p-hl', 'jumps to and focuses the field');
   assert.ok(await p.locator('.pal-flash').count(), 'briefly highlights it');
   step('settings deep link focuses and highlights the field');

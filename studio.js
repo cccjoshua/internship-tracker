@@ -1329,7 +1329,11 @@ document.addEventListener('click', async (e) => {
     const k = ai.dataset.ai;
     try {
       if (k === 'save') { const v = $('#aiKey').value.trim(); if (!v) return I.toast('Paste your API key first.'); AI.status = await api('POST', 'api/ai/key', { key: v }); I.render(); return I.toast('API key saved on your Mac'); }
-      if (k === 'remove') { AI.status = await api('POST', 'api/ai/key', { key: '' }); I.render(); return I.toast('API key removed'); }
+      if (k === 'remove') {
+        // Not undoable: ask for a second click, as Clear all data does.
+        if (!ai.dataset.armed) { ai.dataset.armed = '1'; ai.textContent = 'Click again to remove'; setTimeout(() => { if (ai.isConnected) { delete ai.dataset.armed; ai.textContent = 'Remove'; } }, 3000); return; }
+        AI.status = await api('POST', 'api/ai/key', { key: '' }); I.render(); return I.toast('API key removed');
+      }
       if (k === 'cccheck') { ai.disabled = true; AI.status = await api('POST', 'api/ai/claude-check', {}); I.render(); return I.toast(ccOK() ? 'Claude Code is ready with your Claude plan' : 'Claude Code is not ready yet'); }
       if (k === 'h1bpick') { const fi = $('#h1bFile'); fi.value = ''; return fi.click(); }
       if (k === 'verify') { ai.disabled = true; const r = await api('POST', 'api/ai/verify', {}); const want = Object.values(AI.status.config.models); const miss = want.filter((m) => !r.models.includes(m)); return I.toast(miss.length ? `Key works, but these models are not available to it: ${miss.join(', ')}` : `Key works · ${r.models.length} models available`); }

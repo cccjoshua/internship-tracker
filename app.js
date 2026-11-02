@@ -399,7 +399,8 @@ const spChip = (s) => `<span class="chip v-${s}">${SPONSOR[s] || SPONSOR.unknown
 const prio = (p) => `<span class="prio" role="img" aria-label="Your priority ${p} of 3" title="Your priority: ${['', 'low', 'medium', 'high'][p] || p}">${[1, 2, 3].map((i) => `<i class="${i <= p ? 'on' : ''}"></i>`).join('')}</span>`;
 const opts = (list, val) => list.map(([v, l]) => `<option value="${esc(v)}"${v === val ? ' selected' : ''}>${esc(l)}</option>`).join('');
 const link = (u, txt, cls = 'btn sm ghost') => { u = safeUrl(u); return u ? `<a class="${cls}" href="${esc(u)}" target="_blank" rel="noopener noreferrer">${txt}</a>` : ''; };
-const eff = (now) => now ? '<span class="eff now" title="Takes effect as soon as you change it">Instant</span>' : '<span class="eff later" title="Takes effect from the next listings refresh">Next refresh</span>';
+/* Changes apply at once (said once, in the page subtitle); only the exceptions are labelled, quietly. */
+const eff = (now) => now ? '' : '<span class="eff later" title="Takes effect from the next listings refresh">applies at the next refresh</span>';
 const ring = (n) => `<span class="ring sm ${band(n)}" style="--p:${n}" title="Listing priority ${n} of 100 (what to look at first; not your fit)"><span>${n}</span></span>`;
 
 /* ---------- views ---------- */
@@ -408,7 +409,7 @@ const VIEWS = {
   board: ['Applications', () => 'Drag cards between stages, or focus one and press Shift + arrow keys'],
   table: ['Applications', () => 'Select a company to edit; select a column to sort'],
   inbox: ['New listings', () => 'Ranked by priority: freshness, role fit, skills and sponsorship signals. Select one to see why.'],
-  settings: ['Settings', () => 'How the tracker scores, refreshes and reminds you · your data', () => backCrumb()],
+  settings: ['Settings', () => 'Changes apply right away and are saved to your Mac. Undo with ' + MOD + ' Z.', () => backCrumb()],
 };
 /* Settings, Profile and Documents remember the page you came from, so a "← Back to …" link returns you there. */
 function backCrumb() {
@@ -951,14 +952,15 @@ R.settings = () => {
   const where = Store.mode === 'file' ? 'Saved to <b>data/tracker.json</b> on your computer. A backup is made at most every 30 minutes and before every delete, import or restore.' : 'Saved in <b>this browser only</b>. Clearing site data erases it, so export a backup regularly, or run the local server to save to a file.';
   const calUrl = location.origin + '/calendar.ics';
   const notifState = !('Notification' in window) ? 'This browser does not support notifications.' : Notification.permission === 'denied' ? 'Blocked in the browser’s site settings. Allow notifications for this page there, then switch this on.' : st.notify && Notification.permission === 'granted' ? 'On. Reminders appear while a tracker tab is open (it can be in the background).' : 'Off.';
-  return `<div class="settings">
-  <nav class="stoc" aria-label="Settings sections">${SECTIONS.map(([k, l]) => `<a href="#settings/${k}" data-stoc="${k}">${l}</a>`).join('')}</nav>
+  const pane = settingsPaneNow();
+  return `<div class="settings" data-pane="${pane}">
+  <nav class="stoc" aria-label="Settings sections">${SECTIONS.map(([k, l]) => `<a href="#settings/${k}" data-stoc="${k}"${k === pane ? ' aria-current="page"' : ''}>${l}</a>`).join('')}</nav>
   <div class="sbody">
   <section class="panel" id="s-search"><h2>Job search</h2>
     <div class="notice"><span><b>What you are looking for lives in your Profile:</b> ${st.targets.length ? st.targets.join(', ') : 'no target tracks'} · ${st.places.length ? esc(st.places.join(', ')) : 'any place'} · ${plural(mine.size, 'skill')} ticked for scoring.</span><a class="btn sm" href="#profile/prefs">Edit in Profile</a></div>
     <label class="switch"><input type="checkbox" id="p-hide" ${st.hideNoSponsor ? 'checked' : ''}> Hide listings that say they do not sponsor visas ${eff(true)}</label>
     <div class="grid2">${numField('p-window', `Show listings posted in the last (days) ${eff(false)}`, 'windowDays', 1, 60)}
-      ${numField('p-hours', 'Refresh listings every (hours) <span class="eff later">Within 5 min</span>', 'fetchHours', 1, 24)}</div>
+      ${numField('p-hours', 'Refresh listings every (hours) <span class="eff later">applies within 5 min</span>', 'fetchHours', 1, 24)}</div>
     <div class="row"><span class="empty">${fetchSummary()}</span><button class="btn sm" type="button" data-action="refresh" ${refreshing ? 'disabled' : ''}>${refreshing ? 'Refreshing…' : 'Refresh now'}</button></div>
     <p class="empty">The refresh runs on your Mac with no AI calls. The Mac must be awake; a missed run happens within 5 minutes of waking.</p></section>
 
@@ -971,7 +973,7 @@ R.settings = () => {
       ${numField('p-pen', 'No-sponsorship penalty (points)', 'noSponsorPenalty', 0, 100, 'Subtracted when a posting says it will not sponsor.')}
       ${numField('p-hl', 'Recency half-life (days)', 'recencyHalfLife', 1, 30, 'The recency points halve every this many days.')}
     </div>
-    <div class="row"><button class="btn sm ghost" type="button" data-action="scoring-reset">Reset scoring to defaults</button></div>
+    <div class="row"><button class="btn sm plain" type="button" data-action="scoring-reset" title="Undo is available">Reset scoring to defaults</button></div>
     <div class="field"><span>Preview: top listings now <span class="hint">· arrows show the change since you opened this page</span></span>${previewList()}</div></section>
 
   <section class="panel" id="s-outcomes"><h2>Score vs. outcomes <small>use this to calibrate the weights</small></h2>${calibration()}</section>
@@ -1082,18 +1084,18 @@ function render() {
   spyToc();
   $('#q').placeholder = v === 'inbox' ? 'Search company, role, location, skill' : 'Search company, role, notes';
   if (v !== 'settings') UI.baseline = null;
-  if (v !== lastView && lastView !== null) { const sub = location.hash.split('/')[1]; const el = sub && document.getElementById('s-' + sub); if (el) el.scrollIntoView({ block: 'start' }); else window.scrollTo(0, 0); }
+  if (v !== lastView && lastView !== null) window.scrollTo(0, 0);
   lastView = v;
 }
-let tocObs = null;
-function spyToc() {
-  if (tocObs) { tocObs.disconnect(); tocObs = null; }
-  const links = $$('.stoc a'); if (!links.length || !('IntersectionObserver' in window)) return;
-  const mark = (id) => links.forEach((a) => { const on = a.getAttribute('href').endsWith('/' + id.replace(/^s-/, '')); on ? a.setAttribute('aria-current', 'location') : a.removeAttribute('aria-current'); });
-  const seen = new Map();
-  tocObs = new IntersectionObserver((es) => { es.forEach((e) => seen.set(e.target.id, e.isIntersecting ? e.boundingClientRect.top : null)); const vis = [...seen].filter(([, t]) => t !== null).sort((a, b) => a[1] - b[1]); if (vis.length) mark(vis[0][0]); }, { rootMargin: '-80px 0px -55% 0px' });
-  $$('.sbody > section[id^="s-"]').forEach((sec) => tocObs.observe(sec));
+/* Settings are panes, one per category (like System Settings): the sidebar list picks the pane. */
+function settingsPaneNow() { const sub = (location.hash.split('/')[1] || '').trim(); return SECTIONS.some(([k]) => k === sub) ? sub : (UI.setPane && SECTIONS.some(([k]) => k === UI.setPane) ? UI.setPane : 'search'); }
+function applySettingsPane(k) {
+  k = k || settingsPaneNow(); UI.setPane = k;
+  const box = $('.settings'); if (!box) return; box.dataset.pane = k;
+  $$('.sbody > section[id^="s-"]').forEach((sec) => { sec.hidden = sec.id !== 's-' + k; });
+  $$('.stoc a').forEach((a) => (a.dataset.stoc === k ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
 }
+function spyToc() { applySettingsPane(); }
 function focusCard(id) { const el = $(`.card[data-id="${CSS.escape(id)}"]`); if (el) el.focus(); }
 /* Every change you can take back shows Undo for 10 seconds (the timer pauses while the pointer or focus is on it); ⌘Z / Ctrl+Z works any time. */
 function toast(msg, undoable) {
@@ -1439,7 +1441,7 @@ document.addEventListener('click', (e) => {
   const rm2 = t.closest('[data-rowmenu]'); if (rm2) { const ref = rm2.dataset.rowmenu, it = menuFor(ref); const name = (ref[0] === 'l' ? (scored().find((x) => x.id === ref.slice(2)) || {}) : (S.apps.find((x) => x.id === ref.slice(2)) || {})).company || ''; return menuAt(rm2, name, UI.peek === ref || !['inbox', 'dashboard'].includes(route()) ? it.filter((m) => m.value !== 'peek') : it, (v) => runMenu(ref, v, rm2)); }
   const pkm = t.closest('[data-pkm]'); if (pkm && UI.peek) return runMenu(UI.peek, pkm.dataset.pkm, pkm);
   const ptg = t.closest('[data-picktoggle]'); if (ptg) { pickToggle(ptg.dataset.picktoggle, !UI.selected.has(ptg.dataset.picktoggle), e.shiftKey); return; }
-  const stoc = t.closest('[data-stoc]'); if (stoc && route() === 'settings') { e.preventDefault(); history.replaceState(null, '', '#settings/' + stoc.dataset.stoc); const el = document.getElementById('s-' + stoc.dataset.stoc); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  const stoc = t.closest('[data-stoc]'); if (stoc && route() === 'settings') { e.preventDefault(); history.replaceState(null, '', '#settings/' + stoc.dataset.stoc); applySettingsPane(stoc.dataset.stoc); window.scrollTo(0, 0); return; }
   const add = t.closest('[data-add]');
   if (add) { const ul = add.dataset.add === 'round' ? $('#rounds') : $('#contacts'); ul.insertAdjacentHTML('beforeend', add.dataset.add === 'round' ? roundRow({ id: uid(), date: '', time: '', kind: 'Technical', with: '', notes: '' }) : contactRow({ id: uid(), name: '', title: '', email: '', link: '', note: '' })); ul.lastElementChild.querySelector('input').focus(); return; }
   const rm = t.closest('[data-rm]'); if (rm) { const li = rm.closest('li'); const ul = li.parentElement; li.remove(); const nb = ul.parentElement.querySelector('[data-add]'); if (nb) nb.focus(); return; }
@@ -1689,7 +1691,7 @@ window.IAT = {
   palette: {
     startRefresh: () => startRefresh(), doExport: () => doExport(), showHelp: () => showHelp(), cycleTheme: () => cycleTheme(), undo: () => undo(), queue: () => queueList(),
     openListing: (id) => { UI.peek = 'l:' + id; if (route() === 'inbox') render(); else location.hash = 'inbox'; setTimeout(() => { const h = $('#pkTitle'); if (h) h.focus(); }, 60); },
-    showSettingsPane: null,
+    showSettingsPane: (el) => { const sec = el.closest('section[id^="s-"]'); if (sec && route() === 'settings') { const k = sec.id.slice(2); history.replaceState(null, '', '#settings/' + k); applySettingsPane(k); } },
   },
 };
 

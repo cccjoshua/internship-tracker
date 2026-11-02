@@ -631,3 +631,32 @@ td.rs{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dlpair{border-radius:6px}
 .dgrp-h .chip.tag{font-weight:600}
 @media (max-width:760px){.dbase-l li{grid-template-columns:minmax(0,1fr)}.docs-t{table-layout:auto}}
+
+/* Settings: panes (one category at a time) with System Settings-style inset grouped rows */
+.settings{grid-template-columns:200px minmax(0,1fr);gap:28px;max-width:980px}
+.stoc{top:20px;gap:1px}
+.stoc a{padding:5px 10px;border-radius:6px;color:var(--ink);font-size:13px}
+.stoc a:hover{background:var(--fill-3)}
+.stoc a[aria-current]{background:var(--sel);color:var(--ink);font-weight:590}
+.sbody{gap:0}
+.sbody>.panel{padding:6px 16px 12px;gap:0;border-radius:var(--r)}
+.sbody>.panel>h2{font-size:22px;font-weight:700;margin:10px 0 12px;letter-spacing:-.016em}
+.sbody>.panel>h2 small{display:block;width:100%;font-size:12px;margin-top:2px}
+.sbody .grid2{display:flex;flex-direction:column;gap:0}
+.sbody .field:has(>input[type=number]){display:grid;grid-template-columns:minmax(0,1fr) 84px;column-gap:20px;row-gap:2px;align-items:center;padding:10px 0;border-top:.5px solid var(--line)}
+.sbody .field:has(>input[type=number])>span:first-child{grid-column:1;grid-row:1;font-size:13px;font-weight:400;color:var(--ink)}
+.sbody .field:has(>input[type=number])>input{grid-column:2;grid-row:1 / span 2;width:84px;min-height:26px;padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums}
+.sbody .field:has(>input[type=number])>.hint{grid-column:1;grid-row:2;font-size:12px;color:var(--muted)}
+.sbody .field>span:first-child .eff{margin-left:6px}
+.sbody label.switch{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:20px;padding:10px 0;border-top:.5px solid var(--line);font-size:13px}
+.sbody>.panel>.row,.sbody>.panel>p.empty,.sbody>.panel>.notice{margin:10px 0 0}
+.sbody .weights{gap:6px 16px;padding:4px 0 6px}
+.sbody .weights input{min-height:26px;padding:3px 8px;width:84px;justify-self:end}
+.sbody .weights input[type=text]{width:100%}
+.sbody>.panel>.field{padding:10px 0;border-top:.5px solid var(--line)}
+.sbody>.panel>.field>span:first-child{font-size:13px;font-weight:590;color:var(--ink)}
+.sbody .eff{font-size:11px;font-weight:500;background:none!important;color:var(--muted)!important;padding:0}
+.settings .btn.danger,.settings .btn.ghost.danger{color:var(--bad)}
+@media (max-width:1080px){.settings{grid-template-columns:minmax(0,1fr)}.stoc{position:static;flex-direction:row;flex-wrap:wrap}}
+.sbody .field:has(>input[type=number]):not(:has(>.hint))>span:first-child{grid-row:1 / span 2}
+html{background:var(--bg)}
