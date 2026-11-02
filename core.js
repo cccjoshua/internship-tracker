@@ -283,7 +283,7 @@
   /* A combined claim is a direct claim of each part. */
   const EXPANDS = { 'c/c++': ['c', 'c++'], 'html/css': ['html', 'css'] };
   /* Having the left one suggests the right one: one level only, partial credit, shown as inferred. */
-  const IMPLIES = { 't-sql': ['sql'], 'sql server': ['sql'], postgresql: ['sql'], mysql: ['sql'], sqlite: ['sql'],
+  const IMPLIES = { git: ['version control', 'version control systems'], tfs: ['version control', 'version control systems'], 't-sql': ['sql'], 'sql server': ['sql'], postgresql: ['sql'], mysql: ['sql'], sqlite: ['sql'],
     pandas: ['python'], numpy: ['python'], 'scikit-learn': ['machine learning'], pytorch: ['deep learning'],
     tensorflow: ['deep learning'], 'deep learning': ['machine learning'], textcnn: ['deep learning'], 'doc2vec': ['nlp'] };
   function nk(s) {
@@ -301,7 +301,11 @@
     return out.filter((x) => x && x.length < 40);
   }
   /* 'Java | Python | C++' (one requirement, any option) -> ['Java', 'Python', 'C++']; a plain term -> [term]. */
-  const anyOf = (t) => String(t || '').split(/\s+\|\s+|\s*\|\s*/).map((x) => x.trim()).filter(Boolean);
+  const anyOf = (t) => {
+    let x = String(t || '');
+    const m = /^[^(|]*\(([^()]*\|[^()]*)\)\s*$/.exec(x); if (m) x = m[1]; // "Scripting (Bash | Python)" -> the options inside
+    return x.split('|').map((y) => y.trim()).filter(Boolean);
+  };
   /* set: direct claims; implied: skill -> the direct claim that suggests it; no: do-not-claim. */
   function skillSet(profile, settings) {
     profile = profile || {};

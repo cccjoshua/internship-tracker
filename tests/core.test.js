@@ -155,3 +155,10 @@ test('without concrete skills, work habits are not scored as missing skills', ()
   const b = Object.assign({}, a, { keywords: [...a.keywords, { term: 'Python', importance: 2, kind: 'tool' }] });
   assert.equal(C.fit(P, b, { settings: {} }).parts.find((p) => p.k === 'skills').note, '1/1 required · 0/0 preferred');
 });
+
+test('one-of options inside a label, and Git suggests version control', () => {
+  const P = { skills: [{ value: 'Python, Git' }] };
+  const r = C.fit(P, { requiredSkills: ['Scripting (Bash | Python | Perl)'], preferredSkills: ['Version control systems'] }, { settings: {} });
+  assert.deepEqual(r.skills.reqHit, ['Python']);
+  assert.deepEqual(r.skills.inferred.map((x) => x.term), ['Version control systems']);
+});
