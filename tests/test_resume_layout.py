@@ -46,3 +46,31 @@ class LayoutTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PreviewAndSubmittedTest(unittest.TestCase):
+    def test_render_marks_each_bullet(self):
+        m = {"header": {"name": "A"}, "sections": [{"kind": "entries", "key": "experience", "title": "E", "entries": [
+            {"title": "X", "bullets": [{"id": "b1", "text": "Built " * 40}, {"id": "b2", "text": "Wrote code"}, {"id": "b3", "text": "Hidden", "hidden": True}]}]}]}
+        marks = rx.render(m)["marks"][0]
+        self.assertEqual([x[2] for x in marks], ["b1", "b2"])
+        self.assertGreater(marks[0][1] - marks[0][0], marks[1][1] - marks[1][0])  # the long bullet wraps
+
+    def test_submitted_version_is_frozen_and_never_trimmed(self):
+        import tempfile
+        import ai
+        with tempfile.TemporaryDirectory() as d:
+            ai.configure(d)
+            meta = {"key": "https://example.com/job/1", "company": "Example", "role": "Intern"}
+            ai.save_resume(meta, {"sections": [], "header": {"name": "v1"}}, "first", "you")
+            ids = ai.mark_submitted(meta)
+            self.assertIn("resume", ids)
+            for i in range(30):
+                ai.save_resume(meta, {"sections": [], "header": {"name": f"v{i + 2}"}}, f"edit {i}", "you")
+            doc = ai.load_resume(meta["key"])
+            self.assertEqual(len(doc["versions"]), 25)
+            sub = [v for v in doc["versions"] if v.get("submitted")]
+            self.assertEqual(len(sub), 1)
+            self.assertEqual(sub[0]["resume"]["header"]["name"], "v1")
+            self.assertTrue(doc["state"]["editedSinceSubmit"])
+            self.assertEqual(ai.mark_submitted({"key": "https://example.com/none", "company": "", "role": ""}), {})

@@ -763,7 +763,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         """Profile, Claude API and resume endpoints. Returns True when handled."""
         routes = {("PUT", "/api/profile"), ("PUT", "/api/resume"), ("PUT", "/api/base"), ("POST", "/api/ai/base"), ("POST", "/api/ai/key"), ("POST", "/api/ai/config"), ("POST", "/api/ai/verify"),
                   ("POST", "/api/job/text"), ("POST", "/api/ai/analyze"), ("POST", "/api/ai/tailor"), ("POST", "/api/ai/rewrite"), ("POST", "/api/ai/cover"), ("PUT", "/api/letter"), ("POST", "/api/ai/claude-check"), ("POST", "/api/h1b"),
-                  ("POST", "/api/resume/fit"), ("POST", "/api/export")}
+                  ("POST", "/api/resume/fit"), ("POST", "/api/export"), ("POST", "/api/submitted")}
         if (method, path) not in routes:
             return False
         if not self._same_origin():
@@ -857,6 +857,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except ai.DocConflict as e:
                     return self._json(409, {"error": str(e), "resume": e.doc}) or True
                 return self._json(200, {"ok": True, "resume": doc}) or True
+            if path == "/api/submitted":
+                return self._json(200, {"ok": True, "versions": ai.mark_submitted(job_meta(b))}) or True
             if path == "/api/resume/fit":
                 return self._json(200, resume_export.render(b.get("resume") or {})) or True
             if path == "/api/export":

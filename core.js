@@ -426,7 +426,21 @@
       if (!inside && known(v.education)) v.education = Math.min(v.education, 0.2);
       notes.education += inside ? ' · graduation date fits' : ' · graduation date outside the window';
     }
-    if (au.enrollment) eligibility.push(elig('enrollment', 'Enrollment', 'unknown', au.enrollment, au.evidence));
+    if (au.enrollment) {
+      /* "Currently pursuing a Master's degree", "must return to school after the internship": answered from your
+         degree in progress and graduation date; anything else stays a question for you. */
+      const en = String(au.enrollment).toLowerCase(), LV = { Bachelor: /bachelor|undergrad|\bb\.?[sa]\.?\b/, Master: /master|\bm\.?s\.?\b|\bmba\b|graduate (student|program|degree|school)/, PhD: /ph\.?\s?d|doctor/ };
+      const named = Object.keys(LV).filter((k) => LV[k].test(en)), mine = pursuing === 'MBA' ? 'Master' : pursuing;
+      const returning = /return(ing)? to (school|university|campus|your studies)|continu(e|ing) (your )?(education|studies|degree)|at least one (more |additional )?(semester|quarter|term)|after the internship/.test(en);
+      const termY = +((/\b(20\d\d)\b/.exec(((a.timing || {}).term || '') + ' ' + ((a.timing || {}).end || '')) || [])[1] || 0);
+      let est = 'unknown', det = au.enrollment;
+      if (mine && (named.length ? named.indexOf(mine) >= 0 : /pursu|enrolled|current(ly)?\s+(a\s+)?student|currently attending/.test(en))) { est = 'meets'; det += ` · you are pursuing a ${pursuing}'s`; }
+      if (returning) {
+        if (g !== null && termY) { const back = g >= termY * 12 + 8; est = back ? (mine && (!named.length || named.indexOf(mine) >= 0) ? 'meets' : est) : 'fails'; det += back ? ` · you graduate ${ymText(pref.graduation)}, after the internship` : ` · you graduate ${ymText(pref.graduation)}, before returning`; }
+        else est = 'unknown';
+      }
+      eligibility.push(elig('enrollment', 'Enrollment', est, det, au.evidence));
+    }
     // experience level
     const needY = typeof au.yearsExperience === 'number' ? au.yearsExperience : null;
     const haveY = ['', null, undefined].includes(pref.yearsExperience) ? null : num(pref.yearsExperience, null);

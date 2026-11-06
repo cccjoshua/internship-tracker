@@ -817,3 +817,28 @@ button.src:focus-visible{outline:2px solid var(--tint);outline-offset:2px}
 /* Resume toolbar wraps on narrow screens instead of pushing the versions menu off the page */
 .rs-bar{flex-wrap:wrap;min-width:0}
 .rs-bar #rsVer{min-width:0;max-width:100%;flex:1 1 180px}
+/* Resume page v2: the page first, the work beside it */
+.rs-grid.v2{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}
+.rs-view .rs-sticky{max-height:calc(100vh - 24px);overflow:auto;padding-right:2px}
+.rs-work{display:flex;flex-direction:column;gap:10px;min-width:0}
+.rs-work>.todo-panel,.rs-work>.rs-notes,.rs-work>.revise{margin:0}
+.rs-editw{border:.5px solid var(--line);border-radius:var(--r-row);padding:4px 12px 12px;background:var(--surface)}
+.rs-editw>summary{cursor:pointer;padding:8px 0;font-size:13px}
+.pv-hit{fill:transparent;cursor:pointer}
+.pv-hit:hover{fill:rgba(0,113,227,.09)}
+.pv-tip{margin:-4px 0 0;text-align:center}
+.rs-one{margin:8px 0 0}
+.rs-kwd{margin-top:10px;font-size:12px}.rs-kwd>summary{cursor:pointer}.rs-kwd .kw-l{margin-top:6px}
+.ready{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px}
+.ready .ready-a{display:flex;gap:8px;align-items:center;margin-left:auto}
+.ready.warn{padding:6px 8px;border-radius:var(--r-row);background:var(--hl-soft)}
+.dlpair.sm button{font-size:11px}
+/* Profile: points to confirm, one group per entry */
+.pf-tgroup{margin-top:10px}
+.pf-tg-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.pf-tg-h b{font-weight:590}
+/* Dashboard: an empty "Needs attention" stays small */
+.a-att.quiet{align-self:start}
+.a-att.quiet h2{margin:0}
+.rates small{font-weight:400;color:var(--muted)}
+.rs-view .rs-sticky>*{flex-shrink:0}

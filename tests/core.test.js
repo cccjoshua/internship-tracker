@@ -215,3 +215,13 @@ test('resume score: match counts only skills you have, and every lost point has 
   assert.equal(n.parts.find((p) => p.k === 'match').v, null);
   assert.ok(n.total >= 90);
 });
+
+test('enrollment requirements are answered from the Profile', () => {
+  const P = { preferences: { degreePursuing: 'Master', graduation: '2028-05' }, skills: [{ value: 'Python' }] };
+  const e = (enrollment, term) => C.fit(P, { requiredSkills: ['Python'], audience: { degreeLevels: ['Master'], enrollment }, timing: { term: term || 'Summer 2027' } }, { settings: {} }).eligibility.find((x) => x.key === 'enrollment');
+  assert.equal(e("Currently pursuing a Master's degree").status, 'meets');
+  assert.equal(e('Must be currently enrolled in a degree program').status, 'meets');
+  assert.equal(e("Currently pursuing a Bachelor's degree").status, 'unknown');
+  assert.equal(e('Must return to school after the internship').status, 'meets');      // graduates May 2028, after Summer 2027
+  assert.equal(e('Must return to school after the internship', 'Summer 2028').status, 'fails');
+});

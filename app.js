@@ -335,8 +335,10 @@ function setStatus(a, s, d) {
   if (a.status === s) return;
   if (CLOSED.includes(a.status) && !CLOSED.includes(s)) a.keepOpen = true; // reopened by you: the daily check will not close it again
   a.status = s; a.history.push({ s, d: d || iso(TODAY) }); syncApplied(a);
+  if (s === 'applied' && HOOKS.onApplied) HOOKS.onApplied(a); // freeze the resume and letter you sent
 }
 function moveTo(a, s) {
+  if (s === 'applied' && a.status !== 'applied' && HOOKS.onApplied) setTimeout(() => HOOKS.onApplied(a), 0);
   const last = a.history[a.history.length - 1];
   const back = FLOW.includes(s) && FLOW.includes(a.status) && FLOW.indexOf(s) < FLOW.indexOf(a.status);
   if (back && last && last.s === a.status && a.history.length > 1) { a.history.pop(); a.status = s; if (a.history[a.history.length - 1].s !== s) a.history.push({ s, d: iso(TODAY) }); syncApplied(a); }
@@ -448,7 +450,7 @@ function backCrumb() {
 }
 const R = {};
 /* Extension points for studio.js (Profile, Job details, Resume studio). */
-const HOOKS = { afterRender: [], settings: null, jobNav: null, verdictOf: null };
+const HOOKS = { afterRender: [], settings: null, jobNav: null, verdictOf: null, onApplied: null };
 
 /* Per-job progress from the server (analysis, resume, cover letter), so rows show how far each application is. */
 let KIT = {};
@@ -517,7 +519,8 @@ R.dashboard = () => {
     ? `<li class="qsaved${peekCls('a:' + x.a.id)}" data-ref="a:${x.a.id}">${savedBadge(x.a)}<button class="what" type="button" data-peek="a:${x.a.id}" aria-controls="peek"><b>${esc(x.a.company)}<span class="sr">, saved</span></b><span>${esc(x.a.role)} · ${x.a.deadline ? `<span class="due ${dueCls(daysFrom(x.a.deadline))}">Apply by ${fmt(x.a.deadline)}</span>` : `Saved ${savedAgo(x.a)}`}</span></button>${acts(primaryFor('a:' + x.a.id), 'a:' + x.a.id, x.a.company)}</li>`
     : `<li class="${peekCls('l:' + x.l.id)}" data-ref="l:${esc(x.l.id)}">${ring(x.l.total)}<button class="what" type="button" data-peek="l:${esc(x.l.id)}" aria-controls="peek"><b>${esc(x.l.company)}</b><span>${x.l.isNew ? '<span class="new-t">New</span> · ' : ''}${esc(x.l.role)}${x.l.deadline ? ' · ' + dlTag(x.l.deadline) : ''}</span></button>${acts(primaryFor('l:' + x.l.id), 'l:' + x.l.id, x.l.company)}</li>`;
   const QMAX = 8, shownQ = picks.slice(0, QMAX);
-  const topPanel = picks.length ? `<ul class="tmatch">${shownQ.map(qli).join('')}</ul>
+  /* Exactly one filled button on the dashboard: the first thing in today's queue. */
+  const topPanel = picks.length ? `<ul class="tmatch">${shownQ.map((x, i) => i ? qli(x) : qli(x).replace(/class="btn sm( tint)?"/, 'class="btn sm primary"')).join('')}</ul>
     <div class="panel-foot">${picks.length > QMAX ? `<a class="btn sm plain" href="#inbox">${picks.length - QMAX} more in the queue →</a>` : ''}${moreSaved ? `<button class="btn sm plain" type="button" data-action="show-saved">${moreSaved} more saved →</button>` : ''}<a class="btn sm plain" href="#inbox">All new listings · ${best.length} top priority →</a></div>`
     : `<p class="empty">Nothing queued. Save listings you want to apply to, or check New listings after the next refresh.</p>`;
   const fst = [['applied', 'Applied'], ['oa', 'Assessment'], ['interview', 'Interview'], ['offer', 'Offer']];
@@ -549,9 +552,9 @@ R.dashboard = () => {
     <div class="si"><span class="sk">To apply</span>${toApply ? `<button class="sv mono" type="button" data-action="show-saved" aria-label="${toApply} saved to apply, review">${toApply}</button><span class="ss">saved</span>` : '<span class="ss">None saved</span>'}</div>
   </div>${(() => { const n = toApply, lim = +S.settings.savedLimit || 15; return n > lim ? `<div class="notice warn"><span><b>${n} saved applications</b>, more than your limit of ${lim}. Apply to or drop a few before saving more.</span><button class="btn sm" type="button" data-action="show-saved">Review saved →</button></div>` : ''; })()}${UI.closedNotice ? `<div class="notice"><span class="grow">Closed since the last refresh: <b>${UI.closedNotice.map(esc).join(', ')}</b> moved from Saved to Closed.</span><button class="btn sm ghost" type="button" data-action="notice-ok">OK</button></div>` : ''}`;
   const showTrack = replied >= 5;
-  const rates = applied ? `<span class="rates"><span title="Share of applications that got any reply: an assessment, interview, offer or rejection.">Response <b class="mono">${pct(replied, applied)}</b></span><span title="Share of applications that reached an interview.">Interview <b class="mono">${pct(intv, applied)}</b></span>${small ? `<span class="small" title="With fewer than ${SMALL} applications one reply moves a rate by ${Math.round(100 / applied)} points">small sample</span>` : ''}</span>` : '';
+  const rates = applied ? `<span class="rates"><span title="Share of applications that got any reply: an assessment, interview, offer or rejection.">Replies <b class="mono">${pct(replied, applied)}</b>${(() => { const rj = appliedA.filter((a) => a.history.some((h) => h.s === 'rejected')).length; return rj ? ` <small>(${rj} rejection${rj > 1 ? 's' : ''})</small>` : ''; })()}</span><span title="Share of applications that reached an interview.">Interview <b class="mono">${pct(intv, applied)}</b></span>${small ? `<span class="small" title="With fewer than ${SMALL} applications one reply moves a rate by ${Math.round(100 / applied)} points">small sample</span>` : ''}</span>` : '';
   const attPanel = items.length ? `<section class="panel a-att" id="attn"><h2>Needs attention <small>next 7 days · follow up after ${S.settings.followUpDays} quiet days</small></h2>${todo}</section>`
-    : `<section class="panel a-att quiet" id="attn"><h2>Needs attention</h2><p class="empty">Nothing due in the next 7 days.</p></section>`;
+    : `<section class="panel a-att quiet" id="attn"><h2>Needs attention <small>nothing due in the next 7 days</small></h2></section>`;
   if (!A.length) return `<div class="dashwrap">${strip}<div class="dash">
     <section class="panel a-top"><h2>Today’s queue</h2>${topPanel}</section>
     <section class="panel a-att"><h2>Get started</h2><ol class="start-l">
@@ -689,7 +692,11 @@ function sortRows(rows, { key, dir }) {
   });
 }
 const appliedCell = (a) => { if (!a.applied) return '—'; const n = -daysFrom(a.applied); return `${fmt(a.applied)}<span class="na-s">${n <= 0 ? 'today' : n + 'd ago'}</span>`; };
-const resumeCell = (a) => `<td class="rs" title="${esc(a.resume || resumeFor(a))}">${a.resume ? esc(a.resume) : `<span style="color:var(--faint)">${esc(resumeFor(a))} (base)</span>`}</td>`;
+/* What resume this application has, from the job page (not a file name you once typed). */
+const resumeCell = (a) => {
+  const k = kitOf(a), st = k && k.resume ? (k.resumeSubmitted ? 'Submitted' : k.resume === 'ai' ? 'Tailored' : 'Master draft') + (k.resumeEditedSinceSubmit ? ' · edited since' : !k.resumeSubmitted && k.resumeExported ? ' · exported' : '') : '';
+  return `<td class="rs" title="${esc(a.resume || resumeFor(a) + ' base resume')}">${st ? `<span class="${k.resumeEditedSinceSubmit ? 'warn-t' : ''}">${esc(st)}</span>` : `<span style="color:var(--faint)">${esc(resumeFor(a))} base</span>`}</td>`;
+};
 const coCell = (a) => `<td class="co ${urgency(a)}"><button type="button" data-open="${a.id}" title="${esc(a.company + ', ' + a.role)}">${esc(a.company)}</button><span class="sub2">${a.track ? `<span class="chip tag">${a.track}</span>` : ''}${esc(a.role)}</span></td>`;
 const stCell = (a) => `<td><span class="stwrap s-${a.status}"><span class="dot" aria-hidden="true"></span><select class="stsel" data-status-for="${a.id}" aria-label="Status for ${esc(a.company)}">${opts(STAGES, a.status)}</select></span></td>`;
 function rowFor(k, a) {
@@ -833,7 +840,7 @@ const acts = (primary, ref, name) => `<span class="lacts"><span class="s-main">$
 /* The one main action for a row or the preview panel. */
 function primaryFor(ref, cls = 'btn sm') {
   const [k, id] = ref.split(':');
-  if (k === 'l') return `<button class="${cls} tint" type="button" data-trackl="${esc(id)}" title="Save to your applications. Undo is available.">Save</button>`;
+  if (k === 'l') return `<button class="${cls}" type="button" data-trackl="${esc(id)}" title="Save to your applications. Undo is available.">Save</button>`;
   const a = S.apps.find((x) => x.id === id); if (!a) return '';
   if (a.status === 'saved') { const [nl, step, tip] = nextStep(a); return `<a class="${cls} tint" href="${jobHref(a.id, step)}" title="${esc(tip)}">${nl} →</a>`; }
   return `<a class="${cls}" href="${jobHref(a.id)}" title="Job page: analysis, resume and cover letter">Open</a>`;

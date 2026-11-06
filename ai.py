@@ -1154,7 +1154,8 @@ def studio_index():
                 continue
             st = doc_state(d)
             put(d["key"], **{kind: "ai" if st["generated"] else "base", kind + "Exported": st["exported"],
-                             kind + "ExportedBefore": st["exportedBefore"], kind + "Reviewed": st["reviewed"]})
+                             kind + "ExportedBefore": st["exportedBefore"], kind + "Reviewed": st["reviewed"],
+                             kind + "Submitted": bool(st.get("submittedAt")), kind + "EditedSinceSubmit": st.get("editedSinceSubmit", False)})
     return out
 
 
@@ -1174,7 +1175,9 @@ def doc_state(d):
     return {"hash": h, "generated": bool((d.get("notes") or {}).get("model")) or any(v.get("by") == "ai" and v.get("resume") == d["current"] for v in vs),
             "reviewed": d.get("reviewedHash") == h, "exported": bool(cur), "exportedAt": max((e.get("at", "") for e in cur), default=""),
             "exportedFormats": sorted({e.get("fmt") for e in cur if e.get("fmt")}), "exportedBefore": bool(exps) and not cur,
-            "lastExportAt": max((e.get("at", "") for e in exps), default="")}
+            "lastExportAt": max((e.get("at", "") for e in exps), default=""),
+            "submittedAt": (d.get("submitted") or {}).get("at", ""), "submittedId": (d.get("submitted") or {}).get("id", ""),
+            "editedSinceSubmit": bool(d.get("submitted")) and (d.get("submitted") or {}).get("hash") != h}
 
 
 class DocConflict(AIError):
@@ -1244,6 +1247,39 @@ def save_resume(meta, resume, label, by, notes=None, keep_versions=25, kind="res
             if notes:  # so restoring a version brings back what Claude changed, its questions and the model
                 v["notes"] = notes
             doc["versions"].append(v)
-            doc["versions"] = doc["versions"][-keep_versions:]
+            _trim_versions(doc, keep_versions)
         _write(resume_path(key, kind), doc)
     return doc
+
+
+def _trim_versions(doc, keep):
+    """Keep the newest `keep` versions, never dropping the one you submitted with your application."""
+    vs = doc.get("versions") or []
+    while len(vs) > keep:
+        i = next((j for j, v in enumerate(vs) if not v.get("submitted")), None)
+        if i is None:
+            break
+        vs.pop(i)
+    doc["versions"] = vs
+
+
+def mark_submitted(meta, kinds=("resume", "letter")):
+    """You applied: freeze the current resume and letter as the "Submitted" version (what the employer has).
+    Later edits never change it, and it is never trimmed from the history. Returns {kind: version id}."""
+    out = {}
+    with LOCK:
+        for kind in kinds:
+            doc = load_resume(meta["key"], kind)
+            if not doc or not doc.get("current"):
+                continue
+            doc.pop("state", None)
+            v = {"id": hashlib.sha1((now() + "submitted" + kind + str(len(doc.get("versions") or []))).encode()).hexdigest()[:8], "at": now(),
+                 "label": "Submitted with your application", "by": "you", "resume": doc["current"], "submitted": True}
+            if doc.get("notes"):
+                v["notes"] = doc["notes"]
+            doc.setdefault("versions", []).append(v)
+            doc["submitted"] = {"id": v["id"], "at": v["at"], "hash": doc_hash(doc["current"])}
+            _trim_versions(doc, 25)
+            _write(resume_path(meta["key"], kind), doc)
+            out[kind] = v["id"]
+    return out

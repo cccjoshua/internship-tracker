@@ -88,6 +88,7 @@ class Spec:
         self.bullet_indent = 22.0
         self.bullet_x = 9.0  # the bullet glyph sits indented, the text hangs after it
         self.text_w = PAGE_W - 2 * self.margin_x
+        self.marks = []  # (page, top, bottom, bullet id): where each bullet sits, so the preview can link to the editor
 
 
 BOLD_PER_LINE = 2  # more than two bold terms in one bullet reads as keyword stuffing and stops guiding the eye
@@ -175,7 +176,7 @@ def blocks(model):
                     if sub or subdate:
                         body.append(("sub", sub, subdate))
                 body += [("bullet", clean(x)) for x in e.get("lines") or [] if clean(x)]
-                body += [("bullet", clean(b.get("text")), bold_segments(clean(b.get("text")), terms))
+                body += [("bullet", clean(b.get("text")), bold_segments(clean(b.get("text")), terms), str(b.get("id") or ""))
                          for b in e.get("bullets") or [] if clean(b.get("text")) and not b.get("hidden")]
         if body:
             out.append(("heading", clean(sec.get("title") or "").upper()))
@@ -288,13 +289,18 @@ def layout(model, size=None, tight=1.0):
             first = True
             runs = ([(b[1] + ": ", sp.bold), (b[2], sp.reg)] if k == "skill" else
                     [(t, sp.bold if bo else sp.reg) for t, bo in b[2]] if len(b) > 2 else [(b[1], sp.reg)])
+            top = None
             for ln in wrap(runs, sp.text_w - sp.bullet_indent, sp.size):
                 need(sp.lead)
+                if top is None:
+                    top, pg = y, len(pages)
                 y += sp.lead
                 if first:
                     ops.append(("runs", sp.margin_x + sp.bullet_x, y - sp.lead * 0.22, ([("•", sp.reg)], sp.size)))
                     first = False
                 ops.append(("runs", sp.margin_x + sp.bullet_indent, y - sp.lead * 0.22, (ln, sp.size)))
+            if k == "bullet" and len(b) > 3 and b[3] and top is not None:
+                sp.marks.append((pg, top, y, b[3]))
     pages.append(ops)
     sp.used = y  # height used on the last page
     return pages, sp
@@ -515,4 +521,9 @@ def render(model):
             elif op[0] == "rule":
                 items.append(["l", round(op[1], 2), round(op[2], 2), round(op[3], 2)])
         out.append(items)
-    return {"size": size, "tight": tight, "pages": n, "fill": round(fill, 3), "font": sp.font, "render": out, "unsupported": unsupported_chars(model)}
+    marks = [[] for _ in pages]
+    for pg, top, bottom, bid in sp.marks:
+        if pg < len(marks):
+            marks[pg].append([round(top, 1), round(bottom, 1), bid])
+    return {"size": size, "tight": tight, "pages": n, "fill": round(fill, 3), "font": sp.font, "render": out, "marks": marks,
+            "unsupported": unsupported_chars(model)}
