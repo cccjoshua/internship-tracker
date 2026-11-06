@@ -321,9 +321,10 @@ H1B_ALIASES = {
     "GOOGLE": "GOOGLE", "ALPHABET": "GOOGLE", "JPMORGAN CHASE": "JPMORGAN CHASE", "JP MORGAN": "JPMORGAN CHASE", "JPMORGAN": "JPMORGAN CHASE",
     "BANK OF AMERICA": "BANK OF AMERICA", "WALMART": "WALMART", "WALMART GLOBAL TECH": "WALMART", "TSMC": "TSMC ARIZONA",
 }
-# First words too common to stand for an employer on their own when a name is shortened.
-GENERIC_FIRST = {"FIRST", "AMERICAN", "GENERAL", "UNITED", "NATIONAL", "GLOBAL", "INTERNATIONAL", "NEW", "NORTH", "SOUTH", "WEST", "EAST",
-                 "ADVANCED", "APPLIED", "DIGITAL", "DATA", "SMART", "THE", "US", "UNIVERSAL", "STANDARD", "CENTRAL", "PACIFIC", "ATLANTIC"}
+# Trailing words that only say what kind of organization it is.
+ORG_WORDS = {"BANCSHARES", "BANCORP", "BANCORPORATION", "HOLDING", "ENTERPRISES", "INDUSTRIES", "MATERIALS", "HANDLING", "SYSTEMS",
+             "SOLUTIONS", "LABS", "LABORATORIES", "PARTNERS", "INTERNATIONAL", "WORLDWIDE", "GLOBAL", "FOUNDATION", "TRUST"}
+
 
 
 class H1B:
@@ -387,15 +388,18 @@ class H1B:
                 self.last_how = "alias"
                 return n
         words = k.split()
-        # Drop trailing words ("FIRST CITIZENS BANCSHARES" -> "FIRST CITIZENS"), never down to one generic word.
-        for cut in range(len(words) - 1, 0, -1):
-            short = " ".join(words[:cut])
-            if cut >= 2 or (len(short) >= 6 and words[0] not in GENERIC_FIRST):
-                n = self._sum(short)
-                if n is not None:
-                    self.last_how = "approx"
-                    return n
-        if len(k) >= 8 and len(words) >= 2:
+        # Drop trailing words that only name the kind of organization ("FIRST CITIZENS BANCSHARES" -> "FIRST CITIZENS",
+        # "HYSTER YALE MATERIALS HANDLING" -> "HYSTER YALE"), keeping at least two words. A place or a product word is
+        # never dropped: "FEDERAL HOME LOAN BANK OF INDIANAPOLIS" is not every Federal Home Loan Bank.
+        cut = len(words)
+        while cut > 2 and words[cut - 1] in ORG_WORDS:
+            cut -= 1
+            n = self._sum(" ".join(words[:cut]))
+            if n is not None:
+                self.last_how = "approx"
+                return n
+        # The last word may be the start of the filing name's word ("ALASKA AIR" -> "ALASKA AIRLINES").
+        if len(words) >= 2 and len(words[-1]) >= 3 and len(k) >= 8:
             n = self._sum(k, word_prefix=True)
             if n is not None:
                 self.last_how = "approx"

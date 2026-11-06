@@ -71,6 +71,11 @@ class Classification(unittest.TestCase):
         self.assertIsNone(h.lookup("First Horizon"))            # never shortened to a generic first word
         self.assertIsNone(h.lookup("General Dynamics"))
         self.assertIsNone(h.lookup("Shield AI"))
+        h.counts.update({"FEDERAL HOME LOAN BANK OF ATLANTA": 9, "GOLDEN STATE FOODS": 5, "OVERLAND CONTRACTING": 3})
+        h.keys = sorted(h.counts)
+        self.assertIsNone(h.lookup("Federal Home Loan Bank of Indianapolis"))  # a sibling bank is not this employer
+        self.assertIsNone(h.lookup("Golden Analytics"))
+        self.assertIsNone(h.lookup("Overland AI"))
 
 
 class Deadlines(unittest.TestCase):
