@@ -19,7 +19,13 @@ const IC = {
   dl: svgI('<path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/>'),
 };
 /* ---------- server calls ---------- */
+/* The page talks only to the local server; when it is down every call fails the same way, so say so plainly. */
+const OFFLINE_MSG = 'Can’t reach the tracker server on your Mac. It restarts by itself within a minute; if it doesn’t, run python3 server.py in the internship-tracker folder.';
 async function api(method, path, body) {
+  try { return await api0(method, path, body); }
+  catch (e) { if (e instanceof TypeError && !e.status) { const x = new Error(OFFLINE_MSG); x.offline = true; throw x; } throw e; }
+}
+async function api0(method, path, body) {
   const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
   let d = null; try { d = await r.json(); } catch (_) { /* empty */ }
   if (!r.ok) { const e = new Error((d && d.error) || `Request failed (${r.status})`); e.status = r.status; e.data = d; throw e; }
@@ -262,10 +268,12 @@ const MISSING_GOTO = { 'Name': 'fld:basics.name', 'Email': 'fld:basics.email', '
 function rProfile() {
   if (!P.data) return '<p class="empty">Loading your profile…</p>';
   const p = P.data, pr = p.preferences, S = I.S.settings, cm = completeness(p);
-  const sec = (id, title, sub, body) => `<section class="panel" id="s-${id}"><h2>${title}${sub ? ` <small>${sub}</small>` : ''}</h2>${body}</section>`;
+  /* One section at a time (like Settings): the page stays short, and every "fix this" link opens the right one. */
+  const want = location.hash.split('/')[1], active = PF_SECTIONS.some(([k]) => k === want) ? want : 'basics';
+  const sec = (id, title, sub, body) => `<section class="panel" id="s-${id}" ${id === active ? '' : 'hidden'}><h2>${title}${sub ? ` <small>${sub}</small>` : ''}</h2>${body}</section>`;
   const mine = new Set(S.mySkills);
   return `<div class="settings pf">
-  <nav class="stoc" aria-label="Profile sections">${PF_SECTIONS.map(([k, l]) => `<a href="#profile/${k}" data-pftoc="${k}">${l}</a>`).join('')}</nav>
+  <nav class="stoc" aria-label="Profile sections">${PF_SECTIONS.map(([k, l]) => { const n = PT_SECS.includes(k) ? (p[k] || []).reduce((m, e) => m + e.points.filter((x) => x.confirm).length, 0) : 0; return `<a href="#profile/${k}" data-pftoc="${k}"${k === active ? ' aria-current="page"' : ''}>${l}${n ? ` <span class="toc-n" title="${n} to confirm">${n}</span>` : ''}</a>`; }).join('')}</nav>
   <div class="sbody">
   <div class="pf-top panel"><div class="pf-status">
     <div><b>${cm.missing.length ? `${cm.total - cm.missing.length} of ${cm.total} essentials filled` : 'All essentials filled'}</b>${cm.confirm ? ` <span class="warn-t">· ${plural(cm.confirm, 'point', 'points')} to confirm</span>` : ''}
@@ -1602,6 +1610,59 @@ async function jobAction(k) {
   return st;
 }
 
+/* ---------- Data check: wrong or stale data, each with its fix ---------- */
+function dataChecks() {
+  const S = I.S, F = I.F, out = [], today = new Date().toISOString().slice(0, 10), add = (sev, area, text, fix) => out.push({ sev, area, text, fix });
+  const open = (a) => `<button class="btn xs" type="button" data-open="${esc(a.id)}">Edit application</button>`;
+  // Applications
+  const seen = new Map();
+  for (const a of S.apps) {
+    const h = a.history || [], ds = h.map((x) => x.d);
+    if (['applied', 'oa', 'interview', 'offer', 'rejected', 'ghosted'].includes(a.status) && !h.some((x) => x.s === 'applied')) add('err', 'Applications', `${a.company}: ${I.LABEL[a.status]} but no applied date, so follow-ups and weekly counts miss it`, open(a));
+    if (ds.some((d, i) => i && d < ds[i - 1])) add('warn', 'Applications', `${a.company}: status history dates are out of order`, open(a));
+    if (a.status === 'saved' && a.deadline && a.deadline < today) add('warn', 'Applications', `${a.company}: still saved, but the deadline was ${I.fmt(a.deadline)}`, open(a));
+    if (h.some((x) => x.d > today)) add('warn', 'Applications', `${a.company}: a status date is in the future`, open(a));
+    const k = I.listingKey(a); if (seen.has(k)) add('err', 'Applications', `${a.company} · ${a.role}: tracked twice`, open(a)); else seen.set(k, a);
+  }
+  // Documents
+  if (DOCS.list) for (const r of DOCS.list) {
+    const app = I.appForKey(r.key), d = r.resume;
+    if (!d) continue;
+    if (app && ['applied', 'oa', 'interview', 'offer'].includes(app.status) && !d.submittedAt) add('warn', 'Resumes', `${r.company}: applied, but no “Submitted” resume is recorded, so you can’t tell what the employer has`, `<button class="btn xs" type="button" data-freeze="${esc(r.key)}" title="Only if the current page is what you sent">Current page is what I sent</button>`);
+    if (d.editedSinceSubmit && app && ['oa', 'interview'].includes(app.status)) add('warn', 'Resumes', `${r.company}: you have an ${app.status === 'oa' ? 'assessment' : 'interview'}, and the resume changed after you sent it. Prepare from the submitted version`, `<button class="btn xs" type="button" data-dl="resumesent:pdf:${esc(r.key)}">Download sent .pdf</button>`);
+  }
+  // Profile
+  if (P.data) {
+    const n = toConfirm(P.data).length; if (n) add('warn', 'Profile', `${plural(n, 'point')} not confirmed: Claude can’t use them`, '<button class="btn xs" type="button" data-goto="sec:basics">Review them</button>');
+    const Sk = C.skillSet(P.data, {}), no = new Set((P.data.notYet || []).flatMap(C.splitTerms).map(C.nk));
+    const bad = (S.settings.mySkills || []).filter((x) => no.has(C.nk(x)));
+    if (bad.length) add('err', 'Profile', `Ticked for listing scores but on your Do not claim list: ${bad.join(', ')}`, '<a class="btn xs" href="#profile/skills">Open Skills</a>');
+    const unshown = (S.settings.mySkills || []).filter((x) => !C.hasSkill(x, Sk));
+    if (unshown.length) add('info', 'Profile', `Ticked for listing scores but not in any Profile skill line or job: ${unshown.join(', ')}. Add them to a skill line if true, or untick them`, '<a class="btn xs" href="#profile/skills">Open Skills</a>');
+  }
+  // Listings feed
+  const f = F.fetch;
+  if (!f) add('warn', 'Listings', 'Listings have never been refreshed', '');
+  else {
+    const age = (Date.now() - new Date(f.at).getTime()) / 36e5;
+    if (f.error) add('err', 'Listings', `The last refresh failed: ${f.error}`, '<a class="btn xs" href="#settings/search">Refresh settings</a>');
+    else if (age > 26) add('warn', 'Listings', `Listings were last refreshed ${Math.round(age)} hours ago (the Mac may have been asleep or offline)`, '<a class="btn xs" href="#settings/search">Refresh now</a>');
+    if (f.usingCache) add('warn', 'Listings', 'SimplifyJobs could not be reached at the last refresh, so an older copy of the feed was used', '');
+    const y = +String(f.h1b || '').replace(/\D/g, '') || 0, fyNow = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0);
+    if (y && fyNow - y >= 2) add('warn', 'Listings', `H-1B approval counts come from ${f.h1b}, ${fyNow - y} fiscal years old. Download the newest year from the USCIS H-1B Employer Data Hub (Download → all employers) and import it`, '<a class="btn xs" href="https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub" target="_blank" rel="noopener">Open USCIS hub ↗</a><button class="btn xs" type="button" data-ai="h1bpick">Import file…</button>');
+    const unread = F.listings.filter((l) => l.source === 'simplify' && !l.textRead).length;
+    if (unread) add('info', 'Listings', `${plural(unread, 'listing')} could not be read (the career site blocked it), so skills, deadline and sponsorship come from the feed only`, '');
+  }
+  return out;
+}
+function dataCheckPanel() {
+  if (!DOCS.list && !DOCS.loading) loadDocs();
+  const L = dataChecks(), SEV = { err: ['bad', 'Fix'], warn: ['warn', 'Check'], info: ['', 'Note'] };
+  const errs = L.filter((x) => x.sev === 'err').length, warns = L.filter((x) => x.sev === 'warn').length;
+  return `<section class="panel" id="s-health"><h2>Data check <small>${L.length ? `${errs ? plural(errs, 'problem') : ''}${errs && warns ? ' · ' : ''}${warns ? plural(warns, 'thing') + ' to check' : ''}${!errs && !warns ? 'notes only' : ''}` : 'everything looks right'}</small></h2>
+    <p class="sub">Checks your applications, resumes, Profile and listings for missing, contradictory or stale data. Runs every time you open this page; nothing is changed until you press a button.</p>
+    ${L.length ? `<ul class="fixlist dcheck">${L.map((x) => `<li><span class="fix-w"><b><span class="dc-sev ${SEV[x.sev][0]}">${SEV[x.sev][1]}</span> ${esc(x.area)}</b><span class="fix-t">${esc(x.text)}</span></span><span class="fix-a">${x.fix}</span></li>`).join('')}</ul>` : '<p class="pos">No missing, contradictory or stale data found.</p>'}</section>`;
+}
 /* ---------- settings: Claude API ---------- */
 function rSettings() {
   const st = AI.status;
@@ -1721,8 +1782,9 @@ async function aiConfig(patch, msg) { try { AI.status = await api('POST', 'api/a
 document.addEventListener('click', async (e) => {
   const t = e.target;
   const pfa = t.closest('[data-pfa]'); if (pfa) { e.preventDefault(); return profileAction(pfa.dataset.pfa, pfa); }
-  const toc = t.closest('[data-pftoc]'); if (toc) { e.preventDefault(); history.replaceState(null, '', '#profile/' + toc.dataset.pftoc); const el = document.getElementById('s-' + toc.dataset.pftoc); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+  const toc = t.closest('[data-pftoc]'); if (toc) { e.preventDefault(); history.replaceState(null, '', '#profile/' + toc.dataset.pftoc); rProfile.scrolled = true; I.render(); window.scrollTo(0, 0); const h = document.querySelector('#s-' + toc.dataset.pftoc + ' h2'); if (h) { h.tabIndex = -1; h.focus({ preventScroll: true }); } return; }
   const jb = t.closest('[data-jb]'); if (jb) { e.preventDefault(); return jobAction(jb.dataset.jb); }
+  const fz = t.closest('[data-freeze]'); if (fz) { e.preventDefault(); const r = (DOCS.list || []).find((x) => x.key === fz.dataset.freeze); try { await api('POST', 'api/submitted', { key: fz.dataset.freeze, company: r ? r.company : '', role: r ? r.role : '' }); DOCS.list = null; await loadDocs(); I.toast('Recorded as the version you submitted'); I.render(); } catch (err) { I.toast(err.message); } return; }
   const sd = t.closest('[data-subdl]'); if (sd) { e.preventDefault(); return subDownload(sd.dataset.subdl); }
   const sc2 = t.closest('[data-subcmp]'); if (sc2) { e.preventDefault(); const v = submittedOf((JOBS.get(JOB.key) || {}).resume); if (v) I.openDialog(diffDialog(v), 'wide'); return; }
   const ew = t.closest('#rsEditW > summary'); if (ew) { ST.editOpen = !ew.parentElement.open; }
@@ -1760,12 +1822,18 @@ function rDocs() {
   if (!P.server) return `<div class="panel"><p class="empty">Documents are saved by the local server. Start it with python3 server.py.</p></div>`;
   if (!DOCS.list) { loadDocs(); return '<div class="panel"><p class="empty">Loading…</p></div>'; }
   const q = DOCS.q.toLowerCase().trim();
-  const rows = DOCS.list.filter((r) => (DOCS.kind === 'all' || r[DOCS.kind]) && (!q || (r.company + ' ' + r.role).toLowerCase().includes(q)));
+  /* Needs you: changed after you sent it, or never exported while the job is still open. */
+  const needs = (r) => ['resume', 'letter'].some((k) => r[k] && (r[k].editedSinceSubmit || (!r[k].submittedAt && !r[k].exported && (I.appForKey(r.key) || {}).status === 'saved')));
+  const rows = DOCS.list.filter((r) => (DOCS.kind === 'all' || (DOCS.kind === 'needs' ? needs(r) : r[DOCS.kind])) && (!q || (r.company + ' ' + r.role).toLowerCase().includes(q)));
   const nR = DOCS.list.filter((r) => r.resume).length, nL = DOCS.list.filter((r) => r.letter).length;
   const cell = (r, kind) => {
     const d = r[kind]; if (!d) return `<td class="dc-c"><span class="na-s">—</span></td>`;
     const tag = kind === 'resume' ? (d.tailored ? '<span class="chip v-yes">Tailored</span>' : '<span class="chip tag">Master</span>') : (d.tailored ? '<span class="chip v-yes">Written with Claude</span>' : '<span class="chip tag">Draft</span>');
-    return `<td class="dc-c"><div class="dc-st">${tag}<span class="na-s">${d.exported ? 'exported ' + when(d.exportedAt) : d.exportedBefore ? `<span class="warn-t">edited since export</span> · ${when(d.updatedAt)}` : 'not exported · edited ' + when(d.updatedAt)}${d.reviewed ? ' · reviewed' : ''}</span></div>
+    const subd = d.submittedAt ? `<span class="chip v-yes">Submitted ${esc(when(d.submittedAt))}</span>${d.editedSinceSubmit ? '<span class="warn-t na-s">edited since</span>' : ''}` : '';
+    const sc = kind === 'resume' && d.current && r.fit ? C.resumeScore(d.current, { analysis: r.fit, skills: P.data ? C.skillSet(P.data, I.S.settings) : null }) : null;
+    const scs = sc && sc.total !== null ? `<span class="na-s" title="Resume score for this posting (wording and evidence)">score ${sc.total}</span>` : '';
+    if (subd) return `<td class="dc-c"><div class="dc-st">${subd}${scs}</div>${dlPair(`${kind}:%:${r.key}`, r.company + ' ' + (kind === 'letter' ? 'cover letter' : 'resume') + ' (current)')}${d.submittedModel ? `<div class="dlpair sm" role="group" aria-label="Download the submitted ${kind}"><span class="dlp-l" aria-hidden="true">${IC.dl} sent</span><button type="button" data-dl="${kind}sent:docx:${esc(r.key)}">.docx</button><button type="button" data-dl="${kind}sent:pdf:${esc(r.key)}">.pdf</button></div>` : ''}</td>`;
+    return `<td class="dc-c"><div class="dc-st">${tag}${scs}<span class="na-s">${d.exported ? 'exported ' + when(d.exportedAt) : d.exportedBefore ? `<span class="warn-t">edited since export</span> · ${when(d.updatedAt)}` : 'not exported · edited ' + when(d.updatedAt)}${d.reviewed ? ' · reviewed' : ''}</span></div>
       ${dlPair(`${kind}:%:${r.key}`, r.company + ' ' + (kind === 'letter' ? 'cover letter' : 'resume'))}</td>`;
   };
   const trackOf = (r) => { const app = I.appForKey(r.key); if (app && app.track) return app.track; const l = I.scored().find((x) => I.listingKey(x) === r.key); return (l && l.t) || I.inferTrack(r.role) || 'Other'; };
@@ -1794,7 +1862,8 @@ function rDocs() {
   const base = P.data && P.data.basics.name && targets.length ? `<section class="panel dbase"><h2>Base resumes <small>the starting point for every job resume in a track</small></h2>
     <ul class="dbase-l">${targets.map(tbRow).join('')}</ul>
     <p class="sub">Without tailoring, a base resume is your Profile in its lead-with order. Tailor one with Claude and it leads with what that track’s recruiters screen for, worded for the track, from your Profile’s facts only. Every job resume in the track then starts from it.</p></section>` : '';
-  const seg = [['all', `All ${DOCS.list.length}`], ['resume', `Resumes ${nR}`], ['letter', `Cover letters ${nL}`]];
+  const nN = DOCS.list.filter(needs).length;
+  const seg = [['all', `All ${DOCS.list.length}`], ['resume', `Resumes ${nR}`], ['letter', `Cover letters ${nL}`], ...(nN ? [['needs', `Needs you ${nN}`]] : [])];
   return `${base}<div class="toolbar" style="margin:${base ? '16px' : '0'} 0 12px"><input type="search" id="docQ" placeholder="Search company or role" aria-label="Search documents" value="${esc(DOCS.q)}" style="max-width:280px">
       <div class="stagef" role="group" aria-label="Show">${seg.map(([k, l]) => `<button type="button" data-dockind="${k}" aria-pressed="${DOCS.kind === k}">${l}</button>`).join('')}</div><span class="grow"></span>
       <span class="hint">File names follow Profile → Basics</span></div>
@@ -1898,6 +1967,9 @@ async function docDownload(kind, fmt, key) {
   let model, label;
   if (kind === 'base') {
     model = masterFor(key); const keep = ST.fit; await fitOnePage(model, []); ST.fit = keep; label = key;
+  } else if (kind.endsWith('sent')) {
+    kind = kind.slice(0, -4); const r = (DOCS.list || []).find((x) => x.key === key); if (!r || !r[kind] || !r[kind].submittedModel) return;
+    model = kind === 'letter' ? letterExport(r[kind].submittedModel) : r[kind].submittedModel; label = r.company + '_submitted';
   } else {
     const r = (DOCS.list || []).find((x) => x.key === key); if (!r || !r[kind]) return;
     model = kind === 'letter' ? letterExport(r[kind].current) : r[kind].current; label = r.company;
@@ -1930,6 +2002,7 @@ I.VIEWS.job = { get 0() { const J = resolveJob(curId()); return J ? J.company : 
 I.R.profile = rProfile;
 I.R.job = rJob;
 I.HOOKS.settings = rSettings;
+I.HOOKS.dataCheck = dataCheckPanel;
 /* Eligibility of an analyzed job for the listing rows (computed from your Profile; null when not analyzed). */
 I.HOOKS.verdictOf = (x) => {
   const k = I.kitOf(x); if (!k || !k.fitIn || !P.data) return null;

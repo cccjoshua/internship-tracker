@@ -1122,10 +1122,16 @@ def studio_docs():
             r[kind] = {"tailored": st["generated"], "updatedAt": d.get("updatedAt", ""), "exportedAt": st["exportedAt"], "exported": st["exported"],
                        "exportedBefore": st["exportedBefore"], "lastExportAt": st["lastExportAt"], "reviewed": st["reviewed"],
                        "versions": len(vs), "current": d["current"],
+                       "submittedAt": st.get("submittedAt", ""), "editedSinceSubmit": st.get("editedSinceSubmit", False),
+                       "submittedModel": next((v["resume"] for v in vs if v.get("id") == (d.get("submitted") or {}).get("id")), None),
                        "files": [e.get("file") for e in d.get("exports") or [] if e.get("hash") == st["hash"]][-2:]}
             r["_m"] = max(r.get("_m", 0), os.path.getmtime(f))
             r["company"] = r["company"] or d.get("company", ""); r["role"] = r["role"] or d.get("role", "")
     out = list(rows.values())
+    for r in out:  # the posting's skills, so the page can show each resume's score without opening the job
+        a = (load_job(r["key"]) or {}).get("analysis") or {}
+        if a:
+            r["fit"] = {k: a.get(k) for k in ("requiredSkills", "preferredSkills", "keywords")}
     out.sort(key=lambda r: (max((r.get(k) or {}).get("updatedAt", "") for k in DOC_DIRS), r["_m"]), reverse=True)
     for r in out:
         r.pop("_m", None)

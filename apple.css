@@ -879,3 +879,16 @@ input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
 .rs-work .revise{border:0;box-shadow:none;background:transparent;border-radius:0;padding:0}
 .todo-panel .notice{border:0;box-shadow:none;background:transparent;padding-left:0;padding-right:0}
 .rs-editw .rs-hd{border:0;box-shadow:none;background:transparent;padding-left:0;padding-right:0}
+
+/* Profile sections count what still needs confirming */
+.stoc .toc-n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--hl-soft);color:var(--warn);font-size:11px;font-weight:600}
+/* Data check */
+.dcheck .dc-sev{display:inline-block;min-width:38px;font-size:11px;font-weight:600;color:var(--muted)}
+.dcheck .dc-sev.bad{color:var(--bad)}.dcheck .dc-sev.warn{color:var(--warn)}
+/* Phones: search and theme sit beside the title instead of on their own row */
+@media (max-width:760px){
+  .top{position:relative}
+  .top-acts{position:absolute;top:0;right:0;order:0}
+  .titlebar{padding-right:96px}
+}
+@media (max-width:1080px){.rs-grid.v2{grid-template-columns:minmax(0,1fr)}.rs-view .rs-sticky{position:static;max-height:none;overflow:visible}}

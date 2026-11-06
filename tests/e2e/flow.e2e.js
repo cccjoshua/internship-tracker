@@ -139,6 +139,15 @@ const api = async (p, path) => p.evaluate(async (u) => (await fetch(u, { cache: 
   const saved = await api(p, 'api/state');
   assert.equal(saved.apps.find((a) => a.id === appId).status, 'applied');
   step('marked applied; still applied after reload and in tracker.json');
+  const sub = (await api(p, 'api/job?key=' + encodeURIComponent(await keyOf(appId)))).resume;
+  assert.ok(sub.submitted && sub.versions.some((v) => v.submitted && v.id === sub.submitted.id), 'the resume you sent is frozen as Submitted');
+  assert.equal(sub.state.editedSinceSubmit, false);
+  await p.goto(base + '/#job/' + encodeURIComponent(appId) + '/resume', { waitUntil: 'networkidle' });
+  await p.waitForSelector('.ready .chip.v-yes');
+  assert.match(await p.locator('.ready').innerText(), /Submitted/);
+  await p.goto(base + '/#settings/health', { waitUntil: 'networkidle' }); await p.waitForTimeout(600);
+  assert.ok(await p.locator('#s-health').isVisible(), 'Data check pane opens');
+  step('applying froze the resume as Submitted; the page says so; Data check runs');
 
   assert.deepEqual(errors, [], 'no page errors');
   await b.close();

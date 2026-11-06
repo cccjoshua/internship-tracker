@@ -105,10 +105,12 @@ const step = (m) => console.log('✓ palette: ' + m);
 
   // Regression: Settings panes must not hide the Profile page's sections (both use the same section list layout)
   await p.evaluate(() => { location.hash = 'profile'; }); await p.waitForTimeout(500);
-  assert.ok(await p.locator('#s-basics').isVisible() && await p.locator('#s-skills').isVisible(), 'Profile shows every section');
+  assert.ok(await p.locator('#s-basics').isVisible() && !(await p.locator('#s-skills').isVisible()), 'Profile shows one section at a time, Basics first');
+  await p.evaluate(() => { location.hash = 'profile/skills'; }); await p.waitForTimeout(400);
+  assert.ok(await p.locator('#s-skills').isVisible() && !(await p.locator('#s-basics').isVisible()), 'a Profile link opens its section');
   await p.evaluate(() => { location.hash = 'settings/goals'; }); await p.waitForTimeout(400);
   assert.deepEqual(await p.$$eval('.sbody > section[id^=s-]', (s) => s.filter((x) => !x.hidden).map((x) => x.id)), ['s-goals'], 'Settings shows one pane');
-  step('Profile shows all sections; Settings shows one pane');
+  step('Profile and Settings each show one section at a time');
 
   // The logo goes to the Dashboard; on the Dashboard it scrolls back to the top
   await p.evaluate(() => { location.hash = 'inbox'; }); await p.waitForTimeout(400);

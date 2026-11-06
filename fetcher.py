@@ -312,6 +312,20 @@ def norm_company(s):
     return " ".join(SUFFIX.sub(" ", s).split())
 
 
+# Brand names whose H-1B filings use a different legal name (normalized with norm_company on both sides).
+H1B_ALIASES = {
+    "AMD": "ADVANCED MICRO DEVICES", "IBM": "INTERNATIONAL BUSINESS MACHINES", "HP": "HP", "HPE": "HEWLETT PACKARD ENTERPRISE",
+    "PACIFIC NORTHWEST NATIONAL LABORATORY": "BATTELLE MEMORIAL INSTITUTE", "PNNL": "BATTELLE MEMORIAL INSTITUTE",
+    "GE": "GENERAL ELECTRIC", "GE AEROSPACE": "GENERAL ELECTRIC", "P AND G": "PROCTER AND GAMBLE", "PROCTER AND GAMBLE": "PROCTER AND GAMBLE",
+    "META": "META PLATFORMS", "FACEBOOK": "META PLATFORMS", "AWS": "AMAZON WEB", "AMAZON WEB": "AMAZON WEB",
+    "GOOGLE": "GOOGLE", "ALPHABET": "GOOGLE", "JPMORGAN CHASE": "JPMORGAN CHASE", "JP MORGAN": "JPMORGAN CHASE", "JPMORGAN": "JPMORGAN CHASE",
+    "BANK OF AMERICA": "BANK OF AMERICA", "WALMART": "WALMART", "WALMART GLOBAL TECH": "WALMART", "TSMC": "TSMC ARIZONA",
+}
+# First words too common to stand for an employer on their own when a name is shortened.
+GENERIC_FIRST = {"FIRST", "AMERICAN", "GENERAL", "UNITED", "NATIONAL", "GLOBAL", "INTERNATIONAL", "NEW", "NORTH", "SOUTH", "WEST", "EAST",
+                 "ADVANCED", "APPLIED", "DIGITAL", "DATA", "SMART", "THE", "US", "UNIVERSAL", "STANDARD", "CENTRAL", "PACIFIC", "ATLANTIC"}
+
+
 class H1B:
     """Employer -> H-1B approvals (initial + continuing) from the USCIS H-1B Employer Data Hub."""
 
@@ -340,18 +354,53 @@ class H1B:
                 log(f"H-1B data unavailable ({e}); sponsorship falls back to posting text only.")
         self.keys = sorted(self.counts)
 
+    def _sum(self, k, word_prefix=False):
+        """Approvals for name k and every filing name that extends it ("CAPITAL ONE" + "CAPITAL ONE BANK").
+        word_prefix also accepts k's last word as the start of a longer word ("ALASKA AIR" -> "ALASKA AIRLINES")."""
+        found, total = k in self.counts, self.counts.get(k, 0)
+        if len(k) >= 3:
+            stem = k if word_prefix else k + " "
+            i = bisect.bisect_left(self.keys, stem)
+            while i < len(self.keys) and self.keys[i].startswith(stem):
+                if self.keys[i] != k:
+                    total += self.counts[self.keys[i]]
+                    found = True
+                i += 1
+        return total if found else None
+
     def lookup(self, company):
+        """Approvals for a listing's employer, or None when no filing name matches. self.last_how says how the
+        name matched: 'exact' (the name or a longer filing name), 'alias' (a known legal name), or 'approx'
+        (a shortened name or a word prefix; shown as approximate)."""
+        self.last_how = None
         k = norm_company(company)
         if not k or not self.counts:
             return None
-        found, total = k in self.counts, self.counts.get(k, 0)
-        if len(k) >= 3:
-            i = bisect.bisect_left(self.keys, k + " ")
-            while i < len(self.keys) and self.keys[i].startswith(k + " "):
-                total += self.counts[self.keys[i]]
-                found = True
-                i += 1
-        return total if found else None
+        n = self._sum(k)
+        if n is not None:
+            self.last_how = "exact"
+            return n
+        alias = H1B_ALIASES.get(k)
+        if alias:
+            n = self._sum(alias)
+            if n is not None:
+                self.last_how = "alias"
+                return n
+        words = k.split()
+        # Drop trailing words ("FIRST CITIZENS BANCSHARES" -> "FIRST CITIZENS"), never down to one generic word.
+        for cut in range(len(words) - 1, 0, -1):
+            short = " ".join(words[:cut])
+            if cut >= 2 or (len(short) >= 6 and words[0] not in GENERIC_FIRST):
+                n = self._sum(short)
+                if n is not None:
+                    self.last_how = "approx"
+                    return n
+        if len(k) >= 8 and len(words) >= 2:
+            n = self._sum(k, word_prefix=True)
+            if n is not None:
+                self.last_how = "approx"
+                return n
+        return None
 
 
 def h1b_meta():
@@ -909,7 +958,10 @@ def refresh(user, listings_state=None, log=print, progress=None):
             if ana.get("citizen") or ana.get("clearance"):
                 drop("Citizenship or clearance required")
                 continue
-        out.append(record(it, posted, ana, h1b.lookup(it.get("company_name"))))
+        rec = record(it, posted, ana, h1b.lookup(it.get("company_name")))
+        if getattr(h1b, "last_how", None) == "approx":
+            rec["h1bApprox"] = True  # matched on a shortened name: shown as approximate
+        out.append(rec)
 
     # Saved (not yet applied) applications: is the posting still open? Checked once a day.
     inactive = {url_key(it.get("url")) for it in feed if not it.get("active")} - {""}

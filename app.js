@@ -450,7 +450,7 @@ function backCrumb() {
 }
 const R = {};
 /* Extension points for studio.js (Profile, Job details, Resume studio). */
-const HOOKS = { afterRender: [], settings: null, jobNav: null, verdictOf: null, onApplied: null };
+const HOOKS = { afterRender: [], settings: null, jobNav: null, verdictOf: null, onApplied: null, dataCheck: null };
 
 /* Per-job progress from the server (analysis, resume, cover letter), so rows show how far each application is. */
 let KIT = {};
@@ -736,7 +736,7 @@ R.table = () => {
 
 const h1bLabel = () => (F.fetch && F.fetch.h1b) || 'FY2023';
 function evidence(l) {
-  const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record found for this employer' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS ${h1bLabel()})`;
+  const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record found for this employer' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS ${h1bLabel()})${l.h1bApprox ? ' · approximate: matched on a shortened employer name' : ''}`;
   const fl = (l.flags || []).map((f) => `<span class="chip ${f === 'CPT/OPT friendly' ? 'v-yes' : f === 'No sponsorship' ? 'v-no' : 'tag'}">${esc(f)}${f === 'No sponsorship' && l.pen ? ` −${l.pen}` : ''}</span>`).join('');
   return h || fl ? `<div class="ev"><span>${esc(h)}</span>${fl}</div>` : '';
 }
@@ -996,7 +996,7 @@ function renderPeek() {
 }
 
 /* ---------- settings ---------- */
-const SECTIONS = [['search', 'Job search'], ['scoring', 'Scoring'], ['outcomes', 'Score vs. outcomes'], ['goals', 'Goals and reminders'], ['claude', 'Claude'], ['resumes', 'Resume versions'], ['calendar', 'Calendar'], ['data', 'Your data'], ['appearance', 'Appearance']];
+const SECTIONS = [['search', 'Job search'], ['scoring', 'Scoring'], ['outcomes', 'Score vs. outcomes'], ['goals', 'Goals and reminders'], ['claude', 'Claude'], ['resumes', 'Resume versions'], ['calendar', 'Calendar'], ['health', 'Data check'], ['data', 'Your data'], ['appearance', 'Appearance']];
 const numField = (id, label, key, min, max, hint, step) => `<label class="field"><span>${label}</span><input id="${id}" type="number" min="${min}" max="${max}" step="${step || 1}" data-setting="${key}" data-min="${min}" data-max="${max}" value="${esc(S.settings[key])}">${hint ? `<span class="hint">${hint}</span>` : ''}</label>`;
 R.settings = () => {
   const st = S.settings;
@@ -1039,6 +1039,7 @@ R.settings = () => {
       <span class="hint">${notifState}</span>${st.notify && 'Notification' in window && Notification.permission === 'granted' ? '<div class="row"><button class="btn sm" type="button" data-action="notify-test">Send a test notification</button></div>' : ''}</div></section>
 
   ${HOOKS.settings ? HOOKS.settings() : ''}
+  ${HOOKS.dataCheck ? HOOKS.dataCheck() : ''}
 
   <section class="panel" id="s-resumes"><h2>Resume versions <small>shown on each listing as “Resume: …”</small>${eff(true)}</h2>
     <div class="weights" style="grid-template-columns:minmax(0,1fr) minmax(0,1.3fr)">${['DS', 'DA', 'BIE', 'DE', 'SWE'].map((k) => `<label for="rv-${k}">${k} · ${TRACK_NAME[k]}</label><input id="rv-${k}" type="text" data-resume="${k}" value="${esc((st.resumes || DEFAULTS.resumes)[k] || '')}">`).join('')}</div>

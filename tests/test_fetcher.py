@@ -58,6 +58,20 @@ class Classification(unittest.TestCase):
         self.assertEqual(h.lookup("Meta Platforms, Inc."), 5000)
         self.assertIsNone(h.lookup("Tiny Startup"))
 
+    def test_h1b_lookup_aliases_and_shortened_names(self):
+        h = fetcher.H1B.__new__(fetcher.H1B)
+        h.counts = {"ADVANCED MICRO DEVICES": 153, "ALASKA AIRLINES": 10, "FIRST CITIZENS BANK AND TRUST": 16, "HYSTER YALE": 1,
+                    "BATTELLE MEMORIAL INSTITUTE": 94, "FIRST SOLAR": 7, "GENERAL MOTORS": 300}
+        h.keys = sorted(h.counts)
+        self.assertEqual(h.lookup("AMD"), 153); self.assertEqual(h.last_how, "alias")
+        self.assertEqual(h.lookup("Pacific Northwest National Laboratory"), 94)
+        self.assertEqual(h.lookup("Alaska Air Group"), 10); self.assertEqual(h.last_how, "approx")
+        self.assertEqual(h.lookup("First Citizens BancShares"), 16)
+        self.assertEqual(h.lookup("Hyster-Yale Materials Handling"), 1)
+        self.assertIsNone(h.lookup("First Horizon"))            # never shortened to a generic first word
+        self.assertIsNone(h.lookup("General Dynamics"))
+        self.assertIsNone(h.lookup("Shield AI"))
+
 
 class Deadlines(unittest.TestCase):
     TODAY = dt.date(2026, 10, 28)
