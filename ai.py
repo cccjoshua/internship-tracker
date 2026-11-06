@@ -939,16 +939,22 @@ def tailor(meta, profile, track, lead_with="", instructions="", rules_extra=None
 # What internship postings in each track usually screen for. General market knowledge, not facts about the candidate:
 # it only tells Claude which of the candidate's true facts to put first and which words recruiters search for.
 TRACK_BRIEF = {
+    # Researched Nov 2026: Cornell/UW career services (SWE), Data Engineer Academy (DE), Duke Career Hub (DA),
+    # a data science intern hiring manager on Towards Data Science (DS), Amazon BIE internship postings (BIE).
     "SWE": "Software engineering intern postings usually require: one or more of Java, Python, C++, C#, Go, JavaScript/TypeScript; data structures, algorithms and object-oriented design; building and shipping working software. "
-           "Often preferred: web or backend development, REST APIs, SQL and databases, Git, testing, cloud (AWS/Azure), Linux, CI/CD, AI-assisted development.",
+           "Often preferred: web or backend development, REST APIs, SQL and databases, Git, testing, cloud (AWS/Azure), Linux, CI/CD, AI-assisted development. "
+           "Recruiters weigh projects heavily for students: name the tools and what the software does, show debugging, optimizing or real users, group skills by category (languages, frameworks, databases, tools/practices), and keep GitHub in the header.",
     "DE": "Data engineering intern postings usually require: SQL and Python; relational databases and data modeling; ETL/ELT pipelines that move and clean data. "
-          "Often preferred: Spark or other distributed processing, Airflow/orchestration, data warehouses (Snowflake, Redshift, BigQuery), cloud (AWS/Azure/GCP), schema design, query optimization, data quality, Git.",
+          "Often preferred: Spark or other distributed processing, Airflow/orchestration, data warehouses (Snowflake, Redshift, BigQuery), cloud (AWS/Azure/GCP), schema design, query optimization, data quality, Git. "
+          "Bullets should prove building: pipelines built or maintained with the tools named, schema fixes, data-quality checks and reliability for downstream users. Back every skill listed with a bullet; never list a tool only seen in a tutorial.",
     "DA": "Data analyst intern postings usually require: SQL, Excel, and a BI or visualization tool (Tableau, Power BI); Python or R for analysis; turning data into findings for business stakeholders. "
-          "Often preferred: statistics and A/B testing, dashboards and KPIs, data cleaning, storytelling with data, pandas.",
+          "Often preferred: statistics and A/B testing, dashboards and KPIs, data cleaning, storytelling with data, pandas. "
+          "Hiring managers look for business impact (time saved, decisions supported), the strongest tools first, communication shown inside achievements rather than as buzzwords, and an optional 1-2 line summary naming the target role.",
     "DS": "Data science / ML intern postings usually require: Python, statistics, and machine learning (scikit-learn, PyTorch or TensorFlow); data analysis and model evaluation. "
-          "Often preferred: deep learning, NLP or LLMs, experimentation, SQL, feature engineering, research or publication experience, clear communication of results.",
-    "BIE": "Business intelligence intern postings usually require: SQL, data modeling and a BI tool (Tableau, Power BI, QuickSight); building dashboards and reports that stakeholders use. "
-           "Often preferred: ETL, data warehouses, Excel, Python, defining metrics and KPIs.",
+          "Often preferred: deep learning, NLP or LLMs, experimentation, SQL, feature engineering, research or publication experience, clear communication of results. "
+          "Hiring managers value a short objective stating the data science goal, a clear expected graduation date, and differentiators beyond coursework (independent data projects, competitions, research), with baselines, metrics and results named.",
+    "BIE": "Business intelligence intern postings (e.g., Amazon BIE) usually require: SQL for querying and modeling; building data artifacts (ETL, data models, queries); a visualization tool (Tableau, QuickSight, Power BI) and basic statistics. "
+           "Often preferred: Python or another scripting language, relational and star-schema modeling, pipeline design, regression applied to business problems, code quality and automating manual work, a previous technical internship, and clear data presentation.",
 }
 
 
