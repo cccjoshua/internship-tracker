@@ -1,10 +1,26 @@
-# Personal data and backups: never commit
+# Personal data: applications, profile, resumes, letters, exports, API key, backups. Never commit.
 data/
+demo-data/
 *.log
+.env
+.env.*
+secrets.json
 
-# OS / editor / Python
+# Local review snapshots and archives (may contain personal data)
+.review/
+*.tar.gz
+
+# OS / editor / tools
 .DS_Store
-__pycache__/
-*.pyc
 .vscode/
 .idea/
+.claude/
+
+# Python / Node
+__pycache__/
+*.pyc
+node_modules/
+test-results/
+
+# impeccable local reports
+.impeccable/

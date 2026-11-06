@@ -46,13 +46,34 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(self.jreq("GET", "/api/state"), (200, None))
         code, res = self.jreq("PUT", "/api/state", {"apps": [], "baseRev": 0})
         self.assertEqual((code, res["rev"]), (200, 1))
-        code, res = self.jreq("PUT", "/api/state", {"apps": [{"id": "a"}], "baseRev": 1})
+        code, res = self.jreq("PUT", "/api/state", {"apps": [{"id": "a", "status": "saved"}], "baseRev": 1})
         self.assertEqual(res["rev"], 2)
         code, res = self.jreq("PUT", "/api/state", {"apps": [], "baseRev": 1})  # stale
         self.assertEqual(code, 409)
-        self.assertEqual(res["state"]["apps"], [{"id": "a"}])  # the latest version comes back for merging
+        self.assertEqual(res["state"]["apps"], [{"id": "a", "status": "saved"}])  # the latest version comes back for merging
         code, res = self.jreq("PUT", "/api/state", {"apps": [], "listings": [1], "fetch": {}})
         self.assertNotIn("listings", server.load_state())  # listings never go into tracker.json
+
+    def test_refuses_foreign_host_names_dns_rebinding(self):
+        port = self.httpd.server_address[1]
+        for method, path in (("GET", "/api/profile"), ("GET", "/api/state"), ("GET", "/"), ("PUT", "/api/state")):
+            code, _, _ = self.req(method, path, {"apps": []} if method == "PUT" else None,
+                                  {"Host": f"evil.example:{port}", "Origin": f"http://evil.example:{port}"})
+            self.assertEqual(code, 421, path)
+        self.assertEqual(self.req("GET", "/api/state", headers={"Host": f"localhost:{port}"})[0], 200)
+
+    def test_bad_numbers_in_headers_or_body_are_400_not_a_crash(self):
+        self.assertEqual(self.jreq("PUT", "/api/state", {"apps": [], "baseRev": "x"})[0], 400)
+        self.assertEqual(self.req("PUT", "/api/state", {"apps": []}, {"Content-Length": "abc"})[0] in (400, 413), True)
+
+    def test_posting_links_must_be_public_http(self):
+        import fetcher
+        for bad in ("file:///etc/hosts", "http://127.0.0.1:8765/api/profile", "http://localhost/", "http://192.168.1.1/", "http://169.254.169.254/latest/", "ftp://example.com/x"):
+            with self.assertRaises(fetcher.UnsafeURL, msg=bad):
+                fetcher.check_public_url(bad)
+        code, res = self.jreq("POST", "/api/job/text", {"key": "k1", "company": "X", "role": "Y", "url": "file:///etc/hosts"})
+        self.assertEqual(code, 422)
+        self.assertIn("http(s)", res["error"])
 
     def test_rejects_bad_bodies_and_cross_origin(self):
         self.assertEqual(self.jreq("PUT", "/api/state", {"nope": 1})[0], 400)

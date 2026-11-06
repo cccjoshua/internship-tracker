@@ -1,0 +1,995 @@
+/* ==========================================================================
+   Apple design layer for the Internship Tracker
+   Loaded after the page's own styles, so it only restyles; markup and app.js are unchanged.
+   Delete the <link rel="stylesheet" href="apple.css"> line in internship-tracker.html to go back.
+
+   Follows Apple's Human Interface Guidelines (developer.apple.com/design):
+   - Type: the system font (SF Pro on a Mac), SF Pro Rounded for big numbers, tabular figures, Apple's text sizes.
+   - Colour: Apple system colours (blue accent, label/secondary label greys, grouped backgrounds), light and dark.
+   - Shape: capsule buttons and badges, concentric corner radii (window 22 > card 18 > row 12 > control capsule).
+   - Depth: soft shadows instead of borders in light mode, flat layered greys in dark mode, translucent materials
+     (sidebar, menus, tab bar, HUD) with backdrop blur.
+   - Controls: segmented controls, switches, pop-up buttons, search fields and focus rings drawn the Apple way.
+   - Motion: short ease-out transitions and a press "squish", all off under Reduce Motion.
+   ========================================================================== */
+
+:root{
+  /* System backgrounds and labels */
+  --bg:#F5F5F7; --surface:#FFFFFF; --sunk:#F0F0F3; --fill:rgba(120,120,128,.12); --fill-2:rgba(120,120,128,.18); --fill-3:rgba(120,120,128,.08);
+  --ink:#1D1D1F; --muted:#5E5E63; --faint:#6A6A6F; --line:#E3E3E8; --line-strong:#C7C7CC; --hair:rgba(0,0,0,.08);
+  /* Accent = Apple blue (the darker web blue keeps 4.5:1 for text) */
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#E8F1FC; --accent-text:#0062C4; --link:#0058B0;
+  /* System blue for tints, selection and focus (never for text on white: 4.0:1). --accent is the filled-button blue (4.7:1 with white). */
+  --tint:#007AFF; --sel:color-mix(in srgb,#007AFF 12%,transparent); --sel-strong:color-mix(in srgb,#007AFF 18%,transparent);
+  /* Application stages: grey → blue → indigo → purple → green, like system colours */
+  --st-saved:#77777C; --st-applied:#0064D2; --st-oa:#5856D6; --st-interview:#5856D6; --st-offer:#1E7A34; --st-rejected:#77777C; --st-withdrawn:#77777C;
+  --good:#1E7A34; --warn:#C93400; --bad:#D70015; --hl:#FF9F0A; --hl-soft:#FFF4E5;
+  --score-hi:#34C759; --score-mid:#FF9F0A; --score-lo:#AEAEB2;
+  /* Elevation and materials */
+  --card-shadow:0 0 0 .5px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04), 0 2px 8px rgba(0,0,0,.03);
+  --lift-shadow:0 0 0 .5px rgba(0,0,0,.05), 0 6px 20px rgba(0,0,0,.08);
+  --shadow:0 0 0 .5px rgba(0,0,0,.06), 0 18px 50px rgba(0,0,0,.18);
+  --material:rgba(246,246,248,.78); --material-strong:rgba(255,255,255,.82); --blur:saturate(180%) blur(24px);
+  --focus:0 0 0 3px color-mix(in srgb,var(--tint) 50%,transparent);
+  /* Type */
+  --f-ui:-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", "Helvetica Neue", "PingFang TC", "Hiragino Sans", system-ui, sans-serif;
+  --f-mono:-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif; /* numbers: SF with tabular figures */
+  --f-round:"SF Pro Rounded", ui-rounded, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --f-code:ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  /* Shape: concentric radii */
+  --r:14px; --r-row:10px; --r-ctl:6px;
+  --ease:cubic-bezier(.25,.1,.25,1);
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#1A1A1C; --surface:#242426; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
+  --ink:#F5F5F7; --muted:#AEAEB2; --faint:#98989D; --line:#38383A; --line-strong:#48484A; --hair:rgba(255,255,255,.08);
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --tint:#0A84FF; --sel:color-mix(in srgb,#0A84FF 22%,transparent); --sel-strong:color-mix(in srgb,#0A84FF 30%,transparent); --accent-text:#64B5FF; --link:#64B5FF;
+  --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#5E5CE6; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
+  --good:#30D158; --warn:#FF9F0A; --bad:#FF6961; --hl:#FF9F0A; --hl-soft:#3A2A10;
+  --score-hi:#30D158; --score-mid:#FF9F0A; --score-lo:#636366;
+  --card-shadow:none; --lift-shadow:0 0 0 .5px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.5);
+  --shadow:0 0 0 .5px rgba(255,255,255,.1), 0 20px 60px rgba(0,0,0,.6);
+  --material:rgba(12,12,14,.6); --material-strong:rgba(44,44,46,.78);
+  --focus:0 0 0 3px color-mix(in srgb,var(--tint) 55%,transparent); color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#1A1A1C; --surface:#242426; --sunk:#2C2C2E; --fill:rgba(118,118,128,.24); --fill-2:rgba(118,118,128,.32); --fill-3:rgba(118,118,128,.16);
+  --ink:#F5F5F7; --muted:#AEAEB2; --faint:#98989D; --line:#38383A; --line-strong:#48484A; --hair:rgba(255,255,255,.08);
+  --accent:#0071E3; --accent-ink:#FFFFFF; --accent-soft:#0B2A4A; --tint:#0A84FF; --sel:color-mix(in srgb,#0A84FF 22%,transparent); --sel-strong:color-mix(in srgb,#0A84FF 30%,transparent); --accent-text:#64B5FF; --link:#64B5FF;
+  --st-saved:#98989D; --st-applied:#0A84FF; --st-oa:#5E5CE6; --st-interview:#5E5CE6; --st-offer:#30D158; --st-rejected:#8E8E93; --st-withdrawn:#8E8E93;
+  --good:#30D158; --warn:#FF9F0A; --bad:#FF6961; --hl:#FF9F0A; --hl-soft:#3A2A10;
+  --score-hi:#30D158; --score-mid:#FF9F0A; --score-lo:#636366;
+  --card-shadow:none; --lift-shadow:0 0 0 .5px rgba(255,255,255,.08), 0 8px 24px rgba(0,0,0,.5);
+  --shadow:0 0 0 .5px rgba(255,255,255,.1), 0 20px 60px rgba(0,0,0,.6);
+  --material:rgba(12,12,14,.6); --material-strong:rgba(44,44,46,.78);
+  --focus:0 0 0 3px color-mix(in srgb,var(--tint) 55%,transparent); color-scheme:dark}
+
+/* ---------------------------------------------------------------- base type */
+body{font-size:13px;line-height:1.43;letter-spacing:-.006em;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+a{color:var(--link)}
+.mono,.kpi .v,.frow .num,.trow .num,.nav .n,.col h2 .count,.tsec-h .cnt,.lsec-h .cnt,.dsec>summary .cnt,.stagef .c{font-variant-numeric:tabular-nums}
+.kbd,.pt-id,.src,.copy input,.timeline input{font-family:var(--f-code)}
+.kbd{border:0;background:var(--fill);border-radius:5px;padding:1px 6px;color:var(--muted);box-shadow:inset 0 -1px 0 var(--hair)}
+h1{font-size:28px;line-height:1.15;font-weight:700;letter-spacing:-.022em}
+.sub{color:var(--muted);font-size:13px}
+:focus-visible{outline:none;box-shadow:var(--focus)}
+::selection{background:color-mix(in srgb,var(--accent) 24%,transparent)}
+
+/* ---------------------------------------------------------------- sidebar (source list) */
+.rail{background:var(--material);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-right:.5px solid var(--hair);padding-top:26px;gap:20px}
+.brand{padding-left:8px;flex-direction:row;align-items:center;gap:10px}
+.brand>div{display:flex;flex-direction:column;gap:1px;min-width:0}
+.brand-mark{flex:none;width:28px;height:28px;border-radius:6.3px;box-shadow:0 0 0 .5px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.08)}
+.brand b{font-size:15px;font-weight:700;letter-spacing:-.016em;white-space:nowrap}
+.brand span{font-size:12px;color:var(--faint)}
+.nav{gap:1px}
+.nav a{padding:0 10px;min-height:32px;border-radius:8px;color:var(--ink);font-weight:500;font-size:13px;transition:background .15s var(--ease)}
+.nav a svg{color:var(--accent-text);width:17px;height:17px}
+.nav a:hover{background:var(--fill-3);color:var(--ink)}
+.nav a[aria-current="page"]{background:var(--fill);color:var(--ink);font-weight:600}
+.nav .n{font-size:12px;font-weight:600;color:var(--muted);background:var(--fill);border-radius:999px;padding:0 7px;min-width:22px;text-align:center;line-height:19px}
+.nav .n:empty{display:none}
+.nav a[aria-current="page"] .n{color:var(--muted)}
+.nav .n.hot{background:var(--hl);color:#1D1D1F}
+.rail-foot{border-top:.5px solid var(--hair);color:var(--faint)}
+
+/* ---------------------------------------------------------------- canvas */
+main{padding-top:28px;gap:20px}
+.crumb{color:var(--link);font-size:13px}
+.crumb:hover{color:var(--link)}
+
+/* ---------------------------------------------------------------- buttons: capsules */
+.btn{min-height:32px;padding:0 15px;border:0;border-radius:999px;background:var(--fill);color:var(--link);font-weight:500;font-size:13px;letter-spacing:-.005em;
+  transition:background .15s var(--ease),transform .12s var(--ease),filter .15s var(--ease),box-shadow .15s var(--ease)}
+.btn:hover{background:var(--fill-2);border-color:transparent}
+.btn:active:not(:disabled){transform:scale(.97)}
+.btn:disabled{opacity:.4}
+.btn.primary{background:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{background:var(--accent);filter:brightness(1.08)}
+.btn.ghost{background:transparent;color:var(--link)}
+.btn.ghost:hover{background:var(--fill-3);color:var(--link)}
+.btn.danger,.btn.ghost.danger{color:var(--bad)}
+.btn.sm{min-height:28px;padding:0 12px;font-size:13px}
+.btn.lg{min-height:44px;padding:0 24px;font-size:15px;font-weight:600}
+.btn.icon{width:32px;height:32px;min-height:32px;padding:0;border-radius:50%}
+.btn.icon.sm{width:28px;height:28px;min-height:28px}
+.btn.ghost.icon{color:var(--muted)}
+.btn.ghost.icon:hover{color:var(--ink)}
+.btn.on,.rb-acts .btn.on{background:var(--accent-soft);color:var(--accent-text)}
+.btn:focus-visible{box-shadow:var(--focus);border-radius:999px}
+.linkbtn{color:var(--link)}
+.more-btn{border-radius:50%}
+
+/* ---------------------------------------------------------------- text fields, pop-up buttons, search, switches */
+input[type=search],input[type=text],input[type=url],input[type=email],input[type=date],input[type=time],input[type=month],input[type=number],input[type=password],input:not([type]),select,textarea{
+  background:var(--surface);border:.5px solid var(--line-strong);border-radius:var(--r-ctl);padding:7px 11px;min-height:34px;
+  box-shadow:inset 0 .5px 1px rgba(0,0,0,.04);transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+textarea{min-height:0}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline:none;border-color:var(--accent);box-shadow:var(--focus)}
+input[type=search]{-webkit-appearance:none;appearance:none;border:0;background:var(--fill) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none' stroke='%238E8E93' stroke-width='1.6' stroke-linecap='round'%3E%3Ccircle cx='6' cy='6' r='4.6'/%3E%3Cpath d='m9.5 9.5 3 3'/%3E%3C/svg%3E") no-repeat 11px center;padding-left:32px;box-shadow:none}
+input[type=search]:focus-visible{background-color:var(--surface)}
+select:not(.stsel){-webkit-appearance:none;appearance:none;padding-right:30px;cursor:pointer;
+  background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='12' viewBox='0 0 8 12' fill='none' stroke='%238E8E93' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 4.5 4 1.5l3 3M1 7.5l3 3 3-3'/%3E%3C/svg%3E") no-repeat right 11px center}
+td select:not(.stsel){min-height:28px;padding:3px 26px 3px 9px}
+select.stsel{min-height:24px;padding:3px 22px 3px 10px}
+input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;height:16px}
+/* iOS / macOS switch for every labelled on/off setting */
+.switch input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;width:38px;height:22px;margin:0;border-radius:999px;background:var(--fill-2);position:relative;cursor:pointer;
+  transition:background .2s var(--ease)}
+.switch input[type=checkbox]::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;
+  box-shadow:0 1px 3px rgba(0,0,0,.2),0 0 0 .5px rgba(0,0,0,.04);transition:transform .2s var(--ease)}
+.switch input[type=checkbox]:checked{background:var(--accent)}
+.switch input[type=checkbox]:checked::after{transform:translateX(16px)}
+.switch input[type=checkbox]:disabled{opacity:.4;cursor:default}
+.switch input[type=checkbox]:focus-visible{box-shadow:var(--focus);border-radius:999px}
+.switch{gap:10px}
+.field>span{font-size:12px;color:var(--muted);font-weight:600}
+.checks label{border:0;background:var(--fill);border-radius:999px;padding:5px 12px;transition:background .15s var(--ease)}
+.checks label:has(input:checked){background:var(--accent-soft);color:var(--accent-text)}
+
+/* ---------------------------------------------------------------- badges */
+.chip{padding:2px 9px;font-size:12px;font-weight:600;letter-spacing:-.003em}
+.chip.tag{background:var(--fill);color:var(--muted)}
+.chip.new{background:var(--hl-soft);color:var(--warn)}
+.banner,.notice{border-radius:var(--r-row)}
+
+/* ---------------------------------------------------------------- cards (grouped, borderless) */
+.panel,.lsec,.tablewrap,.tsec-empty,.checks-box,.jsteps a,.choice,.notice,.banner{border:0;box-shadow:var(--card-shadow)}
+.panel{border-radius:var(--r);padding:20px;gap:14px}
+.panel h2{font-size:15px;font-weight:600;letter-spacing:-.012em}
+.panel h2 small{font-size:13px;color:var(--faint)}
+.panel.inset{box-shadow:none;background:var(--fill-3)}
+.lsec,.tablewrap{border-radius:var(--r)}
+.lsec-h{padding:13px 18px;font-size:13px}
+.notice{background:var(--surface)}
+.notice.warn{border:0;background:var(--hl-soft);color:var(--ink);box-shadow:none}
+.banner{border-style:solid;border:0;background:var(--surface)}
+.empty{color:var(--faint)}
+
+/* KPI tiles: separate rounded cards (Health / Fitness summary style) */
+.kpis,.today{gap:12px;background:none;border:0;border-radius:0;overflow:visible}
+.kpi,.today .tile{border-radius:var(--r);box-shadow:var(--card-shadow);padding:16px 18px}
+.kpi .l,.today .k{text-transform:none;letter-spacing:-.005em;font-size:13px;font-weight:600;color:var(--muted)}
+.kpi .v,.today .t{font-family:var(--f-round);font-weight:600;font-size:28px;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.today .t.dim,.kpi .v.dim{color:var(--faint)}
+.today .go{color:var(--link)}
+.prog,.fbar,.trow .seg{border-radius:999px;background:var(--fill)}
+.prog{height:6px}
+.prog span,.fbar span{border-radius:999px}
+.fbar{height:10px}
+.frow .num b{font-weight:600}
+.legend i{border-radius:50%}
+
+/* rows inside cards: inset separators, rounded hover */
+.todo li,.tmatch li{border-top:.5px solid var(--line);border-radius:var(--r-row);transition:background .12s var(--ease)}
+.todo li:hover,.tmatch li:hover{background:var(--fill-3)}
+.lrow{border-top:.5px solid var(--line);transition:background .12s var(--ease)}
+.lrow:hover{background:var(--fill-3)}
+.lrow.qsaved,.tmatch li.qsaved{background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
+.lrow.peeking,.tmatch li.peeking,.todo li.peeking{background:var(--accent-soft);box-shadow:none}
+
+.ring{background:conic-gradient(var(--rc) calc(var(--p)*1%),var(--fill-2) 0)}
+.ring span{font-family:var(--f-round);font-weight:600}
+
+/* ---------------------------------------------------------------- segmented controls */
+.segctl{border:0;border-radius:9px;background:var(--fill);padding:2px;gap:2px;overflow:visible}
+.segctl a{border-radius:7px;padding:4px 14px;color:var(--ink);font-weight:500;font-size:13px;transition:background .15s var(--ease)}
+.segctl a+a{border-left:0}
+.segctl a:hover{background:var(--fill-3);color:var(--ink)}
+.segctl a[aria-current]{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+:root[data-theme="dark"] .segctl a[aria-current]{background:#636366}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .segctl a[aria-current]{background:#636366}}
+.stagef button{border:0;background:var(--fill);color:var(--ink);padding:5px 13px;font-size:13px;transition:background .15s var(--ease)}
+.stagef button:hover{background:var(--fill-2);color:var(--ink)}
+.stagef button[aria-pressed="true"]{background:var(--ink);color:var(--surface)}
+.dlpair{border:0;background:var(--fill);border-radius:999px;overflow:hidden}
+.dlpair button{color:var(--link)}
+
+/* ---------------------------------------------------------------- board */
+.board{gap:14px}
+.col{background:var(--fill-3);border-top:0;border-radius:var(--r);padding:2px 8px 8px}
+.col h2{padding:12px 6px 10px;font-size:13px}
+.col h2 .dot{width:9px;height:9px}
+.col h2 .count{font-weight:600;color:var(--faint)}
+.col.over{background:var(--accent-soft)}
+.col .empty{border:1.5px dashed var(--line-strong);border-radius:var(--r-row)}
+.col .colbtn{color:var(--link)}
+.card{border:0;border-radius:14px;padding:12px 13px;box-shadow:var(--card-shadow);transition:box-shadow .18s var(--ease),transform .18s var(--ease)}
+.card:hover{border-color:transparent;box-shadow:var(--lift-shadow);transform:translateY(-1px)}
+.card.dragging{opacity:.6;transform:scale(1.02) rotate(.6deg);box-shadow:var(--shadow)}
+.prio i.on{background:var(--accent)}
+
+/* ---------------------------------------------------------------- tables (Finder / Numbers list) */
+th{text-transform:none;letter-spacing:-.003em;font-size:12px;font-weight:600;color:var(--muted);border-bottom:.5px solid var(--line)}
+td{border-bottom:.5px solid var(--line)}
+thead th{background:color-mix(in srgb,var(--surface) 88%,transparent);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur)}
+tbody tr:hover td{background:var(--fill-3)}
+.docs-t thead th{text-transform:none;letter-spacing:-.003em;font-size:12px}
+.more{color:var(--link)}
+
+/* ---------------------------------------------------------------- job page */
+.jsteps ol{gap:10px}
+.jsteps a{border-radius:14px;padding:12px 14px;transition:box-shadow .15s var(--ease)}
+.jsteps a:hover{box-shadow:var(--lift-shadow)}
+.jsteps a[aria-current]{box-shadow:0 0 0 2px var(--accent),var(--card-shadow)}
+.jsteps .sn{width:26px;height:26px;border:0;background:var(--fill);color:var(--muted)}
+.jsteps a[aria-current] .sn{background:var(--accent);color:#fff}
+.jsteps a.done .sn,.jsteps a.done[aria-current] .sn{background:var(--good);color:#fff}
+.jsteps a.part .sn{background:linear-gradient(90deg,var(--accent-soft) 50%,var(--fill) 50%);color:var(--accent-text)}
+.jsteps .stx b{font-size:13px}
+.eyebrow{text-transform:none;letter-spacing:-.003em;font-weight:600;color:var(--muted)}
+.step-hero h2,.rs-start h2{font-size:22px;font-weight:700;letter-spacing:-.02em}
+.sh-act{border-radius:14px;background:var(--fill-3)}
+.verdict{border-left:0;box-shadow:var(--card-shadow)}
+.verdict.v-warn{box-shadow:var(--card-shadow)}
+.verdict.v-bad{box-shadow:var(--card-shadow)}
+.choice{border-radius:14px;padding:16px}
+.choice.rec{box-shadow:0 0 0 2px var(--accent),var(--card-shadow);background:var(--surface)}
+.rs-paper{border:0;border-radius:14px;background:var(--fill-3)}
+.src.ok{color:var(--good)}
+.src.no{color:var(--warn)}
+.src.fc{display:inline-block;margin-left:8px;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;font-family:var(--f-ui);font-weight:600}
+.rw-opts small.src.fc{display:block;margin:4px 0 0;max-width:none;white-space:normal}
+.stoc a{border-radius:8px}
+.stoc a[aria-current]{background:var(--fill);color:var(--ink)}
+
+/* ---------------------------------------------------------------- sheets, popovers, menus, HUD */
+dialog{border-radius:22px;box-shadow:var(--shadow)}
+dialog::backdrop{background:rgba(0,0,0,.28);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.modal .mbody{padding:24px}
+.modal h2,.drawer h2{font-size:22px;font-weight:700;letter-spacing:-.02em}
+.scrim{background:rgba(0,0,0,.28)}
+dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-radius:12px;padding:5px;
+  box-shadow:0 0 0 .5px var(--hair),0 10px 32px rgba(0,0,0,.2)}
+.menu .mt{color:var(--faint);font-weight:600}
+.menu button{border-radius:6px;padding:6px 10px;font-size:13px}
+.menu button:hover,.menu button:focus-visible{background:var(--accent);color:#fff}
+.menu button.sep{border-top:.5px solid var(--line);border-radius:6px}
+.info-pop{border:0;border-radius:14px;background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:0 0 0 .5px var(--hair),0 10px 32px rgba(0,0,0,.18)}
+.toast{background:rgba(30,30,32,.86);color:#F5F5F7;-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);border-radius:999px;padding:10px 12px 10px 20px;font-weight:500;
+  box-shadow:0 10px 30px rgba(0,0,0,.25)}
+.toast .tbtn{background:rgba(255,255,255,.16);color:#fff;border-radius:999px;padding:4px 12px}
+.drawer{border-radius:22px 0 0 22px}
+@media (min-width:761px){
+  .peek{top:10px;right:10px;bottom:10px;border:0;border-radius:22px;box-shadow:var(--shadow)}
+  .drawer{top:10px;right:10px;bottom:10px;border-radius:22px}
+}
+
+/* ---------------------------------------------------------------- phones: floating glass tab bar */
+@media (max-width:760px){
+  h1{font-size:28px}
+  .rail{left:12px;right:12px;bottom:max(10px,env(safe-area-inset-bottom,0px));border:0;border-radius:28px;padding:6px;
+    background:var(--material-strong);-webkit-backdrop-filter:var(--blur);backdrop-filter:var(--blur);box-shadow:0 0 0 .5px var(--hair),0 8px 30px rgba(0,0,0,.16)}
+  .nav a{border-radius:22px;min-height:50px;font-size:11px;font-weight:600;color:var(--muted)}
+  .nav a svg{color:inherit;width:20px;height:20px}
+  .nav a[aria-current="page"]{background:var(--fill);color:var(--accent-text)}
+  main{padding-bottom:calc(100px + env(safe-area-inset-bottom,0px))}
+  .toast{bottom:calc(90px + env(safe-area-inset-bottom,0px))}
+  .kpis,.today{gap:10px}
+  .peek{border-radius:22px 22px 0 0}
+}
+
+/* ---------------------------------------------------------------- motion */
+@media (prefers-reduced-motion:reduce){
+  .btn,.card,.nav a,.switch input,.switch input::after,.segctl a,.jsteps a{transition:none}
+  .btn:active:not(:disabled),.card:hover,.card.dragging{transform:none}
+}
+@media print{.rail{display:none}.panel,.kpi,.card{box-shadow:none;border:.5px solid #ccc}}
+.rail-foot .btn,.rail-foot .btn.ghost{color:var(--muted);font-weight:500}
+.rail-foot .btn:hover{color:var(--ink)}
+/* popover menus dim nothing (a menu is not a sheet) */
+.menu::backdrop{-webkit-backdrop-filter:none;backdrop-filter:none;background:transparent}
+/* sentence-case section labels, as in Apple's grouped lists and inspectors (the resume paper keeps its own caps) */
+.pk-sec h3{text-transform:none;letter-spacing:-.005em;font-size:13px;font-weight:600;color:var(--muted)}
+.pk-open{border:0;border-radius:14px;background:var(--fill-3)}
+.pk-open:hover{background:var(--fill)}
+
+
+/* ==========================================================================
+   Eligibility, fit and document status (added with the scoring review)
+   ========================================================================== */
+/* Rings: blocked (✕) and not-enough-information (—) never look like a score */
+.ring.blocked{--rc:var(--bad);background:conic-gradient(var(--bad) 100%,var(--bad) 0)}
+.ring.blocked span{color:var(--bad);font-weight:700}
+.ring.none{background:none;box-shadow:inset 0 0 0 2px var(--line);border-radius:50%} /* not enough information: an empty ring, not a score */
+.ring.none span{color:var(--muted)}
+.verdict>.ring.blocked span,.verdict>.ring.none span{font-size:22px}
+
+/* Eligibility rows: icon + label + detail + quoted evidence + status word (colour is never the only signal) */
+.elig{display:flex;flex-direction:column;margin:4px 0 14px;border-radius:var(--r-row);background:var(--fill-3);overflow:hidden}
+.el{display:grid;grid-template-columns:22px minmax(0,1fr) auto;gap:2px 10px;align-items:start;padding:9px 12px;font-size:13px}
+.el+.el{border-top:.5px solid var(--hair)}
+.el-i{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;margin-top:1px;background:var(--fill-2);color:var(--muted)}
+.el.ok .el-i{background:color-mix(in srgb,var(--good) 16%,transparent);color:var(--good)}
+.el.bad .el-i{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}
+.el.warn .el-i{background:color-mix(in srgb,var(--hl) 22%,transparent);color:var(--warn)}
+.el-l{display:flex;flex-direction:column;gap:1px;min-width:0}
+.el-l b{font-weight:600}
+.el-l .sub{color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.el-l q{font-size:12px;color:var(--faint);font-style:italic;quotes:"“" "”";overflow-wrap:anywhere}
+.el-s{font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap;padding-top:2px}
+.el.bad .el-s{color:var(--bad)}.el.warn .el-s{color:var(--warn)}.el.ok .el-s{color:var(--good)}
+.el.na .el-l b{font-weight:500}
+
+/* Fit components the posting or Profile does not state: shown, but visibly not counted */
+.fp.unknown .fbar{background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong);border-radius:3px} /* no data: an empty outline, not a value */
+.fp.unknown .fp-n,.fp.unknown .fp-l{color:var(--faint)}
+.chip.inferred{border-style:dashed}
+
+/* Listing label for an analyzed job that fails an eligibility check */
+.act.blocked{background:color-mix(in srgb,var(--bad) 12%,transparent);color:var(--bad)}
+.act.blocked::before{content:"✕ ";font-weight:700}
+
+/* Verdict actions when not eligible: a quiet secondary choice, no primary push */
+.vd-next .linkbtn{font-size:13px}
+
+/* Document lifecycle: Claude draft → Reviewed → Exported → Applied */
+.lc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:6px}
+.lc-steps{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--faint)}
+.lc-steps li{display:inline-flex;align-items:center;gap:5px}
+.lc-steps li span[aria-hidden]{font-size:11px}
+.lc-steps li.on{color:var(--ink)}
+.lc-steps li.on span[aria-hidden]{color:var(--good)}
+.btn.xs{padding:2px 9px;font-size:12px;min-height:24px}
+
+/* Yes / No / Not set questions in the Profile */
+.tri-set{border:0;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.tri-set legend{padding:0;margin-bottom:4px;font-weight:600;font-size:13px}
+.tri-set legend .hint{display:block;font-weight:400}
+.tri{display:grid;grid-template-columns:minmax(0,1fr) 120px;gap:12px;align-items:center;font-size:13px}
+@media (max-width:640px){.tri{grid-template-columns:1fr}}
+
+/* Stub mode banner (IAT_AI_STUB=1): always visible so test output is never mistaken for Claude's */
+.stub-banner{position:sticky;top:0;z-index:60;padding:6px 16px;text-align:center;font-size:12px;font-weight:600;background:var(--hl-soft);color:var(--warn);border-bottom:.5px solid var(--hair)}
+
+/* ==========================================================================
+   Sidebar: search at the top (as in Mail and Notes), Settings pinned at the bottom of the list,
+   a quiet footer with only the save state. Theme lives in Settings → Appearance.
+   ========================================================================== */
+.rail-search{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;margin-top:-8px;padding:6px 10px;border:0;border-radius:var(--r-ctl);
+  background:var(--fill);color:var(--muted);font-size:13px;text-align:left;cursor:pointer;transition:background .15s var(--ease)}
+.rail-search:hover{background:var(--fill-2);color:var(--ink)}
+.rail-search svg{width:15px;height:15px;flex:none}
+.rail-search span:not(.kbd){flex:1}
+.rail-search .kbd{font-size:11px;color:var(--muted);background:transparent;border-color:var(--line-strong)}
+.rail-foot{flex-direction:row;align-items:center;justify-content:space-between;gap:8px}
+.rail-help{display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:50%;background:transparent;color:var(--faint);cursor:pointer}
+.rail-help:hover{background:var(--fill);color:var(--ink)}
+.phone-only{display:none}
+@media (max-width:760px){
+  /* Five tabs on phones; Search and Settings move to the page header */
+  .nav .nav-set{display:none}
+  .rail-search{display:none}
+  .phone-only{display:inline-flex}
+  .top-acts{display:flex;align-items:center;gap:4px}
+  .btn.icon.phone-only{width:44px;height:44px;justify-content:center;align-items:center}
+}
+.rail-foot .savestate{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:760px){
+  /* Header on phones: actions on their own row at the top, the title gets the full width */
+  .top{grid-template-columns:minmax(0,1fr)}
+  .top-acts{order:-1;justify-content:flex-end}
+  .titlebar{order:0}
+  .top .tools{grid-row:auto;order:1}
+  .titlebar .sub{font-size:13px}
+}
+@media (min-width:761px){body:has(#stubBanner) .rail{top:30px;height:calc(100vh - 30px)}}
+
+
+/* ---------------------------------------------------------------- search palette (palette.js) */
+dialog.pal{
+  --pal-sel:var(--sel);
+  --pal-bg:rgba(255,255,255,.78); --pal-line:rgba(60,60,67,.14); --pal-label:#1D1D1F; --pal-2:rgba(60,60,67,.72); --pal-3:rgba(60,60,67,.5);
+  width:min(640px,calc(100vw - 32px)); max-height:min(560px,calc(100vh - 15vh - 32px)); margin:15vh auto auto; padding:0; border:.5px solid var(--pal-line); border-radius:14px;
+  background:var(--pal-bg); color:var(--pal-label); -webkit-backdrop-filter:blur(30px) saturate(180%); backdrop-filter:blur(30px) saturate(180%);
+  box-shadow:0 0 0 .5px rgba(0,0,0,.04),0 2px 6px rgba(0,0,0,.06),0 18px 48px rgba(0,0,0,.18); overflow:hidden; font-size:13px; line-height:18px;
+  display:none; flex-direction:column}
+dialog.pal[open]{display:flex;animation:pal-in .16s cubic-bezier(.2,.8,.2,1)}
+dialog.pal.closing{animation:pal-out .12s ease-in forwards}
+dialog.pal::backdrop{background:rgba(0,0,0,.15);-webkit-backdrop-filter:none;backdrop-filter:none}
+@keyframes pal-in{from{opacity:0;transform:scale(.98)}}
+@keyframes pal-out{to{opacity:0;transform:scale(.98)}}
+.pal-field{display:flex;align-items:center;gap:10px;height:52px;padding:0 14px 0 16px;flex:none}
+.pal-field>svg{width:20px;height:20px;color:var(--pal-3);flex:none}
+.pal-field input{flex:1;min-width:0;height:100%;border:0;background:transparent;font:inherit;font-size:17px;line-height:22px;color:var(--pal-label);padding:0;box-shadow:none;outline:none;border-radius:0;letter-spacing:-.01em}
+.pal-field input::placeholder{color:var(--pal-3)}
+.pal-field input:focus-visible{box-shadow:none}
+dialog.pal kbd{font:500 11px/16px var(--f-ui);min-width:18px;height:18px;padding:0 5px;display:inline-flex;align-items:center;justify-content:center;border-radius:5px;background:rgba(120,120,128,.12);color:var(--pal-2);box-shadow:inset 0 -.5px 0 rgba(0,0,0,.08)}
+.pal-esc{flex:none}
+.pal-scopes{display:flex;gap:4px;padding:0 12px 8px;flex:none;border-bottom:.5px solid var(--pal-line)}
+.pal-scopes button{font:500 12px/16px var(--f-ui);color:var(--pal-2);background:transparent;border:0;border-radius:6px;padding:3px 8px;cursor:pointer;min-height:0;box-shadow:none}
+.pal-scopes button:hover{background:rgba(120,120,128,.08)}
+.pal-scopes button[aria-checked="true"]{background:var(--pal-sel);color:var(--accent-text)}
+.pal-list{overflow-y:auto;padding:6px 6px 8px;flex:1 1 auto;overscroll-behavior:contain}
+.pal-h{display:flex;align-items:baseline;gap:8px;font:600 11px/13px var(--f-ui);color:var(--pal-3);padding:10px 10px 4px}
+.pal-h span{font-weight:400;margin-left:auto}
+.pal-row{display:flex;align-items:center;gap:10px;min-height:40px;padding:4px 10px;border-radius:10px;cursor:default;min-width:0}
+.pal-row[aria-selected="true"]{background:var(--pal-sel)}
+.pal-row.inert{color:var(--pal-2)}
+.pal-mono{width:24px;height:24px;flex:none;border-radius:6px;display:grid;place-items:center;font:600 11px/1 var(--f-ui);letter-spacing:.02em;color:var(--pal-2);background:rgba(120,120,128,.12)}
+.pal-ic{width:24px;height:24px;flex:none;display:grid;place-items:center;color:var(--pal-2)}
+.pal-row[aria-selected="true"] .pal-ic{color:var(--accent-text)}
+.pal-txt{display:flex;flex-direction:column;min-width:0;flex:1}
+.pal-t,.pal-s{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pal-t{color:var(--pal-label)}
+.pal-s{font-size:12px;line-height:16px;color:var(--pal-2)}
+.pal-t mark,.pal-s mark{background:none;color:inherit;font-weight:700}
+.pal-keys{display:flex;gap:3px;flex:none}
+.pal-ret{visibility:hidden;flex:none}
+.pal-row[aria-selected="true"] .pal-ret{visibility:visible}
+.pal-none{padding:14px 10px 6px;color:var(--pal-2)}
+.pal-foot{display:flex;align-items:center;gap:14px;flex:none;padding:8px 14px;border-top:.5px solid var(--pal-line);font-size:12px;color:var(--pal-2)}
+.pal-foot>span{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.pal-foot kbd{margin-right:1px}
+.pal-tip{margin-left:auto}
+@media (max-width:560px){.pal-tip{display:none}}
+.pal-flash{animation:pal-flash 1.8s ease-out}
+@keyframes pal-flash{0%,35%{background:color-mix(in srgb,var(--accent) 16%,transparent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 16%,transparent);border-radius:6px}100%{background:transparent;box-shadow:0 0 0 4px transparent}}
+@media (prefers-reduced-motion: reduce){
+  dialog.pal[open]{animation:pal-fade .1s linear} dialog.pal.closing{animation:none}
+  @keyframes pal-fade{from{opacity:0}}
+  .pal-flash{animation:none;background:color-mix(in srgb,var(--accent) 16%,transparent)}}
+@media (prefers-reduced-transparency: reduce){dialog.pal{--pal-bg:var(--surface);-webkit-backdrop-filter:none;backdrop-filter:none}}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) dialog.pal{--pal-sel:color-mix(in srgb,#0A84FF 22%,transparent);--pal-bg:rgba(40,40,42,.78);--pal-line:rgba(255,255,255,.1);--pal-label:#F5F5F7;--pal-2:rgba(235,235,245,.66);--pal-3:rgba(235,235,245,.42);box-shadow:0 0 0 .5px rgba(0,0,0,.6),0 18px 48px rgba(0,0,0,.5)}}
+:root[data-theme="dark"] dialog.pal{--pal-sel:color-mix(in srgb,#0A84FF 22%,transparent);--pal-bg:rgba(40,40,42,.78);--pal-line:rgba(255,255,255,.1);--pal-label:#F5F5F7;--pal-2:rgba(235,235,245,.66);--pal-3:rgba(235,235,245,.42);box-shadow:0 0 0 .5px rgba(0,0,0,.6),0 18px 48px rgba(0,0,0,.5)}
+
+
+/* ==========================================================================
+   macOS app system (redesign, 2026-11). See DESIGN.md. Loaded last, so it wins.
+   ========================================================================== */
+/* Focus: an outline (not a box-shadow), so no component shadow can hide it; keyboard only. */
+:focus-visible,.btn:focus-visible,.switch input[type=checkbox]:focus-visible,.card:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{
+  outline:3px solid color-mix(in srgb,var(--tint) 50%,transparent);outline-offset:1px;box-shadow:none}
+input:focus-visible,select:focus-visible,textarea:focus-visible{outline-offset:0;border-color:var(--tint)}
+:focus:not(:focus-visible){outline:none}
+
+/* Sidebar: tinted selection, plain counts, no ring */
+.nav a{font-size:13px;min-height:28px;border-radius:6px;font-weight:400}
+.nav a[aria-current="page"]{background:var(--sel);color:var(--ink);font-weight:590}
+.nav a:hover:not([aria-current]){background:var(--fill-3)}
+.nav .n,.nav a[aria-current="page"] .n{background:none;color:var(--muted);font-weight:400;padding:0;min-width:0;font-size:12px}
+.nav .n.hot{background:none;color:var(--warn);font-weight:590}
+.rail-search{border-radius:6px}
+.savestate{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+
+/* Buttons: one filled primary per view; row actions are tinted or plain. 6px radius, no press squish. */
+.btn{border-radius:6px;font-size:13px;min-height:28px;padding:0 12px;transition:background .15s var(--ease),filter .15s var(--ease)}
+.btn:active:not(:disabled){transform:none;filter:brightness(.95)}
+.btn.sm{min-height:24px;padding:0 10px;font-size:12px}
+.btn.lg{min-height:36px;padding:0 18px;font-size:15px}
+.btn.icon{width:28px;height:28px;min-height:28px;border-radius:6px}
+.btn.icon.sm{width:24px;height:24px;min-height:24px}
+.btn.tint{background:var(--sel);color:var(--accent-text);font-weight:590}
+.btn.tint:hover{background:var(--sel-strong)}
+.btn.plain{background:transparent;color:var(--accent-text);padding:0 6px}
+.btn.plain:hover{background:var(--fill-3)}
+.more-btn{border-radius:6px}
+
+/* Lists over cards: panels are grouped containers with hairlines, no drop shadow in light mode */
+.panel,.lsec,.tablewrap,.tsec-empty,.checks-box,.notice,.banner{box-shadow:0 0 0 .5px var(--line)}
+.panel{border-radius:var(--r);padding:16px 20px;gap:12px}
+.panel h2{font-size:15px;font-weight:600}
+.panel h2 small{font-size:12px;font-weight:400}
+.todo li,.tmatch li{border-radius:var(--r-row)}
+.lrow.qsaved,.tmatch li.qsaved{background:transparent}
+.lrow.peeking,.tmatch li.peeking,.todo li.peeking{background:var(--sel)}
+.lrow,.todo li,.tmatch li{transition:none}
+.card{transition:box-shadow .15s var(--ease)}
+.card:hover{transform:none}
+
+/* Scores: the number carries the information; only the top band gets the accent */
+.ring{--rc:var(--line-strong)}
+.ring.b1{--rc:var(--tint)}
+.ring.b2{--rc:color-mix(in srgb,var(--muted) 55%,transparent)}
+.ring.b3{--rc:var(--line)}
+.ring span{font-family:var(--f-ui);font-weight:590;color:var(--ink)}
+
+/* Dialogs and sheets: 14px */
+dialog{border-radius:14px}
+dialog::backdrop{background:rgba(0,0,0,.2);-webkit-backdrop-filter:none;backdrop-filter:none}
+.modal h2,.drawer h2{font-size:22px}
+@media (min-width:761px){.peek,.drawer{border-radius:14px}}
+.menu button:hover,.menu button:focus-visible{background:var(--sel-strong);color:var(--ink)}
+.toast{border-radius:10px}
+@media (prefers-reduced-transparency: reduce){
+  .rail,dialog.menu,.info-pop,.toast,thead th{-webkit-backdrop-filter:none;backdrop-filter:none}
+  .rail{background:var(--bg)} dialog.menu,.info-pop{background:var(--surface)}}
+
+/* Dashboard: status line, queue first, quiet empty states */
+.dashwrap{display:flex;flex-direction:column;gap:16px}
+.strip{display:flex;flex-wrap:wrap;align-items:center;gap:8px 28px;padding:10px 16px;border-radius:var(--r);background:var(--surface);box-shadow:0 0 0 .5px var(--line);min-height:48px}
+.strip .si{display:flex;align-items:center;gap:8px;min-width:0}
+.strip .sk{font-size:12px;color:var(--muted)}
+.strip .sv{all:unset;cursor:pointer;font-size:15px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;border-radius:4px;padding:0 2px}
+.strip .sv span{color:var(--muted);font-weight:400}
+.strip .sv:hover{color:var(--accent-text)}
+.strip .sv:focus-visible{outline:3px solid color-mix(in srgb,var(--tint) 50%,transparent);outline-offset:1px}
+.strip .ss{font-size:12px;color:var(--muted)}
+.strip form{display:flex;gap:6px;align-items:center}.strip form input{width:64px;min-height:24px;padding:2px 8px}
+.meter{width:56px;height:4px;border-radius:2px;background:var(--fill);overflow:hidden;flex:none}
+.meter i{display:block;height:100%;background:var(--tint);border-radius:2px}
+.meter.done i{background:var(--good)}
+.dash{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);grid-template-areas:"top att" "pipe track" "week week";gap:16px}
+.dash:not(:has(.a-track)) .a-pipe{grid-column:2;grid-row:2}
+.dash:not(:has(.a-track)){grid-template-areas:"top att" "top pipe" "week week"}
+.panel.quiet{gap:6px}
+.panel.quiet .empty{margin:0}
+.new-t{color:var(--accent-text);font-weight:590}
+.panel h2 .rates{margin-left:auto;display:inline-flex;gap:14px;font-size:12px;font-weight:400;color:var(--muted)}
+.panel h2 .rates b{color:var(--ink);font-weight:600}
+.panel h2 .rates .small{color:var(--muted);font-style:italic}
+.panel h2{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.frow .fbar{height:6px;background:var(--fill-3)}
+.frow .fbar span{display:block;height:100%;background:var(--tint);border-radius:3px}
+.frow.zero>span:first-child{color:var(--muted)}
+.frow.zero .fbar{background:transparent;border-top:.5px dashed var(--line);height:0;border-radius:0}
+.chart .goal{stroke:var(--muted);stroke-width:1;stroke-dasharray:4 4}
+.chart .goal-l{fill:var(--muted);font-weight:400}
+.chart .bar{fill:var(--tint);opacity:.3}.chart .bar.now{opacity:1}
+.tmatch li .what b,.todo li .what b{font-weight:590}
+.panel-foot{gap:4px}
+@media (max-width:1080px){.dash,.dash:not(:has(.a-track)){grid-template-columns:minmax(0,1fr);grid-template-areas:"top" "att" "pipe" "track" "week"}.dash:not(:has(.a-track)) .a-pipe{grid-column:auto;grid-row:auto}}
+
+/* New listings: two-fact rows, one status line, docked preview pane (Mail-style) on wide windows */
+.inbox-head{gap:8px 12px;align-items:center}
+.inbox-head p{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;color:var(--muted)}
+.inbox-head p>b{color:var(--ink);font-weight:600}
+.inbox-head .exl summary{font-size:12px;color:var(--muted);cursor:pointer;list-style:none}
+.inbox-head .exl summary::-webkit-details-marker{display:none}
+.inbox-head .exl summary:hover{color:var(--accent-text)}
+.inbox-head .exl[open] .parts{position:absolute;z-index:5;margin-top:6px;padding:10px 12px;border-radius:10px;background:var(--surface);box-shadow:0 0 0 .5px var(--line),0 8px 24px rgba(0,0,0,.12);display:flex;flex-direction:column;gap:4px;font-size:12px}
+.inbox-head .exl{position:relative}
+.spin{animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.lrow{padding:8px 14px;gap:2px 12px;min-height:52px}
+.lmain .l1 b{font-weight:590}
+.lmain .l2{gap:0 6px;color:var(--muted);font-size:12px;flex-wrap:nowrap;overflow:hidden;white-space:nowrap}
+.lmain .l2>*{overflow:hidden;text-overflow:ellipsis}
+.lmain .l2 .dot{color:var(--faint)}
+.lmain .l2 .neg{color:var(--bad);font-weight:590}
+.lacts{grid-template-columns:auto 28px;gap:2px}
+.lacts .s-main .btn{min-width:72px}
+.lsec-h{padding:10px 14px}
+.add-if{margin:6px 0 4px;font-size:12px;color:var(--muted)}
+.add-if b{color:var(--ink);font-weight:590}
+.chip.miss{background:var(--fill);color:var(--muted)}
+.pk-parts .fp .fbar,.fp .fbar{height:6px;background:var(--fill)}
+.fp .fbar span{background:var(--tint)}
+.pk-empty{padding:40px 24px;text-align:center;color:var(--muted)}
+.pk-empty p{margin:4px 0}.pk-empty b{color:var(--ink)}
+@media (min-width:1100px){
+  body.dock{--dockw:min(400px,32vw)}
+  body.dock main{margin-right:var(--dockw);padding-right:24px}
+  body.dock .peek{top:0;right:0;bottom:0;width:var(--dockw);border-radius:0;box-shadow:none;border-left:.5px solid var(--line);animation:none;z-index:5;background:var(--surface)}
+  body.dock .scrim{display:none}
+}
+@media (min-width:1100px){body.dock:has(#stubBanner) .peek{top:30px}}
+.peek .sk .chip.v-yes{background:var(--fill);color:var(--ink)}
+
+/* Applications: board columns shrink when empty; cards carry a quiet action; list filters use the selection tint */
+.board{gap:10px}
+.col{flex:1 1 0;min-width:200px;padding:0 8px 8px;min-height:0;background:var(--fill-3);border-radius:var(--r)}
+.col.is-empty,.col.collapsed{flex:0 0 132px;min-width:132px}
+.col .empty{border:0;padding:4px 6px 8px;text-align:left;color:var(--faint);font-size:12px}
+.col.over .empty{color:var(--accent-text)}
+.col h2{font-size:13px;padding:10px 4px 8px}
+.col h2 .dot{width:7px;height:7px}
+.card{border-radius:10px;padding:10px 12px;gap:4px;box-shadow:0 0 0 .5px var(--line),0 1px 2px rgba(0,0,0,.04)}
+.card:hover{box-shadow:0 0 0 .5px var(--line-strong),0 2px 6px rgba(0,0,0,.06)}
+.card-top strong{font-weight:590}
+.card .meta{font-size:12px;gap:2px 8px}
+.card .qacts{justify-content:space-between;margin:2px -6px -4px}
+.card .qacts .btn.plain{min-width:0;padding:0 6px;font-weight:590}
+.prio i{background:var(--fill-2)}.prio i.on{background:var(--muted)}
+.stagef{gap:2px;background:var(--fill);border-radius:7px;padding:2px}
+.stagef button{background:transparent;border:0;border-radius:5px;padding:3px 10px;font-size:12px;color:var(--ink)}
+.stagef button:hover{background:var(--fill-3)}
+.stagef button[aria-pressed="true"]{background:var(--surface);color:var(--ink);font-weight:590;box-shadow:0 0 0 .5px var(--line),0 1px 2px rgba(0,0,0,.08)}
+:root[data-theme="dark"] .stagef button[aria-pressed="true"],:root[data-theme="dark"] .segctl a[aria-current]{background:var(--fill-2)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .stagef button[aria-pressed="true"],:root:not([data-theme="light"]) .segctl a[aria-current]{background:var(--fill-2)}}
+.stagef .c{color:var(--muted);opacity:1}
+.stwrap{display:inline-flex;align-items:center;gap:6px}
+.stwrap .dot{width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
+.stwrap select.stsel{color:var(--ink)!important;background-color:transparent!important;font-weight:400;padding:2px 18px 2px 4px;border-radius:6px;min-height:24px;font-size:13px}
+.stwrap select.stsel:hover{background-color:var(--fill-3)!important}
+.tsec.s-todo .tablewrap{border-color:var(--line)}
+td.rs{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tsec-h .tsec-t{font-size:15px}
+
+/* Documents: base resumes as a grouped list, aligned job tables, neutral document states, stage as dot + text */
+.dbase-l{list-style:none;margin:0;padding:0}
+.dbase-l li{display:grid;grid-template-columns:150px minmax(0,1fr) auto;gap:4px 16px;align-items:center;padding:8px 0;border-top:.5px solid var(--line)}
+.dbase-l li:first-child{border-top:0}
+.dbase-t{display:flex;align-items:baseline;gap:6px}.dbase-t b{font-weight:600}.dbase-t .sub{font-size:12px;color:var(--muted)}
+.dbase-o{font-size:12px;color:var(--muted);line-height:1.4}
+.docs-t{table-layout:fixed;width:100%}
+.docs-t col.c-co{width:30%}.docs-t col.c-app{width:13%}.docs-t col.c-doc{width:24%}.docs-t col.c-open{width:9%}
+.docs-t .dc-c{min-width:0}
+.docs-t .co b,.docs-t .sub2{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.docs-t .chip.v-yes{background:var(--fill);color:var(--ink)}
+.chip.st{background:none!important;padding:0;color:var(--ink);font-weight:400;gap:6px}
+.chip.st::before{background:var(--c)}
+.dlpair{border-radius:6px}
+.dgrp-h .chip.tag{font-weight:600}
+@media (max-width:760px){.dbase-l li{grid-template-columns:minmax(0,1fr)}.docs-t{table-layout:auto}}
+
+/* Settings: panes (one category at a time) with System Settings-style inset grouped rows */
+.settings{grid-template-columns:200px minmax(0,1fr);gap:28px;max-width:980px}
+.stoc{top:20px;gap:1px}
+.stoc a{padding:5px 10px;border-radius:6px;color:var(--ink);font-size:13px}
+.stoc a:hover{background:var(--fill-3)}
+.stoc a[aria-current]{background:var(--sel);color:var(--ink);font-weight:590}
+.sbody{gap:0}
+.sbody>.panel{padding:6px 16px 12px;gap:0;border-radius:var(--r)}
+.sbody>.panel>h2{font-size:22px;font-weight:700;margin:10px 0 12px;letter-spacing:-.016em}
+.sbody>.panel>h2 small{display:block;width:100%;font-size:12px;margin-top:2px}
+.sbody .grid2{display:flex;flex-direction:column;gap:0}
+.settings:not(.pf) .sbody .field:has(>input[type=number]){display:grid;grid-template-columns:minmax(0,1fr) 84px;column-gap:20px;row-gap:2px;align-items:center;padding:10px 0;border-top:.5px solid var(--line)}
+.settings:not(.pf) .sbody .field:has(>input[type=number])>span:first-child{grid-column:1;grid-row:1;font-size:13px;font-weight:400;color:var(--ink)}
+.settings:not(.pf) .sbody .field:has(>input[type=number])>input{grid-column:2;grid-row:1 / span 2;width:84px;min-height:26px;padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums}
+.settings:not(.pf) .sbody .field:has(>input[type=number])>.hint{grid-column:1;grid-row:2;font-size:12px;color:var(--muted)}
+.sbody .field>span:first-child .eff{margin-left:6px}
+.settings:not(.pf) .sbody label.switch{display:flex;flex-direction:row-reverse;justify-content:space-between;align-items:center;gap:20px;padding:10px 0;border-top:.5px solid var(--line);font-size:13px}
+.sbody>.panel>.row,.sbody>.panel>p.empty,.sbody>.panel>.notice{margin:10px 0 0}
+.sbody .weights{gap:6px 16px;padding:4px 0 6px}
+.sbody .weights input{min-height:26px;padding:3px 8px;width:84px;justify-self:end}
+.sbody .weights input[type=text]{width:100%}
+.settings:not(.pf) .sbody>.panel>.field{padding:10px 0;border-top:.5px solid var(--line)}
+.sbody>.panel>.field>span:first-child{font-size:13px;font-weight:590;color:var(--ink)}
+.sbody .eff{font-size:11px;font-weight:500;background:none!important;color:var(--muted)!important;padding:0}
+.settings .btn.danger,.settings .btn.ghost.danger{color:var(--bad)}
+@media (max-width:1080px){.settings{grid-template-columns:minmax(0,1fr)}.stoc{position:static;flex-direction:row;flex-wrap:wrap}}
+.settings:not(.pf) .sbody .field:has(>input[type=number]):not(:has(>.hint))>span:first-child{grid-row:1 / span 2}
+html{background:var(--bg)}
+
+/* Profile: one honest status line (no ring), plain checkboxes, sections keep their spacing */
+.pf .sbody{gap:16px}
+.pf-status{display:flex;align-items:flex-start;gap:16px}
+.pf-status>div{flex:1;min-width:0}
+.pf-status b{font-weight:600}
+.pf-status .sub{margin-top:2px;font-size:12px;color:var(--muted)}
+.pf-status .savestate{flex:none;font-size:12px;color:var(--muted);white-space:nowrap}
+.pf .sbody>.panel{padding:6px 20px 16px}
+.checks{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px 16px}
+.checks.sm{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}
+.checks label{background:none!important;border:0;border-radius:6px;padding:4px 2px;display:flex;align-items:center;gap:8px;color:var(--ink)!important;min-height:24px}
+.checks label .sub{color:var(--muted);font-size:12px}
+.checks label:hover{background:var(--fill-3)!important}
+
+/* Save problems: a banner above the page until solved */
+.saveissue{display:flex;align-items:flex-start;gap:16px;padding:10px 14px;margin:0 0 12px;border-radius:var(--r-row);background:color-mix(in srgb,var(--bad) 8%,var(--surface));box-shadow:0 0 0 .5px color-mix(in srgb,var(--bad) 30%,transparent)}
+.saveissue .si-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;font-size:13px}
+.saveissue .si-t span{color:var(--muted);font-size:12px}
+.saveissue details{font-size:12px;color:var(--muted)}.saveissue ul{margin:4px 0 0;padding-left:18px}
+.saveissue .si-a{display:flex;gap:6px;flex-wrap:wrap;flex:none}
+.fetch-now{color:var(--accent-text);font-weight:590}
+.savestate.warn{color:var(--warn)}
+/* The palette field is the only control in the panel and shows a caret, like Spotlight: no focus ring. */
+dialog.pal .pal-field input:focus-visible,dialog.pal .pal-field input:focus{outline:none;box-shadow:none;border:0}
+
+#view:focus{outline:none}
+.saved-t{color:var(--good);font-weight:590}
+.toast a.tbtn{text-decoration:none}
+@media (min-width:1100px){body.dock .peek{animation:pk-dock .18s cubic-bezier(.2,.8,.2,1)}}
+@keyframes pk-dock{from{opacity:0;transform:translateX(12px)}}
+@media (prefers-reduced-motion:reduce){body.dock .peek{animation:none}}
+/* Every row gets the same hover, saved ones included; the selected (peeking) row keeps its tint */
+.lrow.qsaved:hover,.tmatch li.qsaved:hover,.todo li:hover{background:var(--fill-3)}
+.lrow.peeking,.lrow.peeking:hover,.tmatch li.peeking,.tmatch li.peeking:hover,.todo li.peeking{background:var(--sel)}
+.tracked-note{margin:12px 4px 0;font-size:12px;color:var(--muted)}
+.tracked-note a{color:var(--accent-text)}
+.start-l{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:13px}
+.start-l a{color:var(--accent-text);white-space:nowrap}
+/* Long text: clamp names and roles so one long posting cannot stretch a card or row; the full text is in the
+   row's accessible name, the tooltip and the preview */
+.card-top strong,.card .role,td.co>button,td.co .sub2,.tmatch li .what b,.todo li .what b{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.card .role,td.co .sub2{-webkit-line-clamp:2}
+.tmatch li .what b,.todo li .what b{-webkit-line-clamp:1}
+.card .next,.card .meta>span{overflow-wrap:anywhere}
+.card .meta .next{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+/* Board fits a 1280px window: populated columns 176px minimum, empty ones 112px */
+.col{min-width:176px}
+.col.is-empty,.col.collapsed{flex:0 0 112px;min-width:112px}
+/* Off switches keep a visible edge in dark mode (3:1 for meaningful UI) */
+.switch input[type=checkbox]:not(:checked){box-shadow:inset 0 0 0 1px var(--line-strong)}
+
+/* Logo = link to the Dashboard (looks like the brand, not like a link) */
+a.brand{color:var(--ink);text-decoration:none;border-radius:8px;margin:-4px 0;padding:4px 8px;transition:background .15s var(--ease)}
+a.brand:hover{background:var(--fill-3);color:var(--ink)}
+a.brand:active .brand-mark{filter:brightness(.95)}
+.brand-t{display:flex;flex-direction:column;gap:1px;min-width:0}
+.brand-t b{font-size:15px;font-weight:700;letter-spacing:-.016em;white-space:nowrap;color:var(--ink)}
+.brand-t span{font-size:12px;color:var(--faint)}
+.job-err{margin-top:8px;padding:8px 10px;border-radius:8px;font-size:12px;line-height:1.45;background:color-mix(in srgb,var(--bad) 8%,var(--surface));color:var(--ink)}
+.job-err b{color:var(--bad)}
+.busy-t{color:var(--accent-text)}
+
+/* Revise box on the resume step: a composer, like Messages, between the notes and the editor */
+.revise{display:flex;flex-direction:column;gap:8px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface)}
+.rv-l{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px}
+.rv-l b{font-size:13px}
+.rv-box{display:flex;align-items:flex-end;gap:8px;padding:6px 6px 6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--fill-3);transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+.rv-box:focus-within{border-color:var(--tint);box-shadow:0 0 0 3px var(--sel)}
+.rv-box textarea{flex:1;min-width:0;border:0;background:transparent;resize:vertical;min-height:38px;max-height:200px;padding:4px 0;font:inherit;color:var(--ink);line-height:1.45}
+.rv-box textarea:focus,.rv-box textarea:focus-visible{outline:none;box-shadow:none}
+.rv-foot{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px}
+.rv-ideas{display:flex;flex-wrap:wrap;gap:6px}
+.rv-idea{cursor:pointer;border:1px solid var(--line);background:var(--surface);font:inherit;font-size:12px;color:var(--muted)}
+.rv-idea:hover:not(:disabled){color:var(--ink);background:var(--fill-3)}
+.rv-last{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 12px;border-top:1px solid var(--line);padding-top:8px}
+@media (max-width:640px){.rv-box{flex-direction:column;align-items:stretch}}
+
+/* Base resumes: status, action and downloads per track */
+.dbase-l li{grid-template-columns:150px minmax(0,1fr) auto auto}
+.dbase-o{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px}
+.dbase-a{display:flex;justify-content:flex-end}
+@media (max-width:760px){.dbase-l li{grid-template-columns:minmax(0,1fr)}.dbase-a{justify-content:flex-start}}
+/* Base resume review: page preview beside notes and the revise box */
+dialog.modal.tbd{width:min(1040px,calc(100vw - 32px));max-height:calc(100vh - 48px)}
+.tb-dlg{max-height:calc(100vh - 48px);overflow:hidden}
+.tb-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px}
+.tb-head h2{margin:0}
+.tb-grid{display:grid;grid-template-columns:auto minmax(0,1fr);gap:20px;min-height:0;overflow:hidden}
+.tb-paper{width:calc(816px * .56 + 16px);padding:8px;overflow:auto;max-height:calc(100vh - 220px)}
+.tb-paper .paper{zoom:.56;box-shadow:0 1px 3px rgba(0,0,0,.18)}
+.tb-side{display:flex;flex-direction:column;gap:12px;overflow:auto;max-height:calc(100vh - 220px);padding-right:4px}
+.tb-side .why ul{margin:6px 0 0}
+.tb-acts{display:flex;flex-wrap:wrap;gap:6px}
+@media (max-width:820px){.tb-grid{grid-template-columns:minmax(0,1fr)}.tb-paper{width:auto}.tb-paper .paper{zoom:.42}}
+
+/* ---------- fix-it lists: every "check" or "confirm" note links to the place to fix it ---------- */
+.notice.fix{align-items:flex-start}
+.fix-b{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.fix-b>.sub{color:var(--muted)}
+.fixlist{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-direction:column}
+.fixlist li{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 0;border-top:.5px solid var(--line)}
+.fixlist li:first-child{border-top:0}
+.fix-w{display:flex;flex-direction:column;gap:2px;min-width:0;color:var(--ink);font-size:13px}
+.fix-w b{font-weight:590;font-size:12px;color:var(--muted)}
+.fix-t{overflow-wrap:anywhere}
+.fix-a{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:none}
+.pf-todo{margin-top:12px;border-top:.5px solid var(--line);padding-top:10px}
+.pf-todo>summary{cursor:pointer;font-size:13px}
+.pf-todo>summary .sub{margin-left:6px}
+.linkbtn[data-goto]{font-size:inherit}
+button.src{all:unset;font-family:var(--f-code);font-size:11px;cursor:pointer;color:var(--good);border-radius:3px}
+button.src:hover{text-decoration:underline}
+button.src:focus-visible{outline:2px solid var(--tint);outline-offset:2px}
+@keyframes gotoFlash{0%,35%{box-shadow:0 0 0 3px color-mix(in srgb,var(--hl) 70%,transparent);background:var(--hl-soft)}100%{box-shadow:0 0 0 3px transparent}}
+.goto-flash{animation:gotoFlash 1.8s var(--ease, ease) 1;border-radius:var(--r-row)}
+@media (prefers-reduced-motion: reduce){.goto-flash{animation:none;box-shadow:0 0 0 2px var(--hl)}}
+/* Apply: professional experience, ready to paste */
+.qa-h{font-size:14px;font-weight:600;margin:18px 0 8px;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.qa-h small{font-weight:400;font-size:12px;color:var(--muted)}
+.qa-exp{border:.5px solid var(--line);border-radius:var(--r-row);padding:10px 12px;margin:0 0 10px}
+.qa-exp-h{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;font-size:13px}
+.qa dd.multi{align-items:flex-start}
+.qa dd.multi span{white-space:pre-line}
+@media (max-width:700px){.fixlist li{flex-direction:column;align-items:stretch}.fix-a{justify-content:flex-start}}
+.fix-w .chip{align-self:flex-start}
+.qa dt:has(+ dd.multi){align-self:start;padding-top:2px}
+/* Resume score */
+.rscore{border:.5px solid var(--line);border-radius:var(--r-row);padding:12px;margin:0 0 12px;background:var(--surface)}
+.rs-parts{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.rs-parts li{display:grid;grid-template-columns:92px minmax(60px,1fr) 30px;align-items:center;gap:4px 8px;font-size:12px}
+.rs-parts .rs-pl small{color:var(--muted);font-weight:400}
+.rs-parts .rs-pv{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.rs-parts .rs-pn{grid-column:1 / -1;margin-top:-2px}
+.rs-parts .bar{height:6px;border-radius:3px;background:var(--fill-3, var(--line));overflow:hidden}
+.rs-parts .bar>span{display:block;height:100%;background:var(--accent);border-radius:3px}
+.rs-fixes{margin-top:10px;font-size:12px}
+.rs-fixes>summary{cursor:pointer}
+.rs-fixes ol{margin:6px 0 0;padding-left:18px;display:grid;gap:6px}
+.rs-fixes .chip{font-size:11px;padding:0 6px;text-transform:capitalize}
+.rs-fixes .fix-q{display:block;margin-top:2px}
+/* Before you send */
+.todo-panel{border:.5px solid var(--line);border-radius:var(--r-row);padding:8px 12px;margin:10px 0;background:var(--surface)}
+.todo-panel>summary{cursor:pointer;font-size:13px}
+.todo-panel>.notice{margin:8px 0 0;border:0;padding:4px 0;background:transparent}
+/* Version compare */
+.vd-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;max-height:60vh;overflow:auto}
+.vd-list li{padding:8px 10px;border-radius:var(--r-row);border:.5px solid var(--line);font-size:13px;display:grid;gap:4px}
+.vd-list del{color:var(--bad);text-decoration-thickness:1px}
+.vd-list ins{color:var(--good);text-decoration:none}
+.vd-list ins::before{content:"+ "}.vd-list del::before{content:"− "}
+.vd-pick{list-style:none;margin:10px 0;padding:0;display:grid;gap:6px}
+.chip.listed{border-style:dashed}
+
+/* Resume toolbar wraps on narrow screens instead of pushing the versions menu off the page */
+.rs-bar{flex-wrap:wrap;min-width:0}
+.rs-bar #rsVer{min-width:0;max-width:100%;flex:1 1 180px}
+/* Resume page v2: the page first, the work beside it */
+.rs-grid.v2{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}
+.rs-view .rs-sticky{max-height:calc(100vh - 24px);overflow:auto;padding-right:2px}
+.rs-work{display:flex;flex-direction:column;gap:10px;min-width:0}
+.rs-work>.todo-panel,.rs-work>.rs-notes,.rs-work>.revise{margin:0}
+.rs-editw{border:.5px solid var(--line);border-radius:var(--r-row);padding:4px 12px 12px;background:var(--surface)}
+.rs-editw>summary{cursor:pointer;padding:8px 0;font-size:13px}
+.pv-hit{fill:transparent;cursor:pointer}
+.pv-hit:hover{fill:rgba(0,113,227,.09)}
+.pv-tip{margin:-4px 0 0;text-align:center}
+.rs-one{margin:8px 0 0}
+.rs-kwd{margin-top:10px;font-size:12px}.rs-kwd>summary{cursor:pointer}.rs-kwd .kw-l{margin-top:6px}
+.ready{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:13px}
+.ready .ready-a{display:flex;gap:8px;align-items:center;margin-left:auto}
+.ready.warn{padding:6px 8px;border-radius:var(--r-row);background:var(--hl-soft)}
+.dlpair.sm button{font-size:11px}
+/* Profile: points to confirm, one group per entry */
+.pf-tgroup{margin-top:10px}
+.pf-tg-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:var(--muted)}
+.pf-tg-h b{font-weight:590}
+/* Dashboard: an empty "Needs attention" stays small */
+.a-att.quiet{align-self:start}
+.a-att.quiet h2{margin:0}
+.rates small{font-weight:400;color:var(--muted)}
+.rs-view .rs-sticky>*{flex-shrink:0}
+
+/* ---------- release polish (impeccable audit, Nov 2026) ---------- */
+/* Icons */
+.ic{display:block;flex:none}
+.btn.icon .ic{margin:auto}
+.dlp-l{display:inline-flex;align-items:center;gap:4px}
+/* No side stripes: state reads from the ring, the chip and the text (DESIGN.md: lines over boxes, no decorative color) */
+.verdict,.verdict.v-warn,.verdict.v-bad,.verdict.v-good{border-left:0}
+.lrow.peeking,.tmatch li.peeking,.todo li.peeking{box-shadow:none}
+.gets li{border-left:0;padding-left:0}
+.col{border-top:0}
+/* Contrast: secondary chips and low-importance keywords stay AA */
+.chip.imp1{opacity:1}
+.facts .chip:not(.v-yes):not(.miss),.kw-l .chip:not(.v-yes):not(.miss):not(.kw-can){color:var(--muted)}
+:root[data-theme="dark"] .facts .chip:not(.v-yes):not(.miss){color:#c7c7cc}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .facts .chip:not(.v-yes):not(.miss){color:#c7c7cc}}
+.seg .c,[data-stage] .c{opacity:1}
+/* Readable measure for intro copy */
+.view-sub,.page-sub,.sbody>.panel>p.sub,.panel>p.sub,.panel>.sub{max-width:75ch}
+/* Lines over boxes: the editor and Profile entries are rows inside one panel, not cards inside cards */
+.rs-editw{border:0;padding:0;background:transparent}
+.rs-editw .rs-sec{border:0;border-top:.5px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+.rs-editw .rs-ent{border:0;border-top:.5px solid var(--line);border-radius:0;background:transparent;box-shadow:none;padding-left:0;padding-right:0}
+.pf-entries .pf-entry{border:0;border-top:.5px solid var(--line);border-radius:0;box-shadow:none;background:transparent}
+.pf-entries .pf-entry:first-child{border-top:0}
+/* Resume toolbar: versions menu at a sensible width, the one action on the right */
+.rs-bar #rsVer{flex:0 1 240px}
+.ready{margin-top:6px}
+/* Dashboard: a quiet "Needs attention" lets By track move up instead of leaving a hole */
+@media (min-width:1081px){.dash:has(.a-att.quiet):has(.a-track){grid-template-areas:"top att" "top track" "pipe track" "week week"}}
+[data-stage] .c{color:inherit;opacity:.85}
+input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
+/* Flatten nested containers on the resume page: sections separated by hairlines */
+.rs-work .rscore{margin:0}
+.rs-work .revise{border:0;box-shadow:none;background:transparent;border-radius:0;padding:0}
+.todo-panel .notice{border:0;box-shadow:none;background:transparent;padding-left:0;padding-right:0}
+.rs-editw .rs-hd{border:0;box-shadow:none;background:transparent;padding-left:0;padding-right:0}
+
+/* Profile sections count what still needs confirming */
+.stoc .toc-n{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:9px;background:var(--hl-soft);color:var(--warn);font-size:11px;font-weight:600}
+/* Data check */
+.dcheck .dc-sev{display:inline-block;min-width:38px;font-size:11px;font-weight:600;color:var(--muted)}
+.dcheck .dc-sev.bad{color:var(--bad)}.dcheck .dc-sev.warn{color:var(--warn)}
+/* Phones: search and theme sit beside the title instead of on their own row */
+@media (max-width:760px){
+  .top{position:relative}
+  .top-acts{position:absolute;top:0;right:0;order:0}
+  .titlebar{padding-right:96px}
+}
+@media (max-width:1080px){.rs-grid.v2{grid-template-columns:minmax(0,1fr)}.rs-view .rs-sticky{position:static;max-height:none;overflow:visible}}
+
+/* ---------- resume page v3 (Nov 2026): edit on the left, the page on the right ----------
+   One header row (status · versions · the one Claude action), then two columns: a segmented control picks what the
+   left side does (Edit, Review, Ask Claude), and the page stays in view on the right with its own scroll. */
+.rs.v3{gap:0}
+.rs-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px;padding-bottom:14px;border-bottom:.5px solid var(--line)}
+.rs-status{display:flex;flex-direction:column;gap:6px;min-width:0}
+.rs-status .row{gap:8px}
+.rs-status .ready{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.rs-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;min-width:0}
+.rs-actions select{width:auto;max-width:230px;height:30px;padding:3px 26px 3px 10px;font-size:12px}
+.rs.v3 .tailor-nudge{margin-top:14px}
+.rs-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);gap:28px;align-items:start;margin-top:16px}
+.rs-left{min-width:0;display:flex;flex-direction:column;gap:12px}
+/* Segmented control, drawn like the Applications layout switch; stays at the top while the editor scrolls */
+.rs-seg{display:inline-flex;align-self:flex-start;gap:2px;padding:2px;border-radius:9px;background:var(--fill)}
+.rs-seg button{border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:500;padding:4px 14px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background .15s var(--ease)}
+.rs-seg button:hover{background:var(--fill-3)}
+.rs-seg button[aria-selected="true"],.rs-seg button[aria-pressed="true"]{background:var(--surface);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+:root[data-theme="dark"] .rs-seg button[aria-selected="true"],:root[data-theme="dark"] .rs-seg button[aria-pressed="true"]{background:#636366}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .rs-seg button[aria-selected="true"],:root:not([data-theme="light"]) .rs-seg button[aria-pressed="true"]{background:#636366}}
+.rs-seg.sm button{font-size:12px;padding:2px 10px}
+.rs-tabbar{position:sticky;top:0;z-index:4;margin:-8px 0 -4px;padding:8px 0 6px;background:var(--surface);box-shadow:0 .5px 0 var(--line)}
+.rs-badge{min-width:18px;padding:0 5px;border-radius:999px;font-size:11px;font-weight:600;line-height:17px;text-align:center;font-variant-numeric:tabular-nums;background:var(--fill-2);color:var(--muted)}
+.rs-badge.good{background:rgba(52,199,89,.16);color:var(--good)}
+.rs-badge.warn{background:var(--hl-soft);color:var(--warn)}
+.rs-tab-page{display:none!important}
+.rs-pane{display:flex;flex-direction:column;gap:12px;min-width:0}
+.rs-pane[hidden]{display:none}
+/* The one line that keeps open issues visible while editing */
+.rs-flag{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:0;border-radius:10px;background:var(--fill-3);color:var(--ink);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.rs-flag:hover{background:var(--fill-2)}
+.rs-flag .grow{flex:1}
+/* The editor is the left side's main content: no wrapper box */
+.rs-editw{display:block}
+/* Review: compact score, the breakdown folds away once it is high */
+.rs.v3 .rscore{margin:0}
+.rs.v3 .rscore b small{font-weight:500;color:var(--muted);font-size:12px;margin-left:4px}
+.rs-break{margin-top:10px}
+.rs-break>summary{cursor:pointer;font-size:13px}
+.rs-break>summary .sub{font-variant-numeric:tabular-nums}
+.rs.v3 .revise{border:0;background:transparent;padding:0;box-shadow:none}
+#rsTodo:empty{display:none}
+/* The page: a canvas with the sheet on it, in view while you edit */
+.rs-right{min-width:0;align-self:stretch}
+.rs-right .rs-sticky{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;display:flex;flex-direction:column;gap:10px;padding-bottom:4px;overscroll-behavior:contain}
+.rs-right .rs-sticky>*{flex-shrink:0}
+.rs-ptool{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}
+.rs-ptool .grow{flex:1}
+.rs-canvas{background:var(--fill-3);border-radius:14px;padding:18px;overflow:auto}
+.rs-canvas .rs-paper{background:transparent;border:0;border-radius:0;overflow:visible}
+.rs-canvas .rs-paper svg.pg{border-radius:2px;box-shadow:0 0 0 .5px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.06),0 12px 32px rgba(0,0,0,.08)}
+.rs-canvas .rs-paper svg.pg+svg.pg{margin-top:18px}
+.rs-canvas.actual .rs-paper svg.pg{width:816px;max-width:none}
+.rs-canvas.actual .rs-paper{width:max-content}
+.rs-paper .pv-hit{fill:transparent;cursor:text}
+.rs-paper .pv-hit:hover{fill:rgba(0,113,227,.07)}
+.rs-right .pv-tip{margin:0;text-align:center}
+#rsPageNote:empty{display:none}
+#rsPageNote .notice{margin:0}
+/* Narrow: one column; the page becomes a tab */
+@media (max-width:1080px){
+  .rs-split{grid-template-columns:minmax(0,1fr)}
+  .rs-tab-page{display:inline-flex!important}
+  .rs-split:not([data-pane="page"]) .rs-right{display:none}
+  .rs-right .rs-sticky{position:static;max-height:none;overflow:visible}
+  .rs-actions{justify-content:flex-start}
+  .rs-canvas{padding:10px}
+}
+.rs-paper .pv-hit.cur{fill:rgba(0,113,227,.12)}
+/* The page column and the editor adapt to their own width, not the window's */
+.rs-right,.rs-left{container-type:inline-size}
+.rs-shead{flex-wrap:nowrap;gap:4px}
+.rs-shead>input{flex:1 1 auto;min-width:0;max-width:260px}
+@container (max-width:600px){.rs-ptool #rsFit{flex-basis:100%;order:-1}.rs-ptool .grow{display:none}}
+@container (max-width:520px){.rs-eh{grid-template-columns:minmax(0,1fr) 120px}}
+
+/* ---------- final audit (Nov 6, 2026) ---------- */
+/* No side stripes anywhere: urgency reads from the due text ("Tomorrow", "In 2 days") and its colour */
+.lrow.u-soon,.lrow.u-hot,tr.u-soon,tr.u-hot,li.u-soon,li.u-hot{box-shadow:none}
+/* Verdict checks: a link stays on the line of its sentence instead of becoming a column */
+.vd-checks li .linkbtn{white-space:nowrap}
+@media (max-width:760px){
+  /* Header: Search, Settings and Add as three 44 pt icon buttons beside the title, like a navigation bar */
+  .top:has(#addBtn:not([hidden])) .titlebar{padding-right:150px}
+  .verdict{align-items:start}
+  #addBtn{width:40px;height:40px;margin-left:4px;padding:0;border-radius:50%;font-size:0;display:inline-grid;place-items:center}
+  #addBtn::before{content:"";width:16px;height:16px;background:currentColor;
+    -webkit-mask:linear-gradient(#000,#000) center/16px 2px no-repeat,linear-gradient(#000,#000) center/2px 16px no-repeat;
+            mask:linear-gradient(#000,#000) center/16px 2px no-repeat,linear-gradient(#000,#000) center/2px 16px no-repeat}
+  /* Verdict: a smaller ring so the reasons get the width */
+  .verdict{gap:10px 12px}
+  .verdict>.ring{width:44px;height:44px}.verdict>.ring span{width:36px;height:36px;font-size:13px}
+  /* Profile status: the save state goes under the summary */
+  .pf-status{flex-direction:column;gap:6px}
+  /* Touch targets: standalone links and small controls reach 24 px or more (WCAG 2.5.8) */
+  .crumb{padding:4px 0;margin-bottom:0}
+  .stepnav a,.sh-act .linkbtn,.ch-act .linkbtn{min-height:32px;display:inline-flex;align-items:center}
+  input[type=checkbox]{width:20px;height:20px}
+  button.sv{min-height:32px;padding:0 4px}
+}

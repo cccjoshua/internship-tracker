@@ -27,17 +27,22 @@ Saved applications whose posting closed are reported in listings.json
 ("closures") and the page moves them to Closed.
 """
 import bisect
+import contextlib
 import csv
 import datetime as dt
 import html
+import ipaddress
 import json
 import math
 import os
 import re
-import tempfile
+import socket
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import safeio
 from concurrent.futures import ThreadPoolExecutor
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +60,7 @@ DEFAULT_WEIGHTS = {"fit": 30, "skills": 25, "sponsor": 20, "recency": 15, "degre
 DEFAULT_TARGETS = ["SWE", "DE", "DA", "DS", "BIE"]
 DEFAULT_PLACES = ["TX", "Remote"]
 NO_SPONSOR_PENALTY = 20
+NO_SPONSOR_CAP = 40  # a posting that will not sponsor never ranks above this (core.js DEFAULTS.noSponsorCap)
 RECENCY_HALF_LIFE = 5
 MAX_TEXT_READS = 150  # per run; the rest are read on the next run
 
@@ -81,7 +87,7 @@ SKILLS = {  # canonical name -> pattern (case-insensitive unless listed in CASE_
     "Airflow": r"\bairflow\b", "dbt": r"\bdbt\b", "Snowflake": r"snowflake", "BigQuery": r"bigquery",
     "Redshift": r"redshift", "Kafka": r"\bkafka\b", "Hadoop": r"hadoop|\bhive\b", "AWS": r"\baws\b|amazon web services",
     "GCP": r"\bgcp\b|google cloud", "Azure": r"\bazure\b", "Docker": r"\bdocker\b", "Kubernetes": r"kubernetes|\bk8s\b",
-    "Git": r"\bgit\b|github", "Linux": r"\blinux\b|\bunix\b", "Java": r"\bjava\b(?!script)", "C#": r"c#|\.net\b",
+    "Git": r"\bgit\b|github", "Linux": r"\blinux\b|\bunix\b", "Java": r"\bjava\b(?!script)", "C#": r"c#",
     "C/C++": r"c\+\+", "JavaScript": r"javascript", "TypeScript": r"typescript", "React": r"\breact\b",
     "Scala": r"\bscala\b", "Rust": r"\brust\b", "R": r"\bR\b(?![&\-/'])", "LLMs": r"\bllms?\b|large language model|generative ai|genai",
     "Prompt engineering": r"prompt engineering|prompting", "Databases": r"relational database|postgres|mysql|sql server|database",
@@ -91,8 +97,29 @@ SKILL_RE = {k: re.compile(p) if k in CASE_SENSITIVE else re.compile(p, re.I) for
 
 CITIZEN = re.compile(r"(must|required to)\s+be\s+(a\s+)?(u\.?s\.?|united states)\s+citizen|(u\.?s\.?|united states)\s+citizenship\s+(is\s+)?(required|needed|mandatory)|only\s+(u\.?s\.?|united states)\s+citizens|requires?\s+(u\.?s\.?|united states)\s+citizenship", re.I)
 CLEARANCE = re.compile(r"(active|current|obtain|maintain|eligib\w*\s+(for|to obtain))\W+(\w+\W+){0,3}(security|secret|top secret|ts/sci)\s+clearance|(secret|top secret|ts/sci|security)\s+clearance\s+(is\s+)?required", re.I)
-NO_SPONSOR = re.compile(r"(not|unable to|cannot|can't|won't|will not|does not|do not|is not able to)\s+(be able to\s+)?(offer|provide|support|sponsor|consider)\w*[^.]{0,60}(sponsorship|visa)|without\s+(the\s+)?(need\s+for\s+)?(current\s+or\s+future\s+)?(employer\s+|visa\s+)?sponsorship|sponsorship\s+(is|will)\s+not\s+(be\s+)?(available|provided|offered)|\bno\s+(visa\s+)?sponsorship", re.I)
+NO_SPONSOR = re.compile(r"(not|unable to|cannot|can't|won't|will not|does not|do not|is not able to)\s+(be able to\s+)?(offer|provide|support|sponsor|consider)\w*[^.]{0,60}(sponsorship|visa)|without\s+(the\s+)?(need\s+for\s+)?(current\s+or\s+future\s+)?(employer\s+|visa\s+)?sponsorship|sponsorship\s+(is|will)\s+not\s+(be\s+)?(available|provided|offered)|\bno\s+(visa\s+)?sponsorship|authorized\s+to\s+work\s+in\s+the\s+(united\s+states|u\.?s\.?a?\.?)[^.]{0,40}\bnow\s+and\s+in\s+the\s+future|(not|never)\s+(now\s+or\s+in\s+the\s+future\s+)?require\s+(employer\s+|visa\s+|immigration\s+)?sponsorship", re.I)
 FRIENDLY = re.compile(r"\b(CPT|OPT)\b|\bF-1\b|(?i:international students\s+(are\s+)?(welcome|eligible|encouraged))|(?i:(will|can|able to)\s+sponsor\b)|(?i:sponsorship\s+(is\s+)?available)")
+# "Candidates on CPT or OPT are not eligible", "This role does not accept OPT candidates". Mirrors OPT_EXCLUDED in core.js.
+OPT_EXCLUDED = re.compile(r"\b(CPT|OPT|F-?1)\b[^.]{0,60}\b(not|ineligible|unable)\b[^.]{0,30}\b(eligible|accept\w*|consider\w*|sponsor\w*|support\w*)|\b(not|cannot|can't|unable to|do(es)? not|will not|won't)\s+(be\s+able\s+to\s+)?(accept|consider|support|hire|employ)\w*[^.]{0,40}\b(CPT|OPT|F-?1)\b|\bineligible\b[^.]{0,40}\b(CPT|OPT|F-?1)\b|\b(CPT|OPT|F-?1)\b[^.]{0,60}\bineligible\b", re.I)
+NEGATION = re.compile(r"\b(not|no|never|ineligible|unable|cannot|can't|won't|without)\b", re.I)
+
+
+def sponsorship_signals(text):
+    """Classify work-authorization wording sentence by sentence, so a sentence that mentions CPT/OPT only to exclude
+    it is never read as friendly. Returns {noSponsor, optExcluded, friendly}."""
+    no_sp = opt_out = friendly = False
+    for sent in re.split(r"(?<=[.!?;])\s+|\n+", text or ""):
+        if OPT_EXCLUDED.search(sent):
+            opt_out = True
+            continue
+        if NO_SPONSOR.search(sent):
+            no_sp = True
+            continue
+        if FRIENDLY.search(sent) and not NEGATION.search(sent):
+            friendly = True
+    return {"noSponsor": no_sp or opt_out, "optExcluded": opt_out, "friendly": friendly and not (no_sp or opt_out)}
+
+
 NON_US = re.compile(r"\b(Canada|Ontario|Toronto|Vancouver|Montreal|Quebec|UK|United Kingdom|London|England|Ireland|Dublin|Germany|Berlin|Munich|France|Paris|India|Bangalore|Bengaluru|Hyderabad|China|Shanghai|Beijing|Japan|Tokyo|Singapore|Taiwan|Taipei|Israel|Tel Aviv|Mexico|Brazil|Australia|Sydney|Netherlands|Amsterdam|Spain|Poland|Switzerland|Zurich|Korea|Seoul|Hong Kong)\b")
 US_STATE = re.compile(r",\s*(A[LKZR]|C[AOT]|D[EC]|FL|GA|HI|I[ADLN]|K[SY]|LA|M[ADEINOST]|N[CDEHJMVY]|O[HKR]|PA|RI|S[CD]|T[NX]|UT|V[AT]|W[AIVY])\b")
 
@@ -111,25 +138,59 @@ def _read_json(path):
 
 
 def _write_bytes(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".tmp-")
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    os.replace(tmp, path)
+    safeio.write_bytes(path, data)
 
 
 def _write_json(path, obj):
-    _write_bytes(path, json.dumps(obj, ensure_ascii=False).encode("utf-8"))
+    safeio.write_json(path, obj)
 
 
-def http_get(url, headers=None, timeout=20):
+def http_get(url, headers=None, timeout=20, public_only=False):
+    """GET a URL. public_only=True (used for links that come from you or the extension) refuses anything but
+    http(s) on a public address, including after redirects, so a link can never read local files or this machine's services."""
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
+    if public_only:
+        check_public_url(url)
+        with _PUBLIC_OPENER.open(req, timeout=timeout) as r:
+            return r.status, r.headers, r.read()
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, r.headers, r.read()
 
 
+class UnsafeURL(ValueError):
+    pass
+
+
+def check_public_url(url):
+    """Allow only http(s) links whose host resolves to public addresses (no file://, localhost, LAN or cloud metadata)."""
+    u = urllib.parse.urlsplit(url or "")
+    if u.scheme not in ("http", "https") or not u.hostname:
+        raise UnsafeURL("only http(s) links can be read")
+    try:
+        infos = socket.getaddrinfo(u.hostname, u.port or (443 if u.scheme == "https" else 80), proto=socket.IPPROTO_TCP)
+    except socket.gaierror as e:
+        raise UnsafeURL(f"cannot resolve {u.hostname}") from e
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0].split("%", 1)[0])
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast or ip.is_unspecified:
+            raise UnsafeURL("the link points to this computer or a private network")
+    return url
+
+
+class _PublicRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_public_url(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_PUBLIC_OPENER = urllib.request.build_opener(_PublicRedirects)
+
+
 def strip_html(s):
-    s = re.sub(r"(?is)<style.*?</style>", " ", s or "")
+    # Page code is not posting text: on career sites like amazon.jobs it can fill most of the 14,000 characters
+    # sent for analysis and push the qualifications out. (Workday/Greenhouse/Lever API text has no such blocks.)
+    s = re.sub(r"(?is)<(script|style|noscript|template|svg)\b.*?</\1\s*>", " ", s or "")
+    s = re.sub(r"(?is)<!--.*?-->", " ", s)
     s = re.sub(r"(?s)<[^>]+>", " ", s)
     return re.sub(r"\s+", " ", html.unescape(s)).strip()
 
@@ -146,35 +207,100 @@ def norm_text(s):  # mirrors norm() in the page
     return re.sub(r"[^a-z0-9]", "", s)
 
 
+def norm_strict(s):
+    """Like norm_text but keeps season and year, so "SWE Intern (Summer 2026)" and "(Summer 2027)" stay different jobs."""
+    s = re.sub(r"\b(internship|intern|co-?op)\b", "", (s or "").lower())
+    return re.sub(r"[^a-z0-9]", "", s)
+
+
+def strict_key(l):
+    return norm_company(l.get("company") or l.get("company_name")) + "|" + norm_strict(l.get("role") or l.get("title"))
+
+
+_REQ = re.compile(r"(\d{4,}|[a-z]{1,4}-?\d{3,}|[0-9a-f]{8}-[0-9a-f]{4})", re.I)
+
+
+def same_req(u1, u2):
+    """False only when both links are on the same host and name different requisition IDs."""
+    a, b = url_key(u1), url_key(u2)
+    if not a or not b or a == b:
+        return True
+    ha, hb = urllib.parse.urlsplit(a), urllib.parse.urlsplit(b)
+    ia, ib = set(_REQ.findall(ha.path + "?" + ha.query)), set(_REQ.findall(hb.path + "?" + hb.query))
+    return not (ha.netloc == hb.netloc and ia and ib and not (ia & ib))
+
+
 def listing_key(l):
     return url_key(l.get("url")) or "k:" + norm_text(l.get("company")) + "|" + norm_text(l.get("role"))
 
 
 # ---------------------------------------------------------------- data sources
-def load_feed(log):
+FEED_TRIES = (0, 2, 8)  # seconds to wait before each attempt per feed URL
+_sleep = time.sleep      # replaced in tests
+
+
+def load_feed(log, meta_out=None):
+    """The SimplifyJobs feed: each URL is tried up to 3 times (network errors and 5xx, with 2 s and 8 s waits),
+    then the next URL, then the last downloaded copy. meta_out["usingCache"] tells which one was used."""
     path, meta_path = os.path.join(CACHE, "simplify.json"), os.path.join(CACHE, "simplify.meta.json")
     meta = _read_json(meta_path) or {}
+    if meta_out is not None:
+        meta_out["usingCache"] = False
     for url in FEEDS:
         headers = {}
         if meta.get("url") == url and meta.get("etag") and os.path.exists(path):
             headers["If-None-Match"] = meta["etag"]
-        try:
-            _, h, body = http_get(url, headers, timeout=90)
-            data = json.loads(body)
-            _write_bytes(path, body)
-            _write_json(meta_path, {"url": url, "etag": h.get("ETag"), "at": now_local().isoformat()})
-            return data
-        except urllib.error.HTTPError as e:
-            if e.code == 304:
-                return _read_json(path)
-            log(f"Feed {url}: HTTP {e.code}")
-        except Exception as e:  # network or JSON problems: try the next feed
-            log(f"Feed {url}: {e}")
+        for wait in FEED_TRIES:
+            if wait:
+                _sleep(wait)
+            try:
+                _, h, body = http_get(url, headers, timeout=90)
+                data = json.loads(body)
+                _write_bytes(path, body)
+                _write_json(meta_path, {"url": url, "etag": h.get("ETag"), "at": now_local().isoformat()})
+                return data
+            except urllib.error.HTTPError as e:
+                if e.code == 304:
+                    return _read_json(path)
+                log(f"Feed {url}: HTTP {e.code}")
+                if e.code < 500:
+                    break  # 404 and friends will not get better by retrying: try the next feed
+            except ValueError as e:  # not JSON: retrying the same body will not help
+                log(f"Feed {url}: {e}")
+                break
+            except Exception as e:  # network problems: retry, then try the next feed
+                log(f"Feed {url}: {e}")
     cached = _read_json(path)
     if cached is not None:
         log("Using the last downloaded feed.")
+        if meta_out is not None:
+            meta_out["usingCache"] = True
         return cached
-    raise RuntimeError("Could not download the Simplify feed.")
+    raise RuntimeError("Could not download the Simplify feed, and there is no earlier copy.")
+
+
+@contextlib.contextmanager
+def refresh_lock(data_dir):
+    """Cross-process lock for a refresh (yields False when another process holds it). No-op where fcntl is missing."""
+    try:
+        import fcntl
+    except ImportError:
+        yield True
+        return
+    os.makedirs(data_dir, exist_ok=True)
+    fd = os.open(os.path.join(data_dir, ".refresh.lock"), os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 SUFFIX = re.compile(r"\b(INC|INCORPORATED|LLC|L L C|LLP|LP|LTD|LIMITED|CORP|CORPORATION|CO|COMPANY|PLC|THE|HOLDINGS?|GROUP|USA|US|AMERICA|NA|N A|NATIONAL ASSOCIATION|SERVICES|TECHNOLOGIES|TECHNOLOGY)\b")
@@ -186,7 +312,93 @@ def norm_company(s):
     return " ".join(SUFFIX.sub(" ", s).split())
 
 
-class H1B:
+# Brand names whose H-1B filings use a different legal name (normalized with norm_company on both sides).
+H1B_ALIASES = {
+    "AMD": "ADVANCED MICRO DEVICES", "IBM": "INTERNATIONAL BUSINESS MACHINES", "HP": "HP", "HPE": "HEWLETT PACKARD ENTERPRISE",
+    "PACIFIC NORTHWEST NATIONAL LABORATORY": "BATTELLE MEMORIAL INSTITUTE", "PNNL": "BATTELLE MEMORIAL INSTITUTE",
+    "GE": "GENERAL ELECTRIC", "GE AEROSPACE": "GENERAL ELECTRIC", "P AND G": "PROCTER AND GAMBLE", "PROCTER AND GAMBLE": "PROCTER AND GAMBLE",
+    "META": "META PLATFORMS", "FACEBOOK": "META PLATFORMS", "AWS": "AMAZON WEB", "AMAZON WEB": "AMAZON WEB",
+    "GOOGLE": "GOOGLE", "ALPHABET": "GOOGLE", "JPMORGAN CHASE": "JPMORGAN CHASE", "JP MORGAN": "JPMORGAN CHASE", "JPMORGAN": "JPMORGAN CHASE",
+    "BANK OF AMERICA": "BANK OF AMERICA", "WALMART": "WALMART", "WALMART GLOBAL TECH": "WALMART", "TSMC": "TSMC ARIZONA",
+}
+# Trailing words that only say what kind of organization it is.
+ORG_WORDS = {"BANCSHARES", "BANCORP", "BANCORPORATION", "HOLDING", "ENTERPRISES", "INDUSTRIES", "MATERIALS", "HANDLING", "SYSTEMS",
+             "SOLUTIONS", "LABS", "LABORATORIES", "PARTNERS", "INTERNATIONAL", "WORLDWIDE", "GLOBAL", "FOUNDATION", "TRUST"}
+
+
+
+class EmployerIndex:
+    """Matches a listing's company name to employer names in a government file (normalized with norm_company).
+    Subclasses fill self.counts {employer: number} and call self._ready()."""
+
+    counts = {}
+    keys = []
+    last_how = None
+
+    def _ready(self):
+        self.keys = sorted(self.counts)
+
+    def _sum(self, k, word_prefix=False):
+        """Count for name k and every filing name that extends it ("CAPITAL ONE" + "CAPITAL ONE BANK").
+        word_prefix also accepts k's last word as the start of a longer word ("ALASKA AIR" -> "ALASKA AIRLINES")."""
+        names = self._names(k, word_prefix)
+        return None if names is None else sum(self.counts[x] for x in names)
+
+    def _names(self, k, word_prefix=False):
+        names = [k] if k in self.counts else []
+        if len(k) >= 3:
+            stem = k if word_prefix else k + " "
+            i = bisect.bisect_left(self.keys, stem)
+            while i < len(self.keys) and self.keys[i].startswith(stem):
+                if self.keys[i] != k:
+                    names.append(self.keys[i])
+                i += 1
+        return names or None
+
+    def match(self, company):
+        """The filing names for a listing's employer, or None. self.last_how says how the name matched: 'exact'
+        (the name or a longer filing name), 'alias' (a known legal name), or 'approx' (a shortened name or a word
+        prefix; shown as approximate)."""
+        self.last_how = None
+        k = norm_company(company)
+        if not k or not self.counts:
+            return None
+        n = self._names(k)
+        if n:
+            self.last_how = "exact"
+            return n
+        alias = H1B_ALIASES.get(k)
+        if alias:
+            n = self._names(alias)
+            if n:
+                self.last_how = "alias"
+                return n
+        words = k.split()
+        # Drop trailing words that only name the kind of organization ("FIRST CITIZENS BANCSHARES" -> "FIRST CITIZENS",
+        # "HYSTER YALE MATERIALS HANDLING" -> "HYSTER YALE"), keeping at least two words. A place or a product word is
+        # never dropped: "FEDERAL HOME LOAN BANK OF INDIANAPOLIS" is not every Federal Home Loan Bank.
+        cut = len(words)
+        while cut > 2 and words[cut - 1] in ORG_WORDS:
+            cut -= 1
+            n = self._names(" ".join(words[:cut]))
+            if n:
+                self.last_how = "approx"
+                return n
+        # The last word may be the start of the filing name's word ("ALASKA AIR" -> "ALASKA AIRLINES").
+        if len(words) >= 2 and len(words[-1]) >= 3 and len(k) >= 8:
+            n = self._names(k, word_prefix=True)
+            if n:
+                self.last_how = "approx"
+                return n
+        return None
+
+    def lookup(self, company):
+        """The count for a listing's employer, or None when no filing name matches (see match)."""
+        names = self.match(company)
+        return None if names is None else sum(self.counts[x] for x in names)
+
+
+class H1B(EmployerIndex):
     """Employer -> H-1B approvals (initial + continuing) from the USCIS H-1B Employer Data Hub."""
 
     def __init__(self, log):
@@ -212,20 +424,265 @@ class H1B:
                 _write_json(idx_path, self.counts)
             except Exception as e:
                 log(f"H-1B data unavailable ({e}); sponsorship falls back to posting text only.")
-        self.keys = sorted(self.counts)
+        self._ready()
 
-    def lookup(self, company):
-        k = norm_company(company)
-        if not k or not self.counts:
-            return None
-        found, total = k in self.counts, self.counts.get(k, 0)
-        if len(k) >= 3:
-            i = bisect.bisect_left(self.keys, k + " ")
-            while i < len(self.keys) and self.keys[i].startswith(k + " "):
-                total += self.counts[self.keys[i]]
-                found = True
-                i += 1
-        return total if found else None
+
+def h1b_meta():
+    return _read_json(os.path.join(CACHE, "h1b_meta.json")) or {"label": H1B_LABEL, "source": "USCIS H-1B Employer Data Hub archive"}
+
+
+def h1b_label():
+    return h1b_meta().get("label") or H1B_LABEL
+
+
+def _xlsx_rows(data):
+    """Rows of the first worksheet of an .xlsx file (standard library only)."""
+    import io
+    import zipfile
+    import xml.etree.ElementTree as ET
+    ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
+    z = zipfile.ZipFile(io.BytesIO(data) if isinstance(data, (bytes, bytearray)) else data)
+    shared = []
+    if "xl/sharedStrings.xml" in z.namelist():  # streamed: DOL's files hold millions of strings
+        with z.open("xl/sharedStrings.xml") as f:
+            for _, el in ET.iterparse(f):
+                if el.tag == ns + "si":
+                    shared.append("".join(t.text or "" for t in el.iter(ns + "t")))
+                    el.clear()
+    sheets = sorted(n for n in z.namelist() if re.match(r"^xl/worksheets/sheet\d+\.xml$", n))
+    if not sheets:
+        raise ValueError("no worksheet in the file")
+    col = lambda ref: sum((ord(ch) - 64) * 26 ** i for i, ch in enumerate(reversed(re.sub(r"\d", "", ref)))) - 1
+    with z.open(sheets[0]) as f:
+        for _, el in ET.iterparse(f):
+            if el.tag != ns + "row":
+                continue
+            row = {}
+            for c in el.iter(ns + "c"):
+                t, v = c.get("t"), c.find(ns + "v")
+                val = shared[int(v.text)] if t == "s" and v is not None else "".join(x.text or "" for x in c.iter(ns + "t")) if t == "inlineStr" else (v.text if v is not None else "")
+                row[col(c.get("r", "A1"))] = val
+            el.clear()
+            if row:
+                yield [row.get(i, "") for i in range(max(row) + 1)]
+
+
+def parse_h1b(rows):
+    """Employer -> approvals from any USCIS H-1B Employer Data Hub export (archive CSVs or the current hub's
+    Excel/CSV download). Uses the latest fiscal year present. Returns (counts, fiscal_year or None)."""
+    rows = iter(rows)
+    header = None
+    for r in rows:  # skip title rows above the header
+        if any(re.search(r"employer", str(x), re.I) for x in r) and any(re.search(r"approv", str(x), re.I) for x in r):
+            header = [str(x).strip() for x in r]
+            break
+    if not header:
+        raise ValueError("could not find a header row with Employer and Approval columns")
+    low = [h.lower() for h in header]
+    emp = next(i for i, h in enumerate(low) if "employer" in h)
+    total = [i for i, h in enumerate(low) if "approv" in h and "total" in h]
+    appr = total or [i for i, h in enumerate(low) if "approv" in h]
+    if not appr:
+        raise ValueError("could not find approval columns")
+    fy = next((i for i, h in enumerate(low) if h in ("fiscal year", "fiscal_year", "year")), None)
+    data = []
+    for r in rows:
+        if len(r) <= emp:
+            continue
+        n = 0
+        for i in appr:
+            try:
+                n += int(float(str(r[i] if i < len(r) else 0).replace(",", "") or 0))
+            except ValueError:
+                pass
+        year = None
+        if fy is not None and fy < len(r):
+            m = re.search(r"(20\d\d)", str(r[fy]))
+            year = int(m.group(1)) if m else None
+        data.append((r[emp], n, year))
+    years = [y for _, _, y in data if y]
+    latest = max(years) if years else None
+    counts = {}
+    for name, n, year in data:
+        if latest and year != latest:
+            continue
+        k = norm_company(name)
+        if k:
+            counts[k] = counts.get(k, 0) + n
+    if len(counts) < 50:
+        raise ValueError(f"only {len(counts)} employers found; download the full table (all employers), not a chart")
+    return counts, latest
+
+
+def import_h1b(data, filename=""):
+    """Replace the H-1B index with a file downloaded from the USCIS H-1B Employer Data Hub."""
+    if data[:2] == b"PK":
+        rows = _xlsx_rows(data)
+    else:
+        text = data.decode("utf-8-sig", "replace")
+        if "\t" in text.split("\n", 1)[0]:
+            rows = csv.reader(text.splitlines(), delimiter="\t")
+        else:
+            rows = csv.reader(text.splitlines())
+    counts, year = parse_h1b(rows)
+    m = re.search(r"(20\d\d)", filename or "")
+    year = year or (int(m.group(1)) if m else None)
+    label = f"FY{year}" if year else "imported"
+    _write_json(os.path.join(CACHE, "h1b_index.json"), counts)
+    meta = {"label": label, "source": "USCIS H-1B Employer Data Hub (imported file)", "file": os.path.basename(filename or "")[:120],
+            "employers": len(counts), "approvals": sum(counts.values()), "importedAt": now_local().isoformat(timespec="seconds")}
+    _write_json(os.path.join(CACHE, "h1b_meta.json"), meta)
+    return meta
+
+
+# ---------------------------------------------------------------- DOL LCA disclosure data
+# USCIS stopped publishing yearly H-1B Employer Data Hub files after FY2023. The Department of Labor publishes every
+# certified Labor Condition Application (the filing an employer makes before each H-1B petition) each quarter, with
+# the occupation code. Counting an employer's certified H-1B LCAs in computer and math occupations (SOC 15-xxxx)
+# over the last 12 months is the most current public signal that it sponsors software and data roles now.
+# An LCA is intent, not an approved visa, and covers transfers and extensions as well as new hires.
+LCA_PAGE = "https://www.dol.gov/agencies/eta/foreign-labor/performance"
+LCA_WINDOW_DAYS = 365
+
+
+def _lca_dir():
+    return os.path.join(CACHE, "lca")
+
+
+def _lca_date(v):
+    """DOL dates arrive as text (2026-03-31, 3/31/2026) or as Excel day numbers."""
+    v = str(v or "").strip()
+    if not v:
+        return ""
+    if re.fullmatch(r"\d{5}(\.\d+)?", v):
+        return (dt.date(1899, 12, 30) + dt.timedelta(days=int(float(v)))).isoformat()
+    m = re.match(r"(\d{4})-(\d\d)-(\d\d)", v)
+    if m:
+        return m.group(0)
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", v)
+    if m:
+        return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+    return ""
+
+
+def parse_lca(rows):
+    """Certified H-1B LCAs from a DOL LCA disclosure file: [[case number, employer, decision date, tech], ...]."""
+    rows = iter(rows)
+    header = None
+    for r in rows:
+        up = [str(x).strip().upper() for x in r]
+        if "CASE_NUMBER" in up and "EMPLOYER_NAME" in up:
+            header = up
+            break
+    if not header:
+        raise ValueError("this is not a DOL LCA disclosure file (no CASE_NUMBER and EMPLOYER_NAME columns)")
+    col = {h: i for i, h in enumerate(header)}
+    need = ["CASE_NUMBER", "CASE_STATUS", "EMPLOYER_NAME", "DECISION_DATE"]
+    missing = [h for h in need if h not in col]
+    if missing:
+        raise ValueError("missing columns " + ", ".join(missing))
+    ci, si, ei, di = (col[h] for h in need)
+    vi, oi = col.get("VISA_CLASS"), col.get("SOC_CODE")
+    width = max(ci, si, ei, di, vi or 0, oi or 0)
+    out = []
+    for r in rows:
+        if len(r) <= width:
+            r = list(r) + [""] * (width + 1 - len(r))
+        if not str(r[si]).strip().lower().startswith("certified"):
+            continue  # Certified and Certified - Withdrawn; not Denied or Withdrawn
+        if vi is not None and str(r[vi]).strip().upper() not in ("H-1B", "H1B", ""):
+            continue  # H-1B1 (Chile, Singapore) and E-3 (Australia) are not open to you
+        k = norm_company(r[ei])
+        d = _lca_date(r[di])
+        if not k or not d:
+            continue
+        out.append([str(r[ci]).strip(), k, d, 1 if str(r[oi] if oi is not None else "").strip().startswith("15-") else 0])
+    if len(out) < 100:
+        raise ValueError(f"only {len(out)} certified H-1B filings found; download a full quarterly LCA disclosure file")
+    return out
+
+
+def lca_meta():
+    return _read_json(os.path.join(CACHE, "lca_meta.json")) or {}
+
+
+def _rebuild_lca():
+    """Merge every imported quarter (a case counted once), keep the last 12 months, count per employer."""
+    import gzip
+    cases = {}
+    files = []
+    for fn in sorted(os.listdir(_lca_dir())) if os.path.isdir(_lca_dir()) else []:
+        if not fn.endswith(".json.gz"):
+            continue
+        try:
+            with gzip.open(os.path.join(_lca_dir(), fn), "rt", encoding="utf-8") as f:
+                part = json.load(f)
+        except (OSError, ValueError):
+            continue
+        files.append(fn[:-8])
+        for c in part:
+            cases[c[0] or f"{fn}:{len(cases)}"] = c
+    if not cases:
+        return {}
+    to = max(c[2] for c in cases.values())
+    frm = (dt.date.fromisoformat(to) - dt.timedelta(days=LCA_WINDOW_DAYS - 1)).isoformat()
+    tech, every = {}, {}
+    n, first = 0, to
+    for _, k, d, t in cases.values():
+        if d < frm:
+            continue
+        n += 1
+        first = min(first, d)
+        every[k] = every.get(k, 0) + 1
+        if t:
+            tech[k] = tech.get(k, 0) + 1
+    _write_json(os.path.join(CACHE, "lca_index.json"), {"tech": tech, "all": every})
+    span = first  # the earliest filing kept: later than frm until four quarters are imported
+    label = f"{dt.date.fromisoformat(span):%b %Y} – {dt.date.fromisoformat(to):%b %Y}"
+    meta = {"label": label, "from": span, "to": to, "files": files, "filings": n, "techFilings": sum(tech.values()),
+            "employers": len(every), "partial": first > (dt.date.fromisoformat(frm) + dt.timedelta(days=31)).isoformat(), "importedAt": now_local().isoformat(timespec="seconds"),
+            "source": "U.S. Department of Labor, OFLC LCA disclosure data"}
+    _write_json(os.path.join(CACHE, "lca_meta.json"), meta)
+    return meta
+
+
+def import_lca(data, filename=""):
+    """Add one quarterly DOL LCA disclosure file (.xlsx or .csv) and recount the last 12 months."""
+    import gzip
+    if data[:2] == b"PK":
+        rows = _xlsx_rows(data)
+    else:
+        text = data.decode("utf-8-sig", "replace")
+        rows = csv.reader(text.splitlines(), delimiter="\t" if "\t" in text.split("\n", 1)[0] else ",")
+    part = parse_lca(rows)
+    m = re.search(r"FY\s*(20\d\d)[ _-]*Q([1-4])", filename or "", re.I)
+    name = f"FY{m.group(1)}_Q{m.group(2)}" if m else f"{min(c[2] for c in part)}_{max(c[2] for c in part)}"
+    os.makedirs(_lca_dir(), exist_ok=True)
+    tmp = os.path.join(_lca_dir(), name + ".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8") as f:
+        json.dump(part, f, separators=(",", ":"))
+    os.replace(tmp, os.path.join(_lca_dir(), name + ".json.gz"))
+    meta = _rebuild_lca()
+    meta["lastFile"] = os.path.basename(filename or "")[:120]
+    _write_json(os.path.join(CACHE, "lca_meta.json"), meta)
+    return meta
+
+
+class LCA(EmployerIndex):
+    """Employer -> certified H-1B LCAs in the last 12 months of imported DOL data: lookup() gives the
+    computer and math (SOC 15-) count, lookup_all() every occupation."""
+
+    def __init__(self, log=None):
+        idx = _read_json(os.path.join(CACHE, "lca_index.json")) or {}
+        self.all = idx.get("all") or {}
+        self.counts = {k: idx.get("tech", {}).get(k, 0) for k in self.all}  # every filer, so 0 is a real zero
+        self._ready()
+
+    def lookup_both(self, company):
+        names = self.match(company)
+        if names is None:
+            return None, None
+        return sum(self.counts[x] for x in names), sum(self.all[x] for x in names)
 
 
 class PostingClosed(Exception):
@@ -296,6 +753,7 @@ def _api(url, headers=None):
 def posting_text(url):
     """Best-effort plain text of a posting, using ATS JSON APIs where the page is rendered by script.
     Raises PostingClosed when the posting has clearly been taken down."""
+    check_public_url(url)  # raises UnsafeURL for file://, localhost, LAN addresses
     u = urllib.parse.urlparse(url)
     host, parts = u.netloc.lower(), [p for p in u.path.split("/") if p]
     try:
@@ -323,7 +781,7 @@ def posting_text(url):
     except Exception:
         pass
     try:
-        _, _, b = http_get(url, {"Accept": "text/html"}, timeout=15)
+        _, _, b = http_get(url, {"Accept": "text/html"}, timeout=15, public_only=True)
     except urllib.error.HTTPError as e:
         if e.code in (404, 410):
             raise PostingClosed(f"HTTP {e.code}")
@@ -349,8 +807,7 @@ def analyze_text(url):
         "read": True,
         "citizen": bool(CITIZEN.search(text)),
         "clearance": bool(CLEARANCE.search(text)),
-        "noSponsor": bool(NO_SPONSOR.search(text)),
-        "friendly": bool(FRIENDLY.search(text)),
+        **sponsorship_signals(text),
         "skills": sorted(k for k, r in SKILL_RE.items() if r.search(text)),
         "deadline": find_deadline(text),
         "at": now_local().date().isoformat(),
@@ -381,6 +838,41 @@ def infer_track(title, category=""):
     if re.search(r"software|developer|\bSWE\b|back-?end|front-?end|full[- ]?stack|platform|cloud|devops|\bSRE\b|site reliability|mobile|\biOS\b|android|\bweb\b|engineer", t, re.I):
         return "SWE"
     return "Other"
+
+
+REGION_WORDS = {
+    "canada": r"Canada|Ontario|Toronto|Vancouver|Montreal|Quebec|Waterloo|\bON\b|\bBC\b",
+    "europe": r"UK|United Kingdom|London|England|Ireland|Dublin|Germany|Berlin|Munich|France|Paris|Netherlands|Amsterdam|Spain|Madrid|Poland|Warsaw|Switzerland|Zurich|Sweden|Stockholm|Denmark|Copenhagen|Italy|Milan|Europe",
+    "japan": r"Japan|Tokyo|Osaka|Kyoto|Yokohama",
+    "taiwan": r"Taiwan|Taipei|Hsinchu|Taichung|Kaohsiung",
+}
+
+
+def region_ok(locations, regions):
+    """Is any location inside one of your regions (Profile → Regions)? No regions set: the United States."""
+    regions = [str(r).lower() for r in (regions or []) if r] or ["united states"]
+    locs = [l for l in (locations or []) if l]
+    if not locs:
+        return True
+    if any(r.startswith("united states") or r in ("us", "usa") for r in regions) and is_us(locs):
+        return True
+    if "remote only" in regions and any(re.search(r"remote", l, re.I) for l in locs):
+        return True
+    for r in regions:
+        pat = REGION_WORDS.get(r)
+        if pat and any(re.search(pat, l) for l in locs):
+            return True
+    return False
+
+
+def filters_of(settings):
+    """The gates the refresh applies, from your settings (the page copies Profile → What you are looking for into them)."""
+    settings = settings or {}
+    terms = settings.get("terms")
+    terms = [t for t in (terms if isinstance(terms, list) else [terms] if isinstance(terms, str) else []) if t] or [TERM]
+    levels = settings.get("degreeLevels")
+    levels = set(levels) if isinstance(levels, list) and levels else {"Bachelor's", "Master's"}
+    return {"terms": terms, "regions": settings.get("regions") or [], "degrees": levels}
 
 
 def is_us(locations):
@@ -431,6 +923,13 @@ def degrees_of(l):
     return out
 
 
+def sponsor_evidence(l):
+    """0..1 from employer records: the stronger of USCIS approvals (h1b) and recent DOL tech filings (lca).
+    0.3 when neither file names the employer (unknown, not a no). Mirrors core.js sponsorEvidence."""
+    vals = [min(1.0, math.log10(1 + float(v)) / 3) for v in (l.get("h1b"), l.get("lca")) if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return max(vals) if vals else 0.3
+
+
 def sponsor_of(l):
     if l.get("noSponsor") or l.get("sponsor") == "no":
         return "no"
@@ -453,8 +952,7 @@ def components(l, settings=None, today=None):
     missing = [k for k in found if k not in mine]
     skills = (len(matched) + 1) / (len(found) + 2) if found else 0.5
     sp = sponsor_of(l)
-    h = l.get("h1b")
-    sponsor = 0.3 if h is None else min(1.0, math.log10(1 + float(h)) / 3)
+    sponsor = sponsor_evidence(l)
     if sp == "yes" or l.get("friendly"):
         sponsor = max(sponsor, 0.9)
     no_sponsor = sp == "no"
@@ -494,7 +992,7 @@ def score_parts(l, settings=None, today=None):
     total = 0.0
     for p in parts:
         total += p["pts"]
-    c["total"] = max(0, math.floor(total - c["penalty"] + 0.5))  # JavaScript Math.round
+    c["total"] = max(0, min(NO_SPONSOR_CAP if c["noSponsor"] else 100, math.floor(total - c["penalty"] + 0.5)))  # JavaScript Math.round
     c["parts"] = parts
     return c
 
@@ -503,7 +1001,7 @@ def score(l, settings=None, today=None):
     return score_parts(l, settings, today)["total"]
 
 
-def record(it, posted, ana, h1b_n):
+def record(it, posted, ana, h1b_n, lca=(None, None)):
     """The listing as stored in listings.json: raw facts only, scored by core.js."""
     locs = list(it.get("locations") or [])
     friendly = bool((ana or {}).get("friendly")) or it.get("sponsorship") == "Offers Sponsorship"
@@ -513,10 +1011,12 @@ def record(it, posted, ana, h1b_n):
         "company": it.get("company_name", ""), "role": it.get("title", ""), "category": it.get("category", ""),
         "track": infer_track(it.get("title", ""), it.get("category", "")),
         "locations": locs, "location": "; ".join(locs[:3]) + (f" +{len(locs) - 3} more" if len(locs) > 3 else ""),
-        "url": it.get("url", ""), "posted": posted.date().isoformat(), "term": TERM,
+        "url": it.get("url", ""), "altUrls": list(it.get("altUrls") or []), "posted": posted.date().isoformat(),
+        "term": next((t for t in (it.get("terms") or []) if t), TERM),
         "degrees": list(it.get("degrees") or []),
         "degree": "/".join(d.replace("'s", "") for d in (it.get("degrees") or [])) or "Any",
-        "h1b": h1b_n, "friendly": friendly and not no_sponsor, "noSponsor": no_sponsor,
+        "h1b": h1b_n, "lca": lca[0], "lcaAll": lca[1], "friendly": friendly and not no_sponsor, "noSponsor": no_sponsor,
+        "optExcluded": bool((ana or {}).get("optExcluded")),
         "textRead": bool(ana and ana.get("read")),
         "skillsFound": list((ana or {}).get("skills") or []),
         "deadline": (ana or {}).get("deadline") or "",
@@ -543,37 +1043,43 @@ def upgrade_listing(l):
 
 
 # ---------------------------------------------------------------- refresh
-def refresh(user, listings_state=None, log=print):
+def refresh(user, listings_state=None, log=print, progress=None):
     """Download, gate, read and describe listings. Reads your data but never changes it.
     Returns data for apply()."""
     user = user or {}
     listings_state = listings_state or {}
     settings = user.get("settings") or {}
     window = int(_num(settings.get("windowDays"), 10) or 10)
-    feed = load_feed(log)
+    progress = progress or (lambda step, done=0, total=0: None)
+    progress("Downloading the feed")
+    feed_meta = {}
+    feed = load_feed(log, feed_meta)
+    progress("Filtering listings")
     h1b = H1B(log)
+    lca = LCA(log)
     now = now_local()
     excluded = {}
 
     def drop(reason):
         excluded[reason] = excluded.get(reason, 0) + 1
 
+    flt = filters_of(settings)
     pre = []
     for it in feed:
         if not it.get("active") or not it.get("is_visible", True):
             continue
-        if TERM not in (it.get("terms") or []):
-            drop(f"Not {TERM}")
+        if not set(flt["terms"]) & set(it.get("terms") or []):
+            drop("Not " + " / ".join(flt["terms"]))
             continue
         posted = dt.datetime.fromtimestamp(it.get("date_posted") or 0).astimezone()
         if (now - posted).days > window:
             continue  # outside the window: not counted as excluded
-        if not is_us(it.get("locations")):
-            drop("Outside the US")
+        if not region_ok(it.get("locations"), flt["regions"]):
+            drop("Outside the US" if not flt["regions"] else "Outside your regions")
             continue
         degrees = it.get("degrees") or []
-        if degrees and not ({"Bachelor's", "Master's"} & set(degrees)):
-            drop("PhD/MBA only")
+        if degrees and not (flt["degrees"] & set(degrees)):
+            drop("PhD/MBA only" if flt["degrees"] == {"Bachelor's", "Master's"} else "Degree level not yours")
             continue
         if it.get("sponsorship") == "U.S. Citizenship is Required" or re.search(r"clearance|u\.?s\.? citizen", it.get("title", ""), re.I):
             drop("Citizenship or clearance required")
@@ -586,10 +1092,14 @@ def refresh(user, listings_state=None, log=print):
     # The feed lists one entry per location; merge entries with the same company and title.
     groups = {}
     for it, posted in sorted(pre, key=lambda x: x[1], reverse=True):
-        k = norm_company(it.get("company_name")) + "|" + norm_text(it.get("title"))
+        k = norm_company(it.get("company_name")) + "|" + norm_strict(it.get("title"))
+        if k in groups and not same_req(groups[k][0].get("url"), it.get("url")):
+            k = k + "|" + it["id"]  # same title, different requisition: keep both
         if k in groups:
             g = groups[k][0]
             g["locations"] = list(dict.fromkeys((g.get("locations") or []) + (it.get("locations") or [])))
+            if it.get("url") and url_key(it.get("url")) != url_key(g.get("url")):
+                g["altUrls"] = list(dict.fromkeys((g.get("altUrls") or []) + [it["url"]]))
         else:
             first = dict(it)
             first["locations"] = list(it.get("locations") or [])
@@ -604,8 +1114,10 @@ def refresh(user, listings_state=None, log=print):
     stale = [it for it, _ in pre if it["id"] in cache and (cache[it["id"]].get("at") or "") < today]
     todo = (new + stale)[:MAX_TEXT_READS]
     if todo:
+        progress("Reading postings", 0, len(todo))
         with ThreadPoolExecutor(max_workers=8) as ex:
-            for it, res in zip(todo, ex.map(lambda x: analyze_text(x.get("url", "")), todo)):
+            for n, (it, res) in enumerate(zip(todo, ex.map(lambda x: analyze_text(x.get("url", "")), todo)), 1):
+                progress("Reading postings", n, len(todo))
                 old = cache.get(it["id"])
                 # Keep what an earlier read learned if today's recheck could not read the page.
                 if old and old.get("read") and not res.get("read") and not res.get("closed"):
@@ -630,7 +1142,12 @@ def refresh(user, listings_state=None, log=print):
             if ana.get("citizen") or ana.get("clearance"):
                 drop("Citizenship or clearance required")
                 continue
-        out.append(record(it, posted, ana, h1b.lookup(it.get("company_name"))))
+        rec = record(it, posted, ana, h1b.lookup(it.get("company_name")), lca.lookup_both(it.get("company_name")))
+        if getattr(h1b, "last_how", None) == "approx":
+            rec["h1bApprox"] = True  # matched on a shortened name: shown as approximate
+        if rec["lca"] is not None and lca.last_how == "approx":
+            rec["lcaApprox"] = True
+        out.append(rec)
 
     # Saved (not yet applied) applications: is the posting still open? Checked once a day.
     inactive = {url_key(it.get("url")) for it in feed if not it.get("active")} - {""}
@@ -646,6 +1163,7 @@ def refresh(user, listings_state=None, log=print):
             to_check.append(a)
     deadlines = dict(listings_state.get("savedDeadlines") or {})
     if to_check:
+        progress("Checking saved applications", 0, len(to_check))
         with ThreadPoolExecutor(max_workers=8) as ex:
             for a, res in zip(to_check, ex.map(lambda x: analyze_text(x["url"]), to_check)):
                 live[a["id"]] = today
@@ -662,22 +1180,29 @@ def refresh(user, listings_state=None, log=print):
     deadlines = {k: v for k, v in deadlines.items() if k in app_ids}
 
     info = {"at": now.isoformat(timespec="seconds"), "feed": len(feed), "window": window,
-            "excluded": excluded, "textRead": read, "h1b": H1B_LABEL if h1b.counts else None, "error": None}
+            "excluded": excluded, "textRead": read, "h1b": h1b_label() if h1b.counts else None, "lca": lca_meta().get("label") if lca.counts else None, "error": None,
+            "usingCache": bool(feed_meta.get("usingCache"))}
     info["deadlines"] = sum(1 for l in out if l["deadline"])
     return {"listings": out, "fetch": info, "closures": closures, "liveChecked": live, "savedDeadlines": deadlines}
 
 
 def tracked_keys(user):
+    """Links of tracked applications, plus strict company|title keys (season and year kept)."""
     apps = (user or {}).get("apps") or []
-    keys = {url_key(a.get("url")) for a in apps} | {"k:" + norm_text(a.get("company")) + "|" + norm_text(a.get("role")) for a in apps}
+    keys = {url_key(a.get("url")) for a in apps} | {"s:" + strict_key(a) for a in apps}
     keys.discard("")
     return keys
+
+
+def _tracked_by_title_only(user):
+    return {"s:" + strict_key(a) for a in (user or {}).get("apps") or [] if not url_key(a.get("url"))}
 
 
 def apply(user, listings_state, result):
     """Build the new listings.json content from a refresh result. Does not modify `user`."""
     listings_state = listings_state or {}
     tracked = tracked_keys(user)
+    title_only = _tracked_by_title_only(user)
     dismissed = set((user or {}).get("dismissed") or [])
     previous = {l.get("id") for l in listings_state.get("listings") or []}
     info = dict(result["fetch"])
@@ -685,11 +1210,14 @@ def apply(user, listings_state, result):
     fresh = []
     for l in result["listings"]:
         k = listing_key(l)
+        has_url = bool(url_key(l.get("url")))
         alt = "k:" + norm_text(l["company"]) + "|" + norm_text(l["role"])
-        if k in dismissed or alt in dismissed:
+        strict = "s:" + strict_key(l)
+        if k in dismissed or (not has_url and alt in dismissed):
             excluded["Dismissed"] = excluded.get("Dismissed", 0) + 1
             continue
-        if k in tracked or alt in tracked:
+        # A link match, or the same title (season and year included) when one side has no link to compare.
+        if k in tracked or strict in title_only or (not has_url and strict in tracked):
             excluded["Already tracking"] = excluded.get("Already tracking", 0) + 1
             continue
         l["isNew"] = bool(previous) and l["id"] not in previous
@@ -727,7 +1255,10 @@ if __name__ == "__main__":
     import sys
     data = os.path.join(ROOT, "data")
     user = _read_json(os.path.join(data, "tracker.json")) or {}
-    res = refresh(user, _read_json(os.path.join(data, "listings.json")) or {}, log=lambda m: print(m, file=sys.stderr))
+    with refresh_lock(data) as got:
+        if not got:
+            sys.exit("A refresh is already running (the tracker server is refreshing). Try again in a minute.")
+        res = refresh(user, _read_json(os.path.join(data, "listings.json")) or {}, log=lambda m: print(m, file=sys.stderr))
     print(json.dumps(res["fetch"], indent=2))
     print("kept:", len(res["listings"]))
     st = user.get("settings") or {}

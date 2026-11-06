@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Waypoint, simplified for 16-32 px -->
+  <rect width="64" height="64" rx="14.3" fill="#007AFF"/>
+  <path d="M14 46 28 32l8 7 13-18" fill="none" stroke="#fff" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="49" cy="20" r="8" fill="#fff"/>
+</svg>

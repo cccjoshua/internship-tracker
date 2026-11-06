@@ -58,6 +58,25 @@ class Classification(unittest.TestCase):
         self.assertEqual(h.lookup("Meta Platforms, Inc."), 5000)
         self.assertIsNone(h.lookup("Tiny Startup"))
 
+    def test_h1b_lookup_aliases_and_shortened_names(self):
+        h = fetcher.H1B.__new__(fetcher.H1B)
+        h.counts = {"ADVANCED MICRO DEVICES": 153, "ALASKA AIRLINES": 10, "FIRST CITIZENS BANK AND TRUST": 16, "HYSTER YALE": 1,
+                    "BATTELLE MEMORIAL INSTITUTE": 94, "FIRST SOLAR": 7, "GENERAL MOTORS": 300}
+        h.keys = sorted(h.counts)
+        self.assertEqual(h.lookup("AMD"), 153); self.assertEqual(h.last_how, "alias")
+        self.assertEqual(h.lookup("Pacific Northwest National Laboratory"), 94)
+        self.assertEqual(h.lookup("Alaska Air Group"), 10); self.assertEqual(h.last_how, "approx")
+        self.assertEqual(h.lookup("First Citizens BancShares"), 16)
+        self.assertEqual(h.lookup("Hyster-Yale Materials Handling"), 1)
+        self.assertIsNone(h.lookup("First Horizon"))            # never shortened to a generic first word
+        self.assertIsNone(h.lookup("General Dynamics"))
+        self.assertIsNone(h.lookup("Shield AI"))
+        h.counts.update({"FEDERAL HOME LOAN BANK OF ATLANTA": 9, "GOLDEN STATE FOODS": 5, "OVERLAND CONTRACTING": 3})
+        h.keys = sorted(h.counts)
+        self.assertIsNone(h.lookup("Federal Home Loan Bank of Indianapolis"))  # a sibling bank is not this employer
+        self.assertIsNone(h.lookup("Golden Analytics"))
+        self.assertIsNone(h.lookup("Overland AI"))
+
 
 class Deadlines(unittest.TestCase):
     TODAY = dt.date(2026, 10, 28)
@@ -232,6 +251,19 @@ class Refresh(unittest.TestCase):
         self.assertEqual(out["listings"], [{"id": "x"}])
         self.assertEqual(out["fetch"]["error"], "offline")
         self.assertEqual(out["lrev"], 3)
+
+
+class StripHtml(unittest.TestCase):
+    def test_page_code_is_not_posting_text(self):
+        page = ('<html><head><script>window.AwsRumClient = {q: []}; if (a < b) {}</script>'
+                '<script type="text/javascript">var x = "<div>";</script><style>p{color:red}</style></head>'
+                '<body><noscript><iframe src="gtm"></iframe></noscript><!-- tracking -->'
+                '<svg><path d="M0 0"/></svg><h2>Basic qualifications</h2><ul><li>Python, Java or C++</li></ul>'
+                '<template><p>hidden</p></template></body></html>')
+        self.assertEqual(fetcher.strip_html(page), "Basic qualifications Python, Java or C++")
+
+    def test_text_without_markup_is_unchanged(self):
+        self.assertEqual(fetcher.strip_html("Use SQL &amp; Python;  a < b"), "Use SQL & Python; a < b")
 
 
 if __name__ == "__main__":

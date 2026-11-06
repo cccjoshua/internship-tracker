@@ -1,0 +1,34 @@
+{
+  "_note": "Synthetic job analyses with PROVISIONAL expected labels written by Claude during the scoring review (not confirmed by the owner). Companies are fictional. 'expect' is the verdict the fit model should give the synthetic profile below; 'tier' orders the eligible ones (1 = best).",
+  "profile": {
+    "preferences": {"degreePursuing": "Master", "degreesHeld": ["Bachelor"], "graduation": "2028-05", "needsSponsorship": true, "cptOpt": true, "usCitizen": false, "regions": ["United States"]},
+    "skills": [{"value": "Python, SQL, pandas, scikit-learn, Tableau, Git, JavaScript"}],
+    "experience": [{"id": "x", "tech": "C#, SQL Server"}],
+    "notYet": ["Power BI"]
+  },
+  "settings": {"targets": ["SWE", "DE", "DA", "DS", "BIE"], "places": ["TX", "Remote"], "mySkills": []},
+  "jobs": [
+    {"id": "strong-da", "role": "Data Analyst Intern", "expect": "check", "tier": 1, "why": "skills and degree match; sponsorship not stated is an open question, not a pass",
+     "a": {"requiredSkills": ["SQL", "Python"], "preferredSkills": ["Tableau"], "audience": {"degreeLevels": ["Bachelor", "Master"]}, "location": {"workMode": "onsite", "places": ["Austin, TX"]}, "sponsorship": {"status": "cpt_opt_ok", "evidence": "CPT and OPT students welcome"}}},
+    {"id": "sponsor-ds", "role": "Data Science Intern", "expect": "check", "tier": 1, "why": "states it sponsors and strong skill overlap; CPT/OPT for the internship itself is not stated, so it stays a question",
+     "a": {"requiredSkills": ["Python", "scikit-learn"], "preferredSkills": ["SQL"], "audience": {"degreeLevels": ["Master", "PhD"]}, "location": {"workMode": "hybrid", "places": ["Seattle, WA"]}, "sponsorship": {"status": "sponsors", "evidence": "We sponsor visas"}}},
+    {"id": "weak-swe", "role": "Software Engineer Intern", "expect": "check", "tier": 3, "why": "most required tools missing",
+     "a": {"requiredSkills": ["Go", "Kubernetes", "Rust"], "preferredSkills": ["Python"], "audience": {"degreeLevels": ["Bachelor", "Master"]}, "location": {"workMode": "onsite", "places": ["Denver, CO"]}, "sponsorship": {"status": "cpt_opt_ok", "evidence": "OPT welcome"}}},
+    {"id": "mid-de", "role": "Data Engineer Intern", "expect": "check", "tier": 2, "why": "half the stack; inferred SQL counts half",
+     "a": {"requiredSkills": ["SQL", "Airflow"], "preferredSkills": ["Spark", "Python"], "audience": {"degreeLevels": ["Master"]}, "location": {"workMode": "remote", "places": []}, "sponsorship": {"status": "cpt_opt_ok", "evidence": "F-1 students on CPT welcome"}}},
+    {"id": "grad-window", "role": "Data Analyst Intern", "expect": "blocked", "why": "graduation window ends before May 2028",
+     "a": {"requiredSkills": ["SQL", "Python"], "audience": {"degreeLevels": ["Master"], "gradFrom": "2026-12", "gradTo": "2027-06"}, "location": {"workMode": "onsite", "places": ["Dallas, TX"]}, "sponsorship": {"status": "sponsors"}}},
+    {"id": "no-sponsor", "role": "Data Analyst Intern", "expect": "blocked", "why": "authorized now and in the future without sponsorship",
+     "a": {"requiredSkills": ["SQL"], "audience": {"degreeLevels": ["Bachelor", "Master"]}, "location": {"workMode": "onsite", "places": ["Houston, TX"]}, "sponsorship": {"status": "not_stated", "evidence": "Must be authorized to work in the United States now and in the future without sponsorship."}}},
+    {"id": "opt-excluded", "role": "Business Intelligence Intern", "expect": "blocked", "why": "CPT/OPT candidates are not eligible",
+     "a": {"requiredSkills": ["SQL", "Tableau"], "audience": {"degreeLevels": ["Master"]}, "location": {"workMode": "onsite", "places": ["Austin, TX"]}, "sponsorship": {"status": "cpt_opt_ok", "evidence": "Candidates on CPT or OPT are not eligible."}}},
+    {"id": "citizens", "role": "Data Science Intern", "expect": "blocked", "why": "U.S. citizenship required",
+     "a": {"requiredSkills": ["Python"], "audience": {"degreeLevels": ["Master"]}, "sponsorship": {"status": "citizens_only", "evidence": "U.S. citizenship is required."}}},
+    {"id": "phd-only", "role": "Research Scientist Intern", "expect": "blocked", "why": "PhD students only",
+     "a": {"requiredSkills": ["Python"], "audience": {"degreeLevels": ["PhD"]}, "sponsorship": {"status": "sponsors"}}},
+    {"id": "all-clear", "role": "Data Science Intern", "expect": "ok", "tier": 1, "why": "sponsors and welcomes CPT/OPT",
+     "a": {"requiredSkills": ["Python", "SQL"], "audience": {"degreeLevels": ["Master"]}, "location": {"workMode": "remote", "places": []}, "sponsorship": {"status": "sponsors", "evidence": "We sponsor H-1B visas. CPT and OPT students are welcome."}, "redFlags": ["CPT/OPT welcome"]}},
+    {"id": "thin", "role": "Software Engineer Intern", "expect": "insufficient", "why": "the posting states almost nothing",
+     "a": {"requiredSkills": [], "preferredSkills": [], "keywords": []}}
+  ]
+}

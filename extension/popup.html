@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add to Internship Tracker</title>
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<header class="top">
+  <img src="icons/icon32.png" width="20" height="20" alt="">
+  <h1>Add to Internship Tracker</h1>
+  <span class="conn" id="conn" role="status"><i></i><span>Checking…</span></span>
+</header>
+
+<main id="main">
+  <div class="notice" id="dup" hidden></div>
+  <div class="notice warn" id="offline" hidden>
+    <b>The tracker is not running.</b>
+    <span>It starts when your Mac logs in. Check that <a id="openTracker2" href="#">the tracker</a> opens, then try again.</span>
+  </div>
+  <p class="hint" id="pageNote" hidden></p>
+
+  <form id="f" novalidate>
+    <div class="row2">
+      <label class="field"><span>Company <i class="from" data-from="company"></i></span><input id="company" required autocomplete="off"></label>
+      <label class="field"><span>Track</span>
+        <select id="track"><option value="">Auto</option><option value="SWE">SWE · Software</option><option value="DE">DE · Data Eng.</option><option value="DA">DA · Data Analyst</option><option value="DS">DS · Data Science</option><option value="BIE">BIE · BI Eng.</option></select></label>
+    </div>
+    <label class="field"><span>Role <i class="from" data-from="role"></i></span><input id="role" required autocomplete="off"></label>
+    <div class="row2">
+      <label class="field"><span>Location <i class="from" data-from="location"></i></span><input id="location" autocomplete="off"></label>
+      <label class="field"><span>Work mode</span><select id="workMode"><option value="">Not stated</option><option>Remote</option><option>Hybrid</option><option>On-site</option></select></label>
+    </div>
+    <div class="row2">
+      <label class="field"><span>Posted <i class="from" data-from="posted"></i></span><input id="posted" type="date"></label>
+      <label class="field"><span>Deadline <i class="from" data-from="deadline"></i></span><input id="deadline" type="date"></label>
+    </div>
+    <label class="field"><span>Pay <i class="from" data-from="pay"></i></span><input id="pay" autocomplete="off" placeholder="optional"></label>
+
+    <fieldset class="seg" aria-label="Status">
+      <label><input type="radio" name="status" value="saved" checked><span>Save for later</span></label>
+      <label><input type="radio" name="status" value="applied"><span>I applied today</span></label>
+    </fieldset>
+
+    <details class="desc" id="descBox">
+      <summary><span id="descSum">Job description</span></summary>
+      <textarea id="description" rows="7" aria-label="Job description"></textarea>
+      <p class="hint">Tip: select the description on the page before opening this, if it was not found.</p>
+    </details>
+    <label class="check"><input type="checkbox" id="analyze"> <span>Analyze with Claude after saving <span class="hint" id="anHint">(≈ $0.001)</span></span></label>
+    <label class="field"><span>Notes</span><textarea id="notes" rows="2" placeholder="optional, e.g. referral from…"></textarea></label>
+
+    <p class="err" id="err" role="alert" hidden></p>
+    <div class="acts">
+      <button type="submit" class="btn primary" id="save">Save to tracker</button>
+      <button type="button" class="btn ghost" id="openTracker">Open tracker</button>
+    </div>
+  </form>
+</main>
+
+<section class="done" id="done" hidden>
+  <div class="ok" aria-hidden="true"><svg viewBox="0 0 16 16" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 8.5l3 3 6-7"/></svg></div>
+  <h2 id="doneTitle">Saved</h2>
+  <p id="doneSub"></p>
+  <div class="acts"><a class="btn primary" id="openJob" href="#" target="_blank">Open in tracker</a><button class="btn ghost" type="button" id="close">Done</button></div>
+</section>
+
+<footer class="foot">
+  <details><summary>Tracker address</summary>
+    <div class="addr"><input id="base" aria-label="Tracker address"><button class="btn sm" type="button" id="saveBase">Save</button></div>
+    <p class="hint">Default http://127.0.0.1:8765. Shortcut: <kbd id="kbd">Alt+Shift+J</kbd></p>
+  </details>
+</footer>
+<script type="module" src="popup.js"></script>
+</body>
+</html>
