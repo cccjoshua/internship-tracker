@@ -186,4 +186,4 @@ scripts/make_demo_data.py synthetic demo data       tests/   unit, regression, f
 
 - `fonts/`: Instrument Sans and IBM Plex Mono, SIL Open Font License (license files included). These fonts are no longer used by the page and can be removed.
 - Dev only: Playwright (Apache-2.0).
-- The project itself: **license not chosen yet**.
+- The project itself: [MIT](LICENSE).
