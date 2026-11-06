@@ -186,7 +186,7 @@ input[type=checkbox],input[type=radio]{accent-color:var(--accent);width:16px;hei
 .lrow:hover{background:var(--fill-3)}
 .lrow.qsaved,.tmatch li.qsaved{background:color-mix(in srgb,var(--accent-soft) 45%,var(--surface))}
 .lrow.peeking,.tmatch li.peeking,.todo li.peeking{background:var(--accent-soft);box-shadow:none}
-.u-soon,.card.u-soon{box-shadow:inset 3px 0 0 var(--hl)}
+
 .ring{background:conic-gradient(var(--rc) calc(var(--p)*1%),var(--fill-2) 0)}
 .ring span{font-family:var(--f-round);font-weight:600}
 
@@ -241,7 +241,7 @@ tbody tr:hover td{background:var(--fill-3)}
 .sh-act{border-radius:14px;background:var(--fill-3)}
 .verdict{border-left:0;box-shadow:var(--card-shadow)}
 .verdict.v-warn{box-shadow:var(--card-shadow)}
-.verdict.v-bad{box-shadow:inset 4px 0 0 var(--bad),var(--card-shadow)}
+.verdict.v-bad{box-shadow:var(--card-shadow)}
 .choice{border-radius:14px;padding:16px}
 .choice.rec{box-shadow:0 0 0 2px var(--accent),var(--card-shadow);background:var(--surface)}
 .rs-paper{border:0;border-radius:14px;background:var(--fill-3)}
@@ -968,3 +968,28 @@ input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
 .rs-shead>input{flex:1 1 auto;min-width:0;max-width:260px}
 @container (max-width:600px){.rs-ptool #rsFit{flex-basis:100%;order:-1}.rs-ptool .grow{display:none}}
 @container (max-width:520px){.rs-eh{grid-template-columns:minmax(0,1fr) 120px}}
+
+/* ---------- final audit (Nov 6, 2026) ---------- */
+/* No side stripes anywhere: urgency reads from the due text ("Tomorrow", "In 2 days") and its colour */
+.lrow.u-soon,.lrow.u-hot,tr.u-soon,tr.u-hot,li.u-soon,li.u-hot{box-shadow:none}
+/* Verdict checks: a link stays on the line of its sentence instead of becoming a column */
+.vd-checks li .linkbtn{white-space:nowrap}
+@media (max-width:760px){
+  /* Header: Search, Settings and Add as three 44 pt icon buttons beside the title, like a navigation bar */
+  .top:has(#addBtn:not([hidden])) .titlebar{padding-right:150px}
+  .verdict{align-items:start}
+  #addBtn{width:40px;height:40px;margin-left:4px;padding:0;border-radius:50%;font-size:0;display:inline-grid;place-items:center}
+  #addBtn::before{content:"";width:16px;height:16px;background:currentColor;
+    -webkit-mask:linear-gradient(#000,#000) center/16px 2px no-repeat,linear-gradient(#000,#000) center/2px 16px no-repeat;
+            mask:linear-gradient(#000,#000) center/16px 2px no-repeat,linear-gradient(#000,#000) center/2px 16px no-repeat}
+  /* Verdict: a smaller ring so the reasons get the width */
+  .verdict{gap:10px 12px}
+  .verdict>.ring{width:44px;height:44px}.verdict>.ring span{width:36px;height:36px;font-size:13px}
+  /* Profile status: the save state goes under the summary */
+  .pf-status{flex-direction:column;gap:6px}
+  /* Touch targets: standalone links and small controls reach 24 px or more (WCAG 2.5.8) */
+  .crumb{padding:4px 0;margin-bottom:0}
+  .stepnav a,.sh-act .linkbtn,.ch-act .linkbtn{min-height:32px;display:inline-flex;align-items:center}
+  input[type=checkbox]{width:20px;height:20px}
+  button.sv{min-height:32px;padding:0 4px}
+}

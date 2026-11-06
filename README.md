@@ -5,7 +5,14 @@
 [![tests](https://github.com/cccjoshua/internship-tracker/actions/workflows/tests.yml/badge.svg)](https://github.com/cccjoshua/internship-tracker/actions/workflows/tests.yml)
 Python standard library · vanilla JavaScript · Chrome extension (Manifest V3) · optional Claude API · no build step, no account, no cloud database
 
-![Resume editor: edit on the left, the exact export on the right](docs/screenshots/resume-editor.png)
+![A 25-second tour: today's queue, ranked listings, eligibility and fit for one job, the resume editor, the application kit](docs/demo.gif)
+
+**Try it in 30 seconds** (Python 3.8+, nothing to install, no API key):
+
+```bash
+git clone https://github.com/cccjoshua/internship-tracker.git && cd internship-tracker
+python3 server.py --demo        # synthetic data in a temporary folder, Claude answers stubbed, opens http://127.0.0.1:8766
+```
 
 ## Why I built it
 
@@ -35,7 +42,8 @@ The full history is in [CHANGELOG.md](CHANGELOG.md), and the design decisions an
 |---|---|
 | ![Dashboard](docs/screenshots/dashboard.png) | ![New listings with the priority breakdown](docs/screenshots/listings.png) |
 | ![Eligibility and fit for one job](docs/screenshots/job-fit.png) | ![Not eligible, dark mode](docs/screenshots/job-not-eligible-dark.png) |
-| ![Resume review: score, checks and Claude's notes](docs/screenshots/resume-review.png) | ![Tracker Clipper](docs/screenshots/clipper.png) |
+| ![Resume editor: edit on the left, the exact export on the right](docs/screenshots/resume-editor.png) | ![Resume review: score, checks and Claude's notes](docs/screenshots/resume-review.png) |
+| ![Applications board](docs/screenshots/applications-board.png) | ![Tracker Clipper](docs/screenshots/clipper.png) |
 
 *Screenshots use the synthetic demo data in `scripts/make_demo_data.py`. Every person, company and link in them is fictional.*
 
@@ -83,16 +91,16 @@ cd internship-tracker
 python3 server.py                      # opens http://127.0.0.1:8765, data in ./data
 ```
 
-Options: `--port 9000`, `--data /path/to/folder`, `--no-browser`, `--no-fetch` (no background refresh).
+Options: `--port 9000`, `--data /path/to/folder`, `--no-browser`, `--no-fetch` (no background refresh), `--demo` (synthetic data, stubbed Claude).
 
 ### Try it with demo data (no API key, no cost)
 
 ```bash
-python3 scripts/make_demo_data.py demo-data
-IAT_AI_STUB=1 python3 server.py --data demo-data --no-fetch --port 8766
+python3 server.py --demo                       # a fresh temporary folder each time
+python3 server.py --demo --data demo-data      # or keep the demo in ./demo-data
 ```
 
-`IAT_AI_STUB=1` replaces every Claude call with a deterministic local answer and shows a banner on the page. The demo can't reach the paid API, and your real `data/` folder is never touched.
+`--demo` writes synthetic data (`scripts/make_demo_data.py`), turns the background refresh off and sets `IAT_AI_STUB=1`, which replaces every Claude call with a deterministic local answer and shows a banner on the page. The demo can't reach the paid API, and your real `data/` folder is never touched.
 
 ### Add the Chrome extension (optional)
 

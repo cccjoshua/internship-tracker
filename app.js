@@ -1116,6 +1116,7 @@ async function loadBackups() {
 /* ---------- render ---------- */
 function route() { const h = location.hash.slice(1).split('/')[0]; return h === 'prefs' ? 'settings' : VIEWS[h] ? h : 'dashboard'; }
 let lastView = null;
+let lastHash = null;
 function render() {
   const v = route();
   if (!['settings', 'profile', 'docs'].includes(v)) { UI.backTo = location.hash || '#dashboard'; try { UI.backName = VIEWS[v][0]; } catch (_) { UI.backName = ''; } }
@@ -1135,9 +1136,13 @@ function render() {
   const badge = (id, n, tip) => { const el = $(id); el.textContent = n || ''; el.title = n ? tip : ''; el.classList.toggle('hot', id === '#nDash' && n > 0); };
   badge('#nDash', nAtt, `${plural(nAtt, 'item')} due within 3 days or waiting for a follow-up`); badge('#nApps', nAct, plural(nAct, 'active application')); badge('#nInbox', nNow, `${nNow} “Apply now” pick${nNow === 1 ? '' : 's'}`);
   $('#banner').hidden = !(S.apps.some((a) => a.sample) || S.manualListings.some((l) => l.sample));
-  const y = window.scrollY;
+  const y = window.scrollY, h = location.hash;
   $('#view').innerHTML = R[v]();
-  if (v === lastView) window.scrollTo(0, y);
+  /* Same page re-rendered: keep the scroll. A new address (another job, step or pane): start at the top,
+     before the after-render hooks so a jump to a field (GOTO) can still scroll to it. */
+  if (v === lastView && h === lastHash) window.scrollTo(0, y);
+  else if (lastHash !== null) window.scrollTo(0, 0);
+  lastHash = h;
   if (v === 'settings' && Store.mode === 'file') loadBackups();
   if (v === 'dashboard') fitChart();
   for (const f of HOOKS.afterRender) f(v);

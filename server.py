@@ -1012,11 +1012,25 @@ def code_watcher():
 
 def main():
     ap = argparse.ArgumentParser(description="Internship Application Tracker (local)")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=None, help="default 8765 (8766 with --demo)")
     ap.add_argument("--data", help="data folder (default: ./data)")
     ap.add_argument("--no-browser", action="store_true")
     ap.add_argument("--no-fetch", action="store_true", help="do not refresh listings in the background")
+    ap.add_argument("--demo", action="store_true",
+                    help="try it with synthetic data: a fresh temporary data folder, Claude answers stubbed (no key, no cost), no refresh")
     args = ap.parse_args()
+    if args.demo:
+        import importlib.util
+        import tempfile
+        spec = importlib.util.spec_from_file_location("make_demo_data", os.path.join(ROOT, "scripts", "make_demo_data.py"))
+        demo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(demo)
+        args.data = args.data or tempfile.mkdtemp(prefix="internship-tracker-demo-")
+        if not os.path.exists(os.path.join(args.data, "tracker.json")):
+            demo.main(args.data)
+        os.environ["IAT_AI_STUB"] = "1"
+        args.no_fetch = True
+    args.port = args.port or (8766 if args.demo else 8765)
     if args.data:
         configure(args.data)
     if not os.path.exists(os.path.join(ROOT, PAGE)):
