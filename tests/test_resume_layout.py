@@ -74,3 +74,19 @@ class PreviewAndSubmittedTest(unittest.TestCase):
             self.assertEqual(sub[0]["resume"]["header"]["name"], "v1")
             self.assertTrue(doc["state"]["editedSinceSubmit"])
             self.assertEqual(ai.mark_submitted({"key": "https://example.com/none", "company": "", "role": ""}), {})
+
+
+class GpaSettingTest(unittest.TestCase):
+    """Profile › Resume rules › GPA on resumes: Hide keeps GPA and class rank out of Claude's input and its output."""
+
+    def test_hide_gpa(self):
+        import ai
+        prof = {"basics": {"name": "A"}, "education": [{"id": "u", "org": "Example University", "gpa": "3.74/4.00 (Rank 12/227)",
+                                                         "points": [{"id": "u.1", "kind": "fact", "text": "Last-two-year GPA 3.69/4.00."}]}]}
+        self.assertIn("GPA: 3.74", ai.profile_block(prof))
+        prof["resumeGpa"] = "hide"
+        block = ai.profile_block(prof)
+        self.assertNotIn("3.74", block)
+        self.assertNotIn("3.69", block)
+        out = ai.strip_gpa({"education": [{"lines": ["GPA: 3.74/4.00 (Rank 12/227)", "Relevant Coursework: Data Mining"], "bullets": []}]})
+        self.assertEqual(out["education"][0]["lines"], ["Relevant Coursework: Data Mining"])

@@ -715,7 +715,29 @@ def profile_points(profile):
     return out
 
 
+GPA_RE = re.compile(r"\bGPA\b|\bclass rank\b|\bRank \d+\s*/\s*\d+", re.I)
+
+
+def shows_gpa(profile):
+    """Profile › Resume rules › GPA on resumes. Off keeps GPA and class rank out of every resume and Claude prompt."""
+    return (profile or {}).get("resumeGpa", "show") != "hide"
+
+
+def strip_gpa(result):
+    """Safety net after Claude: no GPA or rank line survives when the candidate turned GPA off."""
+    for e in result.get("education") or []:
+        if isinstance(e.get("lines"), list):
+            e["lines"] = [l for l in e["lines"] if not GPA_RE.search(str(l))]
+        for b in e.get("bullets") or []:
+            if GPA_RE.search(str(b.get("text", ""))):
+                b["text"] = ""
+        if isinstance(e.get("bullets"), list):
+            e["bullets"] = [b for b in e["bullets"] if b.get("text")]
+    return result
+
+
 def profile_block(profile):
+    show_gpa = shows_gpa(profile)
     """Compact, stable text of the profile. Points that need confirmation are left out entirely."""
     b = profile.get("basics") or {}
     # Name and contact details are not needed to write content; the page adds the header locally.
@@ -729,12 +751,14 @@ def profile_block(profile):
         bits = [e.get("title") or e.get("name") or "", e.get("org") or "", e.get("location") or "", dates]
         L.append(f"\n[{e.get('id')}] " + " | ".join(x for x in bits if x))
         for k, lab in (("team", "Team/role"), ("context", "Context"), ("tech", "Tech"), ("link", "Link"), ("gpa", "GPA"), ("coursework", "Coursework"), ("degree", "Degree")):
+            if k == "gpa" and not show_gpa:
+                continue  # the candidate keeps GPA off resumes (Profile › Resume rules)
             if e.get(k):
                 L.append(f"  {lab}: {e[k]}")
         if e.get("bestFor"):
             L.append("  Best for tracks: " + ", ".join(e["bestFor"]))
         for p in e.get("points") or []:
-            if p.get("text") and not p.get("confirm"):
+            if p.get("text") and not p.get("confirm") and (show_gpa or not GPA_RE.search(p["text"])):
                 L.append(f"  - ({p['id']}) {'[bullet] ' if p.get('kind') == 'bullet' else ''}{p['text']}")
 
     for sec, title in (("education", "EDUCATION"), ("experience", "PROFESSIONAL EXPERIENCE"), ("projects", "PROJECTS"), ("leadership", "LEADERSHIP & ACTIVITIES")):
@@ -998,10 +1022,13 @@ def _write_resume(job, profile, instructions, rules_extra, activities, baseline,
     if baseline:
         head = "CURRENT DRAFT (the approved page; bullets show their source ids in parentheses)" if (update or revise) else "CURRENT DRAFT (approved wording; improve it for this posting, do not copy it blindly)"
         job.append(f"\n{head}:\n<draft>\n{baseline.strip()[:8000]}\n</draft>")
-    rules = TAILOR_RULES + "\n14. " + ACTIVITIES_RULE.get(activities, ACTIVITIES_RULE["auto"]) + ("\nCandidate's standing resume rules:\n" + "\n".join(f"- {r}" for r in rules_extra if r) if rules_extra else "")
+    rules = TAILOR_RULES + "\n14. " + ACTIVITIES_RULE.get(activities, ACTIVITIES_RULE["auto"]) + \
+        ("" if shows_gpa(profile) else "\n15. The candidate keeps GPA and class rank off the resume: never write a GPA or rank line, even if one appears in the draft.") + ("\nCandidate's standing resume rules:\n" + "\n".join(f"- {r}" for r in rules_extra if r) if rules_extra else "")
     result, row = run("tailor", [profile_block(profile), rules], _redact("\n".join(job), profile) + "\n\nReturn the tailored resume.", TAILOR_SCHEMA,
                       target, cache_at=0)
     result = validate_tailor(result)
+    if not shows_gpa(profile):
+        strip_gpa(result)
     valid = profile_points(profile)
     for sec in ("experience", "projects", "leadership", "education"):
         for e in result.get(sec) or []:

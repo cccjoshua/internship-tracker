@@ -64,7 +64,7 @@ function blankProfile() {
       /* Facts about you start unknown (null / ''), never pre-filled: the fit score treats unknown as "to confirm". */
       availability: '', graduation: '', degreePursuing: '', degreesHeld: [], yearsExperience: '', needsSponsorship: null, cptOpt: null, usCitizen: null, authStatement: '' },
     education: [], experience: [], projects: [], leadership: [], skills: [], notYet: [], certifications: [], languages: '', additional: [],
-    resumeRules: [], tracks: Object.fromEntries(TRACKS.map((t) => [t, { leadWith: '' }])), openQuestions: [], resumeFileName: 'Resume_[Company]', resumeActivities: 'auto',
+    resumeRules: [], tracks: Object.fromEntries(TRACKS.map((t) => [t, { leadWith: '' }])), openQuestions: [], resumeFileName: 'Resume_[Company]', resumeActivities: 'auto', resumeGpa: 'show',
     coverLetter: { samples: [], availability: '', signoff: 'Sincerely,', signature: '', rules: [] }, coverLetterFileName: '',
   };
 }
@@ -349,6 +349,8 @@ function rProfile() {
     ${fld('resumeRules', 'Standing rules', { area: true, type: 'lines', rows: 5, hint: 'one per line', cls: 'full' })}
     <label class="field"><span>Leadership &amp; Activities on the resume</span><select data-pf="resumeActivities">${[['auto', 'Only when it fits and helps (recommended)'], ['always', 'Always include (1–2 entries)'], ['never', 'Never include']].map(([v, l]) => `<option value="${v}" ${(p.resumeActivities || 'auto') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
       <span class="hint">For SWE and data internships, recruiters weigh experience, projects and skills far more. With “only when it fits”, this section is the first thing dropped to keep one page.</span></label>
+    <label class="field"><span>GPA on resumes</span><select data-pf="resumeGpa">${[['show', 'Show when 3.0 or higher (Rice CCD guide)'], ['hide', 'Hide on every resume']].map(([v, l]) => `<option value="${v}" ${(p.resumeGpa || 'show') === v ? 'selected' : ''}>${l}</option>`).join('')}</select>
+      <span class="hint">Hide keeps GPA and class rank off new and tailored resumes and out of what Claude sees. Your GPA stays in Profile › Education for application forms.</span></label>
     <div class="field"><span>Lead with, per track</span><div class="pf-tracks">${TRACKS.map((t) => `<label class="field"><span>${t} · ${I.TRACK_NAME[t]}</span><textarea rows="2" data-pf="tracks.${t}.leadWith">${esc((p.tracks[t] || {}).leadWith)}</textarea></label>`).join('')}</div></div>
     ${fld('openQuestions', 'Open questions to resolve', { area: true, type: 'lines', rows: 3, hint: 'notes for yourself; not sent to Claude', cls: 'full' })}`)}
 
@@ -546,14 +548,16 @@ function fromAI(r, p) {
   }
   const m = { v: RESUME_V, font: (ST.model && ST.model.font) || 'serif', size: (ST.model && ST.model.size) || 10.5, header: { name: p.basics.name, contact: contactLine(p.basics) }, sections };
   if (ST.model && ST.model.boldKeywords === false) m.boldKeywords = false;
-  /* A GPA of 3.0 or higher is always shown, as its own line (Rice CCD guide; many employers screen on it). Clear the
-     GPA field in Profile › Education to keep it off every resume. */
+  /* A GPA of 3.0 or higher is shown as its own line (Rice CCD guide), unless Profile › Resume rules › GPA is set to
+     Hide: then no GPA or rank line is written on any resume. */
+  const hideGpa = p.resumeGpa === 'hide';
   const edu = sections.find((x) => x.key === 'education');
   for (const e of (edu && edu.entries) || []) {
     const pe = (p.education || []).find((x) => x.org && String(e.title || '').toLowerCase().startsWith(String(x.org).toLowerCase())), g = pe && String(pe.gpa || '').trim();
     const val = g && parseFloat(g), scale = g && parseFloat((/\/\s*([\d.]+)/.exec(g) || [])[1] || '4');
     e.lines = (e.lines || []).flatMap((l) => String(l).split(/\s+\|\s+/)).map((l) => l.trim()).filter(Boolean);
-    if (val && val / scale >= 0.75 && !e.lines.some((l) => /^GPA\b/i.test(l))) e.lines.unshift('GPA: ' + g);
+    if (hideGpa) e.lines = e.lines.filter((l) => !/\bGPA\b|\bRank \d+\s*\/\s*\d+/i.test(l));
+    else if (val && val / scale >= 0.75 && !e.lines.some((l) => /^GPA\b/i.test(l))) e.lines.unshift('GPA: ' + g);
   }
   normResume(m); return m;
 }
