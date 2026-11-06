@@ -57,7 +57,17 @@ const api = async (p, path) => p.evaluate(async (u) => (await fetch(u, { cache: 
   if (shots) await p.screenshot({ path: shots + '/e2e-resume.png' });
   step('tailored (stub), edited a bullet, autosaved');
 
+  // the page sits on the right and the editor on the left; the left side switches between Edit, Review and Ask Claude
+  const box = async (sel) => p.locator(sel).first().boundingBox();
+  const ed = await box('#rsEditW'), pg = await box('#rsPaper');
+  assert.ok(ed && pg && ed.x < pg.x, 'the editor is left of the page');
+  await p.click('[data-rspane="review"]');
+  await p.locator('#rsScore .rscore').waitFor();
+  assert.ok(!(await p.locator('#rsEditW').isVisible()), 'one tool at a time on the left');
+  assert.ok(await p.locator('#rsPaper').isVisible(), 'the page stays in view');
+
   // 4b. revise in your own words, then undo it
+  await p.click('[data-rspane="ask"]');
   await p.locator('.rv-idea').first().click();
   assert.equal(await p.inputValue('#rvIns'), await p.locator('.rv-idea').first().getAttribute('data-rv'), 'an idea fills the box');
   await p.fill('#rvIns', 'Put SQL first');
@@ -70,6 +80,7 @@ const api = async (p, path) => p.evaluate(async (u) => (await fetch(u, { cache: 
   assert.equal(await p.locator('[data-jb="rv-undo"]').count(), 0, 'undo is offered once');
   if (shots) await p.screenshot({ path: shots + '/e2e-revise.png' });
   step('revised with a request (⌘/Ctrl+↵), then undone');
+  await p.click('[data-rspane="edit"]');
 
   // 5. race: edit, then switch to another job before the debounce fires; the edit must land on the right job only
   await bullet.fill('RACE EDIT for Mesa Verde');

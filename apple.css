@@ -892,3 +892,79 @@ input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
   .titlebar{padding-right:96px}
 }
 @media (max-width:1080px){.rs-grid.v2{grid-template-columns:minmax(0,1fr)}.rs-view .rs-sticky{position:static;max-height:none;overflow:visible}}
+
+/* ---------- resume page v3 (Nov 2026): edit on the left, the page on the right ----------
+   One header row (status · versions · the one Claude action), then two columns: a segmented control picks what the
+   left side does (Edit, Review, Ask Claude), and the page stays in view on the right with its own scroll. */
+.rs.v3{gap:0}
+.rs-head{display:flex;flex-wrap:wrap;align-items:flex-start;justify-content:space-between;gap:10px 16px;padding-bottom:14px;border-bottom:.5px solid var(--line)}
+.rs-status{display:flex;flex-direction:column;gap:6px;min-width:0}
+.rs-status .row{gap:8px}
+.rs-status .ready{margin:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px}
+.rs-actions{display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:6px;min-width:0}
+.rs-actions select{width:auto;max-width:230px;height:30px;padding:3px 26px 3px 10px;font-size:12px}
+.rs.v3 .tailor-nudge{margin-top:14px}
+.rs-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);gap:28px;align-items:start;margin-top:16px}
+.rs-left{min-width:0;display:flex;flex-direction:column;gap:12px}
+/* Segmented control, drawn like the Applications layout switch; stays at the top while the editor scrolls */
+.rs-seg{display:inline-flex;align-self:flex-start;gap:2px;padding:2px;border-radius:9px;background:var(--fill)}
+.rs-seg button{border:0;background:transparent;color:var(--ink);font:inherit;font-size:13px;font-weight:500;padding:4px 14px;border-radius:7px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:background .15s var(--ease)}
+.rs-seg button:hover{background:var(--fill-3)}
+.rs-seg button[aria-selected="true"],.rs-seg button[aria-pressed="true"]{background:var(--surface);font-weight:600;box-shadow:0 1px 3px rgba(0,0,0,.12),0 0 0 .5px rgba(0,0,0,.04)}
+:root[data-theme="dark"] .rs-seg button[aria-selected="true"],:root[data-theme="dark"] .rs-seg button[aria-pressed="true"]{background:#636366}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .rs-seg button[aria-selected="true"],:root:not([data-theme="light"]) .rs-seg button[aria-pressed="true"]{background:#636366}}
+.rs-seg.sm button{font-size:12px;padding:2px 10px}
+.rs-tabbar{position:sticky;top:0;z-index:4;margin:-8px 0 -4px;padding:8px 0 6px;background:var(--surface);box-shadow:0 .5px 0 var(--line)}
+.rs-badge{min-width:18px;padding:0 5px;border-radius:999px;font-size:11px;font-weight:600;line-height:17px;text-align:center;font-variant-numeric:tabular-nums;background:var(--fill-2);color:var(--muted)}
+.rs-badge.good{background:rgba(52,199,89,.16);color:var(--good)}
+.rs-badge.warn{background:var(--hl-soft);color:var(--warn)}
+.rs-tab-page{display:none!important}
+.rs-pane{display:flex;flex-direction:column;gap:12px;min-width:0}
+.rs-pane[hidden]{display:none}
+/* The one line that keeps open issues visible while editing */
+.rs-flag{display:flex;align-items:center;gap:8px;width:100%;padding:8px 12px;border:0;border-radius:10px;background:var(--fill-3);color:var(--ink);font:inherit;font-size:13px;text-align:left;cursor:pointer}
+.rs-flag:hover{background:var(--fill-2)}
+.rs-flag .grow{flex:1}
+/* The editor is the left side's main content: no wrapper box */
+.rs-editw{display:block}
+/* Review: compact score, the breakdown folds away once it is high */
+.rs.v3 .rscore{margin:0}
+.rs.v3 .rscore b small{font-weight:500;color:var(--muted);font-size:12px;margin-left:4px}
+.rs-break{margin-top:10px}
+.rs-break>summary{cursor:pointer;font-size:13px}
+.rs-break>summary .sub{font-variant-numeric:tabular-nums}
+.rs.v3 .revise{border:0;background:transparent;padding:0;box-shadow:none}
+#rsTodo:empty{display:none}
+/* The page: a canvas with the sheet on it, in view while you edit */
+.rs-right{min-width:0;align-self:stretch}
+.rs-right .rs-sticky{position:sticky;top:12px;max-height:calc(100vh - 24px);overflow:auto;display:flex;flex-direction:column;gap:10px;padding-bottom:4px;overscroll-behavior:contain}
+.rs-right .rs-sticky>*{flex-shrink:0}
+.rs-ptool{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px}
+.rs-ptool .grow{flex:1}
+.rs-canvas{background:var(--fill-3);border-radius:14px;padding:18px;overflow:auto}
+.rs-canvas .rs-paper{background:transparent;border:0;border-radius:0;overflow:visible}
+.rs-canvas .rs-paper svg.pg{border-radius:2px;box-shadow:0 0 0 .5px rgba(0,0,0,.08),0 2px 6px rgba(0,0,0,.06),0 12px 32px rgba(0,0,0,.08)}
+.rs-canvas .rs-paper svg.pg+svg.pg{margin-top:18px}
+.rs-canvas.actual .rs-paper svg.pg{width:816px;max-width:none}
+.rs-canvas.actual .rs-paper{width:max-content}
+.rs-paper .pv-hit{fill:transparent;cursor:text}
+.rs-paper .pv-hit:hover{fill:rgba(0,113,227,.07)}
+.rs-right .pv-tip{margin:0;text-align:center}
+#rsPageNote:empty{display:none}
+#rsPageNote .notice{margin:0}
+/* Narrow: one column; the page becomes a tab */
+@media (max-width:1080px){
+  .rs-split{grid-template-columns:minmax(0,1fr)}
+  .rs-tab-page{display:inline-flex!important}
+  .rs-split:not([data-pane="page"]) .rs-right{display:none}
+  .rs-right .rs-sticky{position:static;max-height:none;overflow:visible}
+  .rs-actions{justify-content:flex-start}
+  .rs-canvas{padding:10px}
+}
+.rs-paper .pv-hit.cur{fill:rgba(0,113,227,.12)}
+/* The page column and the editor adapt to their own width, not the window's */
+.rs-right,.rs-left{container-type:inline-size}
+.rs-shead{flex-wrap:nowrap;gap:4px}
+.rs-shead>input{flex:1 1 auto;min-width:0;max-width:260px}
+@container (max-width:600px){.rs-ptool #rsFit{flex-basis:100%;order:-1}.rs-ptool .grow{display:none}}
+@container (max-width:520px){.rs-eh{grid-template-columns:minmax(0,1fr) 120px}}
