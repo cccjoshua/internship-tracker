@@ -158,6 +158,93 @@ function entryCard(k, e, i, n) {
 }
 const plural = I.plural;
 
+/* ---------- jump links: every "check this" or "confirm this" note links to the exact place to fix it ----------
+   data-goto="pt:<point id>"    the Profile point (entry opened, text focused)
+   data-goto="ent:<entry id>"   a Profile entry
+   data-goto="fact:<entry id>"  a new, empty fact in that Profile entry, ready to type
+   data-goto="fld:<path>"       a Profile field;  data-goto="sec:<section>"  a Profile section
+   data-goto="bul:<bullet id>"  a bullet in this job's resume editor;  data-goto="ck"  the resume checklist */
+const PT_SECS = ['education', 'experience', 'projects', 'leadership'];
+const GOTO = { pending: null };
+function findPoint(id) {
+  for (const k of PT_SECS) for (let i = 0; i < ((P.data && P.data[k]) || []).length; i++) { const e = P.data[k][i], j = e.points.findIndex((x) => x.id === id); if (j >= 0) return { k, i, j, e, x: e.points[j] }; }
+  return null;
+}
+function findEntry(id) {
+  for (const k of PT_SECS) { const i = ((P.data && P.data[k]) || []).findIndex((e) => e.id === id); if (i >= 0) return { k, i, e: P.data[k][i] }; }
+  return null;
+}
+/* The Profile entry a resume entry was written from: the entry of any of its bullets' cited points, else by name. */
+function profileEntryOf(resEntry) {
+  for (const b of (resEntry && resEntry.bullets) || []) for (const id of String(b.src || '').split(',').map((x) => x.trim()).filter(Boolean)) {
+    const pt = findPoint(id); if (pt) return pt.e;
+    const en = findEntry(id.split('.')[0]); if (en) return en.e;
+  }
+  const t = String((resEntry && resEntry.title) || '').toLowerCase();
+  for (const k of PT_SECS) for (const e of (P.data && P.data[k]) || []) { const n = String(e.org || e.name || '').toLowerCase(); if (n && t.startsWith(n.split(',')[0])) return e; }
+  return null;
+}
+const secOfEntry = (e) => PT_SECS.find((k) => ((P.data && P.data[k]) || []).includes(e)) || 'experience';
+/* A Claude question starts with "[entry id]" (newer answers); older ones are matched by the entry's name. */
+function questionTarget(q) {
+  const m = /^\s*\[([\w.-]+)\]\s*/.exec(q || ''), text = m ? q.slice(m[0].length) : q;
+  let en = m && m[1] !== 'new' ? findEntry(m[1]) : null;
+  if (!en) for (const k of PT_SECS) ((P.data && P.data[k]) || []).forEach((e, i) => { const n = String(e.org || e.name || '').split(/[,(–]/)[0].trim(); if (!en && n.length > 3 && text.toLowerCase().includes(n.toLowerCase())) en = { k, i, e }; });
+  /* Not about one entry: point at the Profile field or section where the answer belongs. */
+  const t = text.toLowerCase();
+  const alt = /linkedin/.test(t) ? ['fld:basics.linkedin', 'Profile › Basics'] : /github/.test(t) ? ['fld:basics.github', 'Profile › Basics'] : /phone|email|website|portfolio/.test(t) ? ['sec:basics', 'Profile › Basics']
+    : /course|class|coursework|gpa|degree/.test(t) ? ['sec:education', 'Profile › Education'] : /sponsor|visa|authori[sz]|citizen|cpt|opt\b/.test(t) ? ['sec:prefs', 'Profile › Work authorization']
+      : /\b(used|tools?|skills?|languages?|frameworks?|library|platforms?|know|statistics?|statistical|experience with)\b/.test(t) ? ['sec:skills', 'Profile › Skills'] : ['sec:projects', 'Profile › Projects'];
+  return { text, en, alt };
+}
+function questionList(qs, closeDialog) {
+  return `<div class="notice fix"><div class="fix-b"><b>Claude needs ${qs.length > 1 ? 'these facts' : 'this fact'} from you</b><span class="sub">Write the answer in your Profile so the next update can use it. Each button opens the right entry with a new fact ready to type.</span>
+    <ul class="fixlist">${qs.map((q) => { const { text, en, alt } = questionTarget(q); return `<li><span class="fix-w"><span class="fix-t">${esc(text)}</span></span><span class="fix-a">${en ? `<button class="btn sm" type="button" data-goto="fact:${esc(en.e.id)}" ${closeDialog ? 'data-close' : ''}>Answer in ${esc(entryName(en.k, en.e))} →</button>` : `<button class="btn sm ghost" type="button" data-goto="${alt[0]}" ${closeDialog ? 'data-close' : ''}>Answer in ${esc(alt[1])} →</button>`}</span></li>`; }).join('')}</ul></div></div>`;
+}
+const cssq = (x) => (window.CSS && CSS.escape ? CSS.escape(x) : String(x).replace(/["\\]/g, '\\$&'));
+function goTo(target) {
+  const i = target.indexOf(':'), kind = i < 0 ? target : target.slice(0, i), arg = i < 0 ? '' : target.slice(i + 1);
+  const go = (hash) => { if (location.hash === hash) I.render(); else location.hash = hash; };
+  if (kind === 'pt' || kind === 'ent' || kind === 'fact') {
+    const hit = kind === 'pt' ? findPoint(arg) : findEntry(arg);
+    if (!hit) { I.toast(kind === 'pt' ? 'That fact is no longer in your Profile.' : 'That entry is no longer in your Profile.'); return go('#profile'); }
+    P.open = Object.assign({}, P.open, { [hit.e.id]: true });
+    if (kind === 'fact') {
+      hit.e.points.push({ id: `${hit.e.id}.${sid().slice(0, 3)}`, text: '', kind: 'fact', confirm: false });
+      saveProfile(); GOTO.pending = { sel: `[data-pf="${hit.k}.${hit.i}.points.${hit.e.points.length - 1}.text"]`, focus: true };
+    } else GOTO.pending = kind === 'pt' ? { sel: `[data-pt="${cssq(arg)}"]`, focus: 'textarea' } : { sel: `.pf-entry[data-eid="${cssq(arg)}"]` };
+    rProfile.scrolled = true; return go('#profile/' + hit.k);
+  }
+  if (kind === 'fld') { GOTO.pending = { sel: '#pf-' + arg.replace(/\./g, '-'), focus: true }; rProfile.scrolled = true; return go('#profile/' + (arg.startsWith('basics') ? 'basics' : 'prefs')); }
+  if (kind === 'el') { GOTO.pending = { sel: arg, focus: true }; rProfile.scrolled = true; return go('#profile/prefs'); }
+  if (kind === 'sec') { GOTO.pending = { sel: '#s-' + arg }; rProfile.scrolled = true; return go('#profile/' + arg); }
+  if ((kind === 'bul' || kind === 'ck') && JOB) {
+    if (kind === 'bul' && ST.model) for (const sct of ST.model.sections) if ((sct.entries || []).some((e) => (e.bullets || []).some((b) => b.id === arg))) ST.sec[sct.id] = true;
+    GOTO.pending = kind === 'bul' ? { sel: `[data-bid="${cssq(arg)}"]`, focus: 'textarea' } : { sel: '#rsChecks', open: true };
+    return go(`#job/${encodeURIComponent(JOB.id)}/resume`);
+  }
+}
+function applyGoto() {
+  const g = GOTO.pending; if (!g) return;
+  const el = $(g.sel); if (!el) return;
+  GOTO.pending = null;
+  if (g.open) el.querySelectorAll('details').forEach((d) => { d.open = true; });
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+  const box = el.closest('li, .pf-entry, .field, section') || el;
+  box.classList.remove('goto-flash'); void box.offsetWidth; box.classList.add('goto-flash');
+  const f = g.focus === true ? el : g.focus ? el.querySelector(g.focus) : null;
+  if (f) setTimeout(() => { f.focus({ preventScroll: true }); if (f.setSelectionRange && typeof f.value === 'string') f.setSelectionRange(f.value.length, f.value.length); }, reduce ? 0 : 350);
+}
+/* Everything in the Profile that still needs you: unconfirmed points (never sent to Claude until confirmed). */
+function toConfirm(p) {
+  const out = [];
+  for (const k of PT_SECS) (p[k] || []).forEach((e, i) => e.points.forEach((x, j) => { if (x.confirm) out.push({ k, i, j, e, x }); }));
+  return out;
+}
+const MISSING_GOTO = { 'Name': 'fld:basics.name', 'Email': 'fld:basics.email', 'Phone': 'fld:basics.phone', 'LinkedIn': 'fld:basics.linkedin', 'Graduation date': 'fld:preferences.graduation',
+  'Target tracks': 'sec:prefs', 'Preferred places': 'el:#p-places', 'Education': 'sec:education', 'Experience or projects': 'sec:experience', 'Skills (3+ lines)': 'sec:skills', 'Resume bullets': 'sec:experience', 'Track playbook': 'sec:rules' };
+
 function rProfile() {
   if (!P.data) return '<p class="empty">Loading your profile…</p>';
   const p = P.data, pr = p.preferences, S = I.S.settings, cm = completeness(p);
@@ -168,8 +255,11 @@ function rProfile() {
   <div class="sbody">
   <div class="pf-top panel"><div class="pf-status">
     <div><b>${cm.missing.length ? `${cm.total - cm.missing.length} of ${cm.total} essentials filled` : 'All essentials filled'}</b>${cm.confirm ? ` <span class="warn-t">· ${plural(cm.confirm, 'point', 'points')} to confirm</span>` : ''}
-      <div class="sub">${cm.missing.length ? 'Missing: ' + cm.missing.map(esc).join(', ') + '. ' : ''}This page is the only source of facts for tailored resumes, fit and eligibility checks. Unconfirmed points and hidden entries are never sent to Claude.</div></div>
-    <span class="savestate" id="pfState">${P.server ? (p.updatedAt ? 'Saved ' + new Date(p.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not saved yet') : 'Saved in this browser only'}</span></div></div>
+      <div class="sub">${cm.missing.length ? 'Missing: ' + cm.missing.map((x) => `<button type="button" class="linkbtn" data-goto="${MISSING_GOTO[x] || 'sec:basics'}">${esc(x)}</button>`).join(', ') + '. ' : ''}This page is the only source of facts for tailored resumes, fit and eligibility checks. Unconfirmed points and hidden entries are never sent to Claude.</div></div>
+    <span class="savestate" id="pfState">${P.server ? (p.updatedAt ? 'Saved ' + new Date(p.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : 'Not saved yet') : 'Saved in this browser only'}</span></div>
+    ${cm.confirm ? (() => { const L = toConfirm(p); return `<details class="pf-todo" ${L.length <= 8 ? 'open' : ''}><summary><b>To confirm (${L.length})</b> <span class="sub">Read each point. If it is true as written, press Confirm. If not, press Edit, fix the wording, then confirm it.</span></summary>
+      <ul class="fixlist">${L.map(({ k, i, j, e, x }) => `<li><span class="fix-w"><b>${esc(ENTRY[k].title)} › ${esc(entryName(k, e))}</b>${e.hidden ? ' <span class="chip tag">entry hidden from Claude</span>' : ''}<span class="fix-t">${esc(x.text || '(empty)')}</span></span>
+        <span class="fix-a"><button class="btn sm ghost" type="button" data-goto="pt:${esc(x.id)}">Edit</button><button class="btn sm" type="button" data-pfa="cfm:${k}:${i}:${j}">Confirm</button></span></li>`).join('')}</ul></details>`; })() : ''}</div>
 
   ${sec('basics', 'Basics', 'resume header', `<div class="dgrid">${fld('basics.name', 'Name as on resume')}${fld('basics.location', 'Location', { hint: 'city and state only' })}${fld('basics.email', 'Email', { input: 'email' })}${fld('basics.phone', 'Phone')}${fld('basics.linkedin', 'LinkedIn')}${fld('basics.github', 'GitHub')}${fld('basics.website', 'Website / portfolio')}${fld('resumeFileName', 'Resume file name', { hint: '[Company] is replaced' })}</div>
     ${fld('preferences.headline', 'One-line headline', { cls: 'full', ph: 'e.g. MS Computer Science student building data pipelines and dashboards' })}`)}
@@ -251,6 +341,7 @@ function profileAction(a, el) {
   if (k === 'kind') { const [path, kind] = [r.slice(0, -1).join(':'), r[r.length - 1]]; getPath(p, path).kind = kind; }
   else if (k === 'addp') { const e = p[r[0]][+r[1]]; e.points.push({ id: `${e.id}.${sid().slice(0, 3)}`, text: '', kind: r[2], confirm: false }); P.focus = `[data-pf="${r[0]}.${r[1]}.points.${e.points.length - 1}.text"]`; }
   else if (k === 'delp') p[r[0]][+r[1]].points.splice(+r[2], 1);
+  else if (k === 'cfm') { p[r[0]][+r[1]].points[+r[2]].confirm = false; I.toast('Confirmed · Claude can use this point now'); }
   else if (k === 'mvp') mv(p[r[0]][+r[1]].points, +r[2], +r[3]);
   else if (k === 'adde') { const e = { id: r[0].slice(0, 2) + sid().slice(0, 3), points: [], bestFor: [] }; p[r[0]].push(e); P.open = Object.assign({}, P.open, { [e.id]: true }); P.focus = `[data-pf="${r[0]}.${p[r[0]].length - 1}.${ENTRY[r[0]].fields[0][0]}"]`; }
   else if (k === 'dele') { if (!el.dataset.armed) { el.dataset.armed = '1'; el.textContent = 'Click again to delete'; return; } p[r[0]].splice(+r[1], 1); }
@@ -297,7 +388,52 @@ async function loadJob(J) {
 const meta = (J) => ({ key: J.key, company: J.company, role: J.role, url: J.url, location: J.location });
 
 /* resume model */
-const SEC_TITLE = { summary: 'Summary', education: 'Education', skills: 'Technical Skills', experience: 'Professional Experience', projects: 'Projects', leadership: 'Leadership & Activities', additional: 'Additional' };
+const SEC_TITLE = { summary: 'Summary', education: 'Education', skills: 'Technical Skills', experience: 'Professional Experience', projects: 'Projects', leadership: 'Leadership & Activities' };
+/* Standing resume rules applied to every resume, new or saved: the Profile's name in the header, no "Additional"
+   section, and Professional Experience directly under Technical Skills. Returns true when it changed something. */
+const isAdditional = (s) => s.kind === 'list' && /^additional\b/i.test(String(s.title || '').trim());
+function normResume(m) {
+  if (!m || !Array.isArray(m.sections)) return false;
+  const sig = () => JSON.stringify([m.header && m.header.name, m.sections.map((s) => [s.id || s.title, (s.entries || []).map((e) => e.title + '|' + (e.loc || ''))])]), before = sig();
+  if (P.data && P.data.basics && P.data.basics.name) m.header = Object.assign({}, m.header, { name: P.data.basics.name });
+  m.sections = m.sections.filter((s) => !isAdditional(s));
+  for (const s of m.sections) for (const e of s.entries || []) {
+    if (e.loc || s.key === 'projects' || !e.title) continue;
+    const pe = profileEntryOf(e), L = pe && pe.location;
+    if (L && e.title.endsWith(', ' + L)) { e.title = e.title.slice(0, -(L.length + 2)); e.loc = L; if (!e.date && e.subdate) { e.date = e.subdate; e.subdate = ''; } }
+  }
+  const ex = m.sections.findIndex((s) => s.key === 'experience'), sk = m.sections.findIndex((s) => s.kind === 'skills');
+  if (ex >= 0 && sk >= 0 && ex !== sk + 1) { const [e] = m.sections.splice(ex, 1); m.sections.splice(m.sections.findIndex((s) => s.kind === 'skills') + 1, 0, e); }
+  return sig() !== before;
+}
+/* Posting keywords this resume really contains (the same matching as the keyword panel, aliases included). The
+   preview and the .docx/.pdf exports set them in bold in bullets and the summary. Soft skills are never bolded. */
+function boldTerms(m, keywords, extra) {
+  const softs = new Set((keywords || []).filter((k) => k.kind === 'soft' || k.kind === 'credential').map((k) => C.nk(k.term)));
+  const tech = (keywords || []).filter((k) => k.kind !== 'soft' && k.kind !== 'credential');
+  const more = (extra || []).filter((x) => typeof x === 'string' && !softs.has(C.nk(x))).map((t) => ({ term: t, importance: 1 }));
+  const hit = C.keywordScore(resumeText(m), [...tech, ...more]).hit, forms = new Set();
+  for (const k of hit) {
+    const key = C.nk(k.term); forms.add(String(k.term).trim()); if (key) forms.add(key);
+    for (const [a, v] of Object.entries(C.ALIAS || {})) if (v === key) forms.add(a);
+  }
+  return [...forms].filter((x) => x && x.length >= 2).sort();
+}
+/* Recompute the bold terms of job J's resume from its analysis and Claude's notes; true when they changed. */
+function applyBold(m, J) {
+  if (!m || !J) return false;
+  const st = JOBS.get(J.key), a = st && st.job && st.job.analysis, n = JOB && JOB.key === J.key ? ST.notes : st && st.resume && st.resume.notes;
+  if (!a && !(n && (n.keywordsUsed || []).length)) return false;
+  const terms = boldTerms(m, a ? a.keywords : [], n && n.keywordsUsed);
+  if (JSON.stringify(terms) === JSON.stringify(m.bold || [])) return false;
+  m.bold = terms; return true;
+}
+function boldHtml(text, m) {
+  const terms = m && m.boldKeywords !== false ? (m.bold || []).slice().sort((x, y) => y.length - x.length) : [];
+  if (!terms.length) return esc(text);
+  const rx = new RegExp('(?<![A-Za-z0-9])(' + terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![A-Za-z0-9+#])', 'gi');
+  return String(text || '').split(rx).map((x, i) => i % 2 ? `<b>${esc(x)}</b>` : esc(x)).join('');
+}
 const dates = (e) => [e.start, e.end].filter(Boolean).join(' – ');
 function contactLine(b) { return [b.location, b.phone, b.email, b.linkedin, b.github, b.website].filter(Boolean).join(' | '); }
 function baseResume(p, track) {
@@ -305,10 +441,10 @@ function baseResume(p, track) {
   const LIMIT = { experience: [6, 2], projects: [4, 3], leadership: [1, 1] }, SHOWN = { experience: 3, projects: 3, leadership: 2 };
   const bullets = (e, k, rank) => e.points.filter((x) => x.kind === 'bullet' && !x.confirm && x.text).map((x, i) => ({ id: sid(), text: x.text, src: x.id, hidden: i >= (rank ? LIMIT[k][1] : LIMIT[k][0]) }));
   const order = (arr) => arr.filter((e) => !e.hidden && e.master !== false).map((e, i) => ({ e, i, s: track && (e.bestFor || []).includes(track) ? 0 : 1 })).sort((a, b) => a.s - b.s || a.i - b.i).map((x) => x.e);
-  const ent = (k, e, rank) => k === 'education' ? { id: sid(), title: [e.org, e.location].filter(Boolean).join(', '), date: e.end || dates(e), subtitle: e.degree || '', lines: [[e.gpa ? 'GPA: ' + e.gpa : '', e.coursework ? 'Coursework: ' + e.coursework : ''].filter(Boolean).join(' | '), ...e.points.filter((x) => x.kind === 'bullet' && !x.confirm).map((x) => x.text)].filter(Boolean), bullets: [] }
-    : k === 'experience' ? { id: sid(), title: [e.org, e.location].filter(Boolean).join(', '), date: '', subtitle: [e.title, e.team].filter(Boolean).join(', '), subdate: dates(e), lines: [], bullets: bullets(e, k, rank) }
+  const ent = (k, e, rank) => k === 'education' ? { id: sid(), title: e.org || '', loc: e.location || '', date: e.end || dates(e), subtitle: e.degree || '', lines: [e.gpa ? 'GPA: ' + e.gpa : '', e.coursework ? 'Relevant Coursework: ' + e.coursework : '', ...e.points.filter((x) => x.kind === 'bullet' && !x.confirm).map((x) => x.text)].filter(Boolean), bullets: [] }
+    : k === 'experience' ? { id: sid(), title: e.org || '', loc: e.location || '', date: dates(e), subtitle: [e.title, e.team].filter(Boolean).join(', '), subdate: '', lines: [], bullets: bullets(e, k, rank) }
       : k === 'projects' ? { id: sid(), title: e.name || '', date: dates(e), subtitle: e.context || '', lines: [], bullets: bullets(e, k, rank) }
-        : { id: sid(), title: [e.org, e.location].filter(Boolean).join(', '), date: dates(e), subtitle: e.title || '', lines: [], bullets: bullets(e, k, rank) };
+        : { id: sid(), title: e.org || '', loc: e.location || '', date: dates(e), subtitle: e.title || '', lines: [], bullets: bullets(e, k, rank) };
   const sections = [];
   if (p.preferences.headline) sections.push({ id: sid(), kind: 'summary', title: SEC_TITLE.summary, text: p.preferences.headline, hidden: true });
   const E = (k) => { const list = (k === 'education' ? p[k].filter((e) => !e.hidden && e.master !== false) : order(p[k])).map((e, i) => Object.assign(ent(k, e, i), { hidden: k !== 'education' && i >= SHOWN[k] })); if (list.length) sections.push({ id: sid(), kind: 'entries', key: k, title: SEC_TITLE[k], entries: list }); };
@@ -316,20 +452,39 @@ function baseResume(p, track) {
   if (p.skills.length) sections.push({ id: sid(), kind: 'skills', title: SEC_TITLE.skills, lines: p.skills.filter((s) => s.value).map((s) => ({ label: s.label, value: s.value })) });
   E('experience'); E('projects'); E('leadership');
   if ((p.resumeActivities || 'auto') === 'never') sections.forEach((x) => { if (x.key === 'leadership') x.hidden = true; });
-  const add = [...(p.languages ? ['Languages: ' + p.languages] : []), ...p.additional];
-  if (add.length) sections.push({ id: sid(), kind: 'list', title: SEC_TITLE.additional, items: add });
   return { v: 1, font: 'serif', size: 10.5, header: { name: p.basics.name, contact: contactLine(p.basics) }, sections };
 }
 function fromAI(r, p) {
   const sections = [];
-  const ent = (e) => ({ id: sid(), title: e.title, date: e.date, subtitle: e.subtitle, subdate: '', lines: e.lines || [], bullets: (e.bullets || []).map((b) => ({ id: sid(), text: b.text, src: b.source, unverified: !!b.unverified, issues: b.issues || [] })) });
-  for (const k of (r.sectionOrder && r.sectionOrder.length ? r.sectionOrder : ['education', 'skills', 'experience', 'projects', 'leadership', 'additional'])) {
+  const ent = (e) => ({ id: sid(), title: e.title, loc: e.location || '', date: e.date, subtitle: e.subtitle, subdate: '', lines: e.lines || [], bullets: (e.bullets || []).map((b) => ({ id: sid(), text: b.text, src: b.source, unverified: !!b.unverified, issues: b.issues || [] })) });
+  for (const k of (r.sectionOrder && r.sectionOrder.length ? r.sectionOrder : ['education', 'skills', 'experience', 'projects', 'leadership'])) {
     if (k === 'summary' && r.summary) sections.push({ id: sid(), kind: 'summary', title: SEC_TITLE.summary, text: r.summary });
     else if (k === 'skills' && (r.skills || []).length) sections.push({ id: sid(), kind: 'skills', title: SEC_TITLE.skills, lines: r.skills });
-    else if (k === 'additional' && (r.additional || []).length) sections.push({ id: sid(), kind: 'list', title: SEC_TITLE.additional, items: r.additional });
     else if (['education', 'experience', 'projects', 'leadership'].includes(k) && (r[k] || []).length) sections.push({ id: sid(), kind: 'entries', key: k, title: SEC_TITLE[k], entries: r[k].map(ent) });
   }
-  return { v: 1, font: (ST.model && ST.model.font) || 'serif', size: (ST.model && ST.model.size) || 10.5, header: { name: p.basics.name, contact: contactLine(p.basics) }, sections };
+  const m = { v: 1, font: (ST.model && ST.model.font) || 'serif', size: (ST.model && ST.model.size) || 10.5, header: { name: p.basics.name, contact: contactLine(p.basics) }, sections };
+  if (ST.model && ST.model.boldKeywords === false) m.boldKeywords = false;
+  normResume(m); return m;
+}
+/* The current page as text for Claude: its sections and entries in order, and each bullet with its Profile source ids,
+   so an update edits this page instead of writing a new one. Hidden items are left out. */
+function draftText(m) {
+  const out = [];
+  for (const s of m.sections) {
+    if (s.hidden) continue;
+    out.push('## ' + s.title);
+    if (s.kind === 'summary' && s.text) out.push(s.text);
+    for (const l of s.lines || []) if (!l.hidden && l.value) out.push(`- ${l.label}: ${l.value}`);
+    for (const x of s.items || []) out.push('- ' + x);
+    for (const e of s.entries || []) {
+      if (e.hidden) continue;
+      out.push('### ' + [e.title, e.loc, e.date].filter(Boolean).join(' | '));
+      if (e.subtitle || e.subdate) out.push('_' + [e.subtitle, e.subdate].filter(Boolean).join(' | ') + '_');
+      for (const l of e.lines || []) out.push(l);
+      for (const b of e.bullets || []) if (!b.hidden && b.text) out.push(`- ${b.src ? '(' + b.src + ') ' : ''}${b.text}`);
+    }
+  }
+  return out.join('\n');
 }
 function resumeText(m) {
   const out = [m.header.name, m.header.contact];
@@ -382,9 +537,10 @@ function svgPages(f) {
 function paper(m, size) {
   if (ST.fit && ST.fit.render) return svgPages(ST.fit);
   const sz = size || m.size || 10.5;
-  const ent = (e) => `<div class="rp-e"><div class="rp-r"><b>${esc(e.title)}</b><span>${esc(e.date)}</span></div>${e.subtitle || e.subdate ? `<div class="rp-r"><i>${esc(e.subtitle)}</i><i>${esc(e.subdate)}</i></div>` : ''}${(e.lines || []).map((l) => `<div>${esc(l)}</div>`).join('')}${(e.bullets || []).filter((b) => !b.hidden && b.text).length ? `<ul>${e.bullets.filter((b) => !b.hidden && b.text).map((b) => `<li>${esc(b.text)}</li>`).join('')}</ul>` : ''}</div>`;
+  const ent = (e) => { const r1 = e.loc || e.date, r2 = e.loc ? [e.date, e.subdate].filter(Boolean).join(' – ') : e.subdate;
+    return `<div class="rp-e"><div class="rp-r"><b>${esc(e.title)}</b><i>${esc(r1)}</i></div>${e.subtitle || r2 ? `<div class="rp-r"><i>${esc(e.subtitle)}</i><i>${esc(r2)}</i></div>` : ''}${(e.lines || []).length ? `<ul>${e.lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}${(e.bullets || []).filter((b) => !b.hidden && b.text).length ? `<ul>${e.bullets.filter((b) => !b.hidden && b.text).map((b) => `<li>${boldHtml(b.text, m)}</li>`).join('')}</ul>` : ''}</div>`; };
   const body = m.sections.filter((s) => !s.hidden).map((s) => {
-    const inner = s.kind === 'summary' ? `<div>${esc(s.text)}</div>` : s.kind === 'skills' ? (s.lines || []).filter((l) => !l.hidden && l.value).map((l) => `<div><b>${esc(l.label)}:</b> ${esc(l.value)}</div>`).join('')
+    const inner = s.kind === 'summary' ? `<div>${boldHtml(s.text, m)}</div>` : s.kind === 'skills' ? (s.lines || []).filter((l) => !l.hidden && l.value).map((l) => `<div><b>${esc(l.label)}:</b> ${esc(l.value)}</div>`).join('')
       : s.kind === 'list' ? (s.items || []).map((x) => `<div>${esc(x)}</div>`).join('') : (s.entries || []).filter((e) => !e.hidden).map(ent).join('');
     return inner ? `<div class="rp-h">${esc(s.title)}</div>${inner}` : '';
   }).join('');
@@ -402,6 +558,7 @@ function scheduleFit() {
   const seq = (ST.fitSeq = (ST.fitSeq || 0) + 1), key = ST.key;
   ST.fitT = setTimeout(async () => {
     if (!ST.model) return;
+    if (JOB && JOB.key === key && applyBold(ST.model, JOB)) scheduleSave();
     let fit = null;
     try { fit = await api('POST', 'api/resume/fit', { resume: ST.model }); } catch (_) { fit = null; }
     if (ST.fitSeq !== seq || ST.key !== key) return; // a newer edit or another job: this layout is stale
@@ -632,8 +789,9 @@ function verdict(J, a, f) {
   const dl = (a.timing && /^\d{4}-\d{2}-\d{2}$/.test(a.timing.deadline || '') && a.timing.deadline) || J.deadline;
   const days = dl ? I.daysFrom(dl) : null;
   const part = (k) => f.parts.find((p) => p.k === k) || { v: null, note: '' };
-  const items = f.eligibility.filter((e) => e.status === 'fails' || e.status === 'unknown').map((e) => [e.status === 'fails' ? 'bad' : 'warn', `${e.label}: ${e.detail}`]);
-  const sk = part('skills'); items.push([sk.v === null ? 'warn' : sk.v >= 0.8 ? 'ok' : 'warn', `Skills: ${sk.note}`]);
+  const ELIG_GOTO = { degree: ['fld:preferences.degreePursuing', 'Set your degree'], graduation: ['fld:preferences.graduation', 'Set graduation'], citizenship: ['sec:prefs', 'Work authorization'], cptopt: ['sec:prefs', 'Work authorization'], sponsorship: ['sec:prefs', 'Work authorization'] };
+  const items = f.eligibility.filter((e) => e.status === 'fails' || e.status === 'unknown').map((e) => [e.status === 'fails' ? 'bad' : 'warn', `${e.label}: ${e.detail}`, ELIG_GOTO[e.key]]);
+  const sk = part('skills'); items.push([sk.v === null ? 'warn' : sk.v >= 0.8 ? 'ok' : 'warn', `Skills: ${sk.note}`, sk.v !== null && sk.v < 0.8 ? ['sec:skills', 'Profile › Skills'] : null]);
   if (days !== null) items.push([days < 0 ? 'bad' : days <= 7 ? 'warn' : 'ok', days < 0 ? `Deadline passed (${I.fmt(dl)})` : `Deadline ${I.fmt(dl)}${days <= 14 ? ` · ${days === 0 ? 'today' : days === 1 ? 'tomorrow' : 'in ' + days + ' days'}` : ''}`]);
   const bad = f.verdict === 'blocked' || items.some((x) => x[0] === 'bad');
   const head = f.verdict === 'blocked' ? 'Not eligible as your Profile stands' : f.total === null ? 'Not enough information to judge the fit'
@@ -647,7 +805,7 @@ function verdict(J, a, f) {
   return `<section class="panel verdict ${bad ? 'v-bad' : f.verdict === 'ok' && f.total >= 75 ? 'v-good' : 'v-warn'}">
     ${fitRing(f)}
     <div class="vd-body"><b>${head}</b>${blocked && f.rawTotal !== null ? `<p class="sub">Skills and background alone would score ${f.rawTotal}, but a requirement is not met. Change your Profile only if it is wrong.</p>` : ''}
-      <ul class="vd-checks">${items.map(([c, t]) => `<li class="${c}"><span class="sr">${c === 'bad' ? 'Does not meet: ' : c === 'warn' ? 'To confirm: ' : 'OK: '}</span>${esc(t)}</li>`).join('')}</ul></div>
+      <ul class="vd-checks">${items.map(([c, t, g]) => `<li class="${c}"><span class="sr">${c === 'bad' ? 'Does not meet: ' : c === 'warn' ? 'To confirm: ' : 'OK: '}</span>${esc(t)}${g && c !== 'ok' ? ` <button type="button" class="linkbtn" data-goto="${g[0]}">${esc(g[1])} →</button>` : ''}</li>`).join('')}</ul></div>
     <div class="vd-next">${blocked
       ? `${J.app ? `<button class="btn" type="button" data-skip-app="${esc(J.app.id)}">Not applying</button>` : J.l ? `<button class="btn" type="button" data-dismissl="${esc(J.l.id)}">Not interested</button>` : ''}<a class="linkbtn" href="#job/${id}/${next[0]}">Build a resume anyway →</a>`
       : `<a class="btn primary" href="#job/${id}/${next[0]}">${next[1]} →</a><span class="sub">${next[2]}</span>`}</div></section>`;
@@ -667,7 +825,7 @@ function rsEditor(m) {
     const issues = factIssues(b).filter((x) => ok || x !== 'No Profile fact is cited');
     const open = ST.rw && ST.rw.id === b.id;
     return `<li class="rb${b.hidden ? ' off' : ''}" data-bid="${b.id}"><textarea class="auto" rows="1" data-rs="${p}.text" aria-label="Bullet">${esc(b.text)}</textarea>
-      <div class="rb-acts"><span class="src ${ok ? 'ok' : 'no'}" title="${ok ? esc(srcs.map((x) => x + ': ' + pointText(x)).join('\n')) : 'No profile source: check this bullet is true'}">${ok ? '✓ ' + esc(srcs.join(', ')) : '⚠ no source'}</span>${issues.length ? `<span class="src no fc" title="${esc(issues.join('\n'))}">⚠ ${esc(issues[0])}${issues.length > 1 ? ` +${issues.length - 1}` : ''}</span>` : ''}<span class="grow"></span>
+      <div class="rb-acts">${ok ? `<button type="button" class="src ok" data-goto="pt:${esc(srcs[0])}" title="${esc(srcs.map((x) => x + ': ' + pointText(x)).join('\n'))}&#10;Click to open it in your Profile">✓ ${esc(srcs.join(', '))}</button>` : `<span class="src no" title="No profile source: check this bullet is true">⚠ no source</span>`}${issues.length ? `<span class="src no fc" title="${esc(issues.join('\n'))}">⚠ ${esc(issues[0])}${issues.length > 1 ? ` +${issues.length - 1}` : ''}</span>` : ''}<span class="grow"></span>
         <button class="btn sm ghost${open ? ' on' : ''}" type="button" data-rsa="rw:${b.id}" title="Rewrite this bullet with Claude">✨ Rewrite</button>
         <button class="btn icon sm ghost" type="button" data-rsa="mvb:${si}:${ei}:${bi}:-1" aria-label="Move up" ${bi ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost" type="button" data-rsa="mvb:${si}:${ei}:${bi}:1" aria-label="Move down" ${bi < n - 1 ? '' : 'disabled'}>↓</button>
         <button class="btn icon sm ghost" type="button" data-rsa="hideb:${si}:${ei}:${bi}" aria-label="${b.hidden ? 'Show' : 'Hide'}" title="${b.hidden ? 'Show' : 'Hide'} on the resume">${b.hidden ? '◌' : '●'}</button>
@@ -678,7 +836,7 @@ function rsEditor(m) {
     if (s.kind === 'summary') return `<textarea class="auto" rows="2" data-rs="sections.${si}.text" aria-label="Summary">${esc(s.text)}</textarea>`;
     if (s.kind === 'list') return `<textarea class="auto" rows="2" data-rs="sections.${si}.items" data-rst="lines" aria-label="${esc(s.title)} lines">${esc((s.items || []).join('\n'))}</textarea>`;
     if (s.kind === 'skills') return `<div class="rs-sk">${(s.lines || []).map((l, li) => `<div class="pf-sk">${t(`sections.${si}.lines.${li}.label`, l.label, '', 'Label')}${t(`sections.${si}.lines.${li}.value`, l.value, '', 'Skills')}<button class="btn icon sm ghost" type="button" data-rsa="mvl:${si}:${li}:-1" aria-label="Move up" ${li ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost danger" type="button" data-rsa="dell:${si}:${li}" aria-label="Remove">✕</button></div>`).join('')}</div><button class="btn sm ghost" type="button" data-rsa="addl:${si}">+ Line</button>`;
-    return (s.entries || []).map((e, ei) => `<div class="rs-ent${e.hidden ? ' off' : ''}"><div class="rs-eh">${t(`sections.${si}.entries.${ei}.title`, e.title, 'b', 'Title')}${t(`sections.${si}.entries.${ei}.date`, e.date, 'r', 'Date')}${t(`sections.${si}.entries.${ei}.subtitle`, e.subtitle, 'i', 'Subtitle')}${t(`sections.${si}.entries.${ei}.subdate`, e.subdate, 'r i', 'Date')}</div>
+    return (s.entries || []).map((e, ei) => `<div class="rs-ent${e.hidden ? ' off' : ''}"><div class="rs-eh">${t(`sections.${si}.entries.${ei}.title`, e.title, 'b', s.key === 'projects' ? 'Project' : 'Organization')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates') : t(`sections.${si}.entries.${ei}.loc`, e.loc || '', 'r i', 'City, State')}${t(`sections.${si}.entries.${ei}.subtitle`, e.subtitle, 'i', s.key === 'education' ? 'Degree' : s.key === 'projects' ? 'Role / context' : 'Job title')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.subdate`, e.subdate, 'r i', '') : t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates')}</div>
       ${(e.lines || []).length || s.key === 'education' ? `<textarea class="auto" rows="1" data-rs="sections.${si}.entries.${ei}.lines" data-rst="lines" aria-label="Detail lines" placeholder="Detail lines (no bullet), one per line">${esc((e.lines || []).join('\n'))}</textarea>` : ''}
       <ul class="rbs">${(e.bullets || []).map((b, bi) => bulletRow(si, ei, bi, b, e.bullets.length)).join('')}</ul>
       <div class="row"><button class="btn sm ghost" type="button" data-rsa="addb:${si}:${ei}">+ Bullet</button><span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hidee:${si}:${ei}">${e.hidden ? 'Show entry' : 'Hide entry'}</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:-1" ${ei ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:1" ${ei < s.entries.length - 1 ? '' : 'disabled'}>↓</button><button class="btn sm ghost danger" type="button" data-rsa="dele:${si}:${ei}">Delete</button></div></div>`).join('');
@@ -686,7 +844,7 @@ function rsEditor(m) {
   return `<div class="rs-ed">
     <div class="rs-hd">${t('header.name', m.header.name, 'b', 'Name')}${t('header.contact', m.header.contact, '', 'Contact line')}
       <div class="row"><label class="field inline"><span>Font</span><select data-rs="font"><option value="serif" ${m.font !== 'sans' ? 'selected' : ''}>Times New Roman</option><option value="sans" ${m.font === 'sans' ? 'selected' : ''}>Arial</option></select></label>
-        <label class="field inline"><span>Size</span><select data-rs="size" data-rst="num">${[11, 10.5, 10, 9.5].map((x) => `<option value="${x}" ${+m.size === x ? 'selected' : ''}>${x} pt</option>`).join('')}</select></label><span class="sub">Export shrinks to fit one page, never below 10 pt.</span></div></div>
+        <label class="field inline"><span>Size</span><select data-rs="size" data-rst="num">${[11, 10.5, 10, 9.5].map((x) => `<option value="${x}" ${+m.size === x ? 'selected' : ''}>${x} pt</option>`).join('')}</select></label><label class="switch" title="Posting keywords that appear in your bullets are set in bold"><input type="checkbox" data-rs="boldKeywords" data-rst="bool" ${m.boldKeywords !== false ? 'checked' : ''}> Bold posting keywords</label><span class="sub">Export shrinks to fit one page, never below 10 pt.</span></div></div>
     ${m.sections.map((s, si) => { const open = ST.sec[s.id] !== false; return `<details class="rs-sec${s.hidden ? ' off' : ''}" data-sid="${s.id}" ${open ? 'open' : ''}><summary><b>${esc(s.title)}</b><span class="cnt">${s.kind === 'entries' ? plural((s.entries || []).length, 'entry', 'entries') : ''}</span></summary>
       <div class="rs-sbody"><div class="row">${t(`sections.${si}.title`, s.title, 'b', 'Section title')}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hides:${si}">${s.hidden ? 'Show section' : 'Hide section'}</button><button class="btn sm ghost" type="button" data-rsa="mvs:${si}:-1" ${si ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mvs:${si}:1" ${si < m.sections.length - 1 ? '' : 'disabled'}>↓</button></div>${secBody(s, si)}</div></details>`; }).join('')}</div>`;
 }
@@ -707,6 +865,16 @@ function versionsSel(doc) {
 function stepNav(J, prev, next) {
   const id = esc(encodeURIComponent(J.id)), L = { overview: 'Analyze', resume: 'Resume', letter: 'Cover letter', apply: 'Apply' };
   return `<nav class="stepnav" aria-label="Previous and next step">${prev ? `<a class="btn ghost" href="#job/${id}/${prev}">← ${L[prev]}</a>` : ''}<span class="grow"></span>${next.map(([k, primary, label]) => `<a class="btn${primary ? ' primary' : ''}" href="#job/${id}/${k}">${label || 'Next: ' + L[k]} →</a>`).join('')}</nav>`;
+}
+/* Bullets to check, each with what is wrong and buttons to the bullet and to the Profile fact behind it. */
+function checkList() {
+  const items = [];
+  for (const s of ST.model.sections) for (const e of s.entries || []) for (const b of e.bullets || []) if (!b.hidden && needsCheck(b)) items.push({ b, e, s });
+  if (!items.length) return '';
+  return `<div class="notice warn fix"><div class="fix-b"><b>${plural(items.length, 'bullet needs', 'bullets need')} checking before you send this</b><span class="sub">Each states something (a number, a tool, a “led”) that its Profile facts don’t show. If the bullet is wrong, edit it. If it is true, add the missing fact to your Profile so it is backed up.</span>
+    <ul class="fixlist">${items.map(({ b, e }) => { const iss = factIssues(b), src = String(b.src || '').split(',').map((x) => x.trim()).find((x) => findPoint(x)), pe = profileEntryOf(e);
+      return `<li><span class="fix-w"><b>${esc((e.title || '').split(',')[0])}</b><span class="fix-t">${esc(b.text)}</span><span class="sub warn-t">${esc(iss.length ? iss.join(' · ') : !b.src ? 'No Profile fact is cited' : src ? 'Claude could not fully match this to its source when writing it. Compare it with the source fact; if it is true, press “It’s true”' : 'Its cited fact is unconfirmed or no longer in your Profile')}</span></span>
+        <span class="fix-a">${!iss.length && src && b.unverified ? `<button class="btn sm" type="button" data-rsa="okb:${esc(b.id)}">It’s true</button>` : ''}<button class="btn sm${!iss.length && src ? ' ghost' : ''}" type="button" data-goto="bul:${esc(b.id)}">Edit bullet</button>${src ? `<button class="btn sm ghost" type="button" data-goto="pt:${esc(src)}">Source fact</button>` : ''}${pe ? `<button class="btn sm ghost" type="button" data-goto="fact:${esc(pe.id)}">+ Fact in ${esc(entryName(secOfEntry(pe), pe))}</button>` : ''}</span></li>`; }).join('')}</ul></div></div>`;
 }
 function studioPanel(J, st) {
   const doc = st.resume, a = st.job && st.job.analysis;
@@ -731,14 +899,14 @@ function studioPanel(J, st) {
   const origin = isTailored() ? `<span class="chip v-yes">Tailored</span><span class="sub">${esc(n.model)}${n.cost ? ' · ' + money(n.cost) : ''}</span>` : `<span class="chip tag">Master resume</span><span class="sub">${a ? 'not tailored to this posting yet' : 'from your Profile'}</span>`;
   return `<section class="panel rs" id="studio"><div class="rs-top"><div class="rs-origin"><span class="eyebrow">Step 2 of 4 · Resume</span><div class="row">${origin}<span id="rsState" class="savestate">${doc && doc.updatedAt ? 'Saved' : ''}</span></div>${lifecycle(doc, 'resume', J)}</div>
       <div class="row rs-bar">${versionsSel(doc)}<button class="btn sm ghost" type="button" data-jb="version">Save version</button><button class="btn sm ghost" type="button" data-jb="base" title="Replace this draft with your master resume (this draft is kept as a version)">Reset to master</button>
-        ${isTailored() || !a ? `<button class="btn sm" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'} title="${esc(why || costLabel('tailor', eT).replace(/<[^>]+>/g, ''))}">${busy ? `Tailoring… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : isTailored() ? '✨ Re-tailor' : '✨ Tailor with Claude'}</button>` : ''}</div></div>
-    ${a && !isTailored() ? `<div class="tailor-nudge"><div><b>This is your master resume, not tailored to this posting yet.</b><span class="sub">Tailoring rewrites it from your Profile’s facts for this ${esc(J.track || '')} role and adds the posting’s keywords only where they are true. The keyword match on the right shows the gap; your current draft is kept as a version.</span></div>
+        ${isTailored() || !a ? `<button class="btn sm" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'} title="${esc(why || costLabel('tailor', eT).replace(/<[^>]+>/g, ''))}">${busy ? `Tailoring… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : isTailored() ? '✨ Update for this posting' : '✨ Tailor with Claude'}</button>` : ''}</div></div>
+    ${a && !isTailored() ? `<div class="tailor-nudge"><div><b>This is your master resume, not tailored to this posting yet.</b><span class="sub">Tailoring edits this page for this ${esc(J.track || '')} role: it keeps your layout and wording and adds the posting’s keywords only where they are true. The keyword match on the right shows the gap; your current draft is kept as a version.</span></div>
       <div class="tn-act"><button class="btn primary" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'}>${busy ? `Tailoring… about ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : '✨ Tailor with Claude'}</button><span class="sub">${why ? esc(why) : costLabel('tailor', eT)}</span></div></div>` : ''}
     <div id="rsPageNote">${pageNote()}</div>
-    ${unv ? `<div class="notice warn"><span><b>${plural(unv, 'bullet needs', 'bullets need')} checking:</b> marked ⚠ below, with no matching fact in your Profile. Fix or remove them before you send this.</span></div>` : ''}
-    ${n && (n.changes || []).length ? `<details class="why rs-notes"><summary>What Claude changed (${n.changes.length})${(n.questions || []).length ? ` · <span class="warn-t">${plural(n.questions.length, 'question')} for you</span>` : ''}</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
-      ${(n.questions || []).length ? `<div class="notice"><span><b>Need from you:</b> ${n.questions.map(esc).join(' · ')} <a href="#profile">Add to Profile →</a></span></div>` : ''}
-      ${(n.keywordsSkipped || []).length ? `<p class="sub">Left out (not supported by your Profile): ${n.keywordsSkipped.map(esc).join(', ')}</p>` : ''}</details>` : ''}
+    ${unv ? checkList() : ''}
+    ${n && (n.questions || []).length ? questionList(n.questions) : ''}
+    ${n && (n.changes || []).length ? `<details class="why rs-notes"><summary>What Claude changed (${n.changes.length})</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
+      ${(n.keywordsSkipped || []).length ? `<p class="sub">Left out (not supported by your Profile): ${n.keywordsSkipped.map(esc).join(', ')}. Have one of them? Add it in <button type="button" class="linkbtn" data-goto="sec:skills">Profile › Skills</button>, then update.</p>` : ''}</details>` : ''}
     ${revisePanel(J, a, canTailor, why)}
     <div class="rs-grid"><div class="rs-left">${rsEditor(ST.model)}</div>
       <div class="rs-right"><div class="rs-sticky"><div class="row rs-exp"><span id="rsFit">${fitText()}</span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-jb="docx">.docx</button><button type="button" data-jb="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-jb="copy">Copy text</button></div>
@@ -751,7 +919,7 @@ function rJob() {
   let st = JOBS.get(J.key);
   if (!st) { loadJob(J); st = JOBS.get(J.key); }
   if (ST.key !== J.key) { ST.key = J.key; ST.model = null; ST.notes = null; ST.fit = null; ST.rw = null; ST.paste = false; ST.pasteText = ""; ST.sec = {}; ST.trimmed = null; }
-  if (!ST.model && st.resume && st.resume.current) { ST.model = I.clone(st.resume.current); ST.notes = st.resume.notes || null; scheduleFit(); }
+  if (!ST.model && st.resume && st.resume.current) { ST.model = I.clone(st.resume.current); ST.notes = st.resume.notes || null; if (normResume(ST.model)) scheduleSave(); scheduleFit(); }
   const a = st.job && st.job.analysis, app = J.app;
   const appliedOn = app ? ((app.history || []).find((h) => h.s === 'applied') || {}).d || '' : '';
   const head = `<div class="jb-head"><div class="jb-info">${J.track ? `<span class="chip tag">${esc(J.track)}</span>` : ''}${J.location ? `<span>${esc(J.location.split('; ').slice(0, 3).join('; '))}</span>` : ''}${J.posted ? `<span>Posted ${I.ago(J.posted)}</span>` : ''}${J.deadline ? `<span>Deadline ${I.fmt(J.deadline)}</span>` : ''}${app ? I.stChip(app.status) : ''}</div>
@@ -789,22 +957,52 @@ function applyPanel(J, st, appliedOn) {
   const ks = a && ST.model ? C.keywordScore(resumeText(ST.model), a.keywords || []).score : null;
   const pages = (f) => !f ? '' : f.pages === 1 ? `<span class="pos">One page</span>` : `<span class="neg">${f.pages} pages</span>`;
   const doc = (label, file, model, state, warn, act, edit, make) => `<div class="kit-row${model ? (warn ? ' part' : '') : ' empty'}"><span class="kit-ic" aria-hidden="true">${model ? (warn ? '!' : '✓') : '○'}</span>
-    <div class="kit-b"><b>${label}</b><span class="sub">${model ? `${esc(file)} · ${state}` : state}</span>${warn ? `<ul class="kit-warn">${warn.split(' · ').map((w) => `<li>${w}</li>`).join('')}</ul>` : ''}</div>
+    <div class="kit-b"><b>${label}</b><span class="sub">${model ? `${esc(file)} · ${state}` : state}</span>${warn && warn.length ? `<ul class="kit-warn">${warn.map((w) => `<li>${w}</li>`).join('')}</ul>` : ''}</div>
     <div class="row">${model ? `<div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-${act}="docx">.docx</button><button type="button" data-${act}="pdf">.pdf</button></div><a class="btn sm ghost" href="#job/${id}/${edit}">Edit</a>` : `<a class="btn sm" href="#job/${id}/${edit}">${make} →</a>`}</div></div>`;
-  const rWarn = [unv ? plural(unv, 'bullet needs', 'bullets need') + ' checking (marked ⚠)' : '', rIssues ? plural(rIssues, 'resume checklist item') + ' to look at' : '', a && !isTailored() ? 'Not tailored to this posting yet: tailoring usually raises the keyword match' : ''].filter(Boolean).join(' · ');
+  const firstUnv = unv ? (() => { for (const s of ST.model.sections) for (const e of s.entries || []) for (const x of e.bullets || []) if (!x.hidden && needsCheck(x)) return x.id; return ''; })() : '';
+  const rWarn = [unv ? `${plural(unv, 'bullet needs', 'bullets need')} checking <button type="button" class="linkbtn" data-goto="bul:${esc(firstUnv)}">Show me →</button>` : '',
+    rIssues ? `${plural(rIssues, 'resume checklist item')} to look at <button type="button" class="linkbtn" data-goto="ck">Open the checklist →</button>` : '',
+    a && !isTailored() ? `Not tailored to this posting yet: tailoring usually raises the keyword match <a class="linkbtn" href="#job/${id}/resume">Tailor it →</a>` : ''].filter(Boolean);
   const answers = [['Work authorization', pr.authStatement], ['Will you need sponsorship?', pr.needsSponsorship === null || pr.needsSponsorship === undefined ? '' : pr.needsSponsorship ? 'Yes' : 'No'], ['Graduation', ymLong(pr.graduation)], ['Availability', (p.coverLetter || {}).availability || pr.availability],
     ['Email', b.email], ['Phone', b.phone], ['LinkedIn', b.linkedin], ['GitHub', b.github], ['Website', b.website]].filter(([, v]) => v);
   const kit = `<section class="panel"><h2>Your application kit</h2>
     ${doc('Resume', fileBase(p.resumeFileName, J) + '.docx', ST.model, `${isTailored() ? 'tailored for ' + esc(J.company) : 'master resume'} · ${pages(ST.fit)}${ks !== null ? ` · ${ks}% keywords` : ''}`, rWarn, 'jb', 'resume', 'Build the resume')}
-    ${doc('Cover letter', fileBase(p.coverLetterFileName || 'Cover_Letter_[Company]', J) + '.docx', LT.model, LT.model ? `${LT.notes && LT.notes.model ? 'written with Claude' : 'draft'} · ${pages(LT.fit)}` : 'Optional. Send one when the posting asks for it, or to explain a specific interest.', '', 'lt', 'letter', 'Write one')}</section>`;
+    ${doc('Cover letter', fileBase(p.coverLetterFileName || 'Cover_Letter_[Company]', J) + '.docx', LT.model, LT.model ? `${LT.notes && LT.notes.model ? 'written with Claude' : 'draft'} · ${pages(LT.fit)}` : 'Optional. Send one when the posting asks for it, or to explain a specific interest.', [], 'lt', 'letter', 'Write one')}</section>`;
+  const copyRow = (k, v, multi) => `<dt>${esc(k)}</dt><dd${multi ? ' class="multi"' : ''}><span>${esc(v)}</span><button class="btn sm ghost" type="button" data-jcopy="${esc(v)}" aria-label="Copy ${esc(k)}">Copy</button></dd>`;
+  const exp = experienceAnswers(J);
   const qa = `<section class="panel"><h2>Answers for the application form <small>from your Profile · copy and paste</small></h2>
-    ${answers.length ? `<dl class="qa">${answers.map(([k, v]) => `<dt>${esc(k)}</dt><dd><span>${esc(v)}</span><button class="btn sm ghost" type="button" data-jcopy="${esc(v)}" aria-label="Copy ${esc(k)}">Copy</button></dd>`).join('')}</dl>` : '<p class="empty">Add your contact details and work authorization answer in your Profile.</p>'}
-    ${pr.authStatement ? '' : '<p class="sub">Tip: write how you answer work-authorization questions in <a href="#profile/prefs">Profile → What I am looking for</a> so it is here every time.</p>'}</section>`;
+    ${answers.length ? `<dl class="qa">${answers.map(([k, v]) => copyRow(k, v)).join('')}</dl>` : '<p class="empty">Add your contact details and work authorization answer in your Profile.</p>'}
+    ${pr.authStatement ? '' : '<p class="sub">Tip: write how you answer work-authorization questions in <button type="button" class="linkbtn" data-goto="fld:preferences.authStatement">Profile › What I am looking for</button> so it is here every time.</p>'}
+    <h3 class="qa-h">Professional experience <small>${esc(exp.from)}</small></h3>
+    ${exp.items.length ? exp.items.map((x) => `<div class="qa-exp"><div class="qa-exp-h"><b>${esc(x.head)}</b><button class="btn sm" type="button" data-jcopy="${esc(x.all)}" aria-label="Copy the whole entry">Copy all</button></div>
+      <dl class="qa">${[['Company', x.company], ['Job title', x.title], ['Location', x.location], ['Start', x.start], ['End', x.end]].filter(([, v]) => v).map(([k, v]) => copyRow(k, v)).join('')}${x.desc ? copyRow('Description', x.desc, true) : ''}</dl></div>`).join('')
+      : `<p class="empty">${ST.model ? 'This resume has no Professional Experience entries.' : 'Build the resume first: this section copies its latest Professional Experience.'}</p>`}</section>`;
   const submit = appliedOn
     ? `<section class="panel submit done"><span class="kit-ic" aria-hidden="true">✓</span><div><b>Applied ${esc(I.fmt(appliedOn))}</b><span class="sub">The tracker reminds you to follow up after ${+I.S.settings.followUpDays || 14} days of silence.</span></div><span class="grow"></span><button class="btn sm" type="button" data-open="${J.app.id}">Edit application</button></section>`
     : `<section class="panel submit"><div><b>Submit</b><span class="sub">Open the posting, apply with the files above, then mark it here so reminders and your daily goal count it.</span></div><span class="grow"></span>
       ${I.link(J.url, 'Open the posting ↗', 'btn')}${J.app ? `<button class="btn primary" type="button" data-applied-app="${J.app.id}">I applied ✓</button>` : `<button class="btn primary" type="button" data-appliedl="${esc(J.l.id)}">I applied ✓</button>`}</section>`;
   return `<div class="apply"><div class="apply-main">${kit}${submit}</div>${qa}</div>${stepNav(J, 'letter', [])}`;
+}
+/* The latest resume's Professional Experience, ready for application forms: structured fields from the Profile
+   entry it was written from, and the bullets exactly as they are on the current page. */
+function experienceAnswers(J) {
+  const m = ST.model, out = { items: [], from: '' };
+  if (!m) return out;
+  const doc = (JOBS.get(J.key) || {}).resume;
+  out.from = `from the latest resume${doc && doc.updatedAt ? ' (' + new Date(doc.updatedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ')' : ''} · copy each field, or the whole entry`;
+  const sec = m.sections.find((s) => s.key === 'experience' && !s.hidden);
+  for (const e of (sec && sec.entries) || []) {
+    if (e.hidden) continue;
+    const pe = profileEntryOf(e) || {}, bl = (e.bullets || []).filter((b) => !b.hidden && b.text).map((b) => b.text.trim());
+    const company = pe.org || (e.title || '').split(',')[0], location = pe.location || e.loc || '';
+    const dates = e.subdate || e.date || [pe.start, pe.end].filter(Boolean).join(' – '), parts = dates.split(/\s+[–-]\s+/);
+    const start = pe.start || parts[0] || '', end = pe.start ? (pe.end || 'Present') : parts[1] || '';
+    const title = [pe.title, pe.team].filter(Boolean).join(', ') || e.subtitle || '';
+    const desc = bl.map((x) => '• ' + x).join('\n');
+    out.items.push({ head: [pe.title || e.subtitle, company].filter(Boolean).join(' · '), company, title, location, start, end, desc,
+      all: [[title, company].filter(Boolean).join(', '), [location, dates].filter(Boolean).join(' | '), desc].filter(Boolean).join('\n') });
+  }
+  return out;
 }
 function changeBanner(job) {
   if (!job) return '';
@@ -1045,26 +1243,34 @@ function syncApp(app, a) {
   if (ch) I.save();
 }
 /* One Claude call that writes or revises the resume for job J. revise: apply one request to the current draft and keep the rest. */
-async function runTailor(J, track, instructions, revise) {
+/* Once a page exists (this job's draft, or a Claude-tailored base for the track), tailoring UPDATES that page: Claude keeps
+   its sections, entries and wording and changes only what this posting needs. fresh: rebuild from the Profile instead. */
+const hasPage = (J, track) => !!((JOB && JOB.key === J.key && ST.model) || (JOBS.get(J.key) || {}).resume && JOBS.get(J.key).resume.current || tbTailored(track || J.track));
+async function runTailor(J, track, instructions, revise, fresh) {
   const st = JOBS.get(J.key);
   ST.busy = revise ? 'revise' : 'tailor'; ST.busyKey = J.key; I.render();
   try {
-    const before = ST.model && JOB && JOB.key === J.key ? { model: I.clone(ST.model), notes: ST.notes ? I.clone(ST.notes) : null } : null;
-    if (ST.model) await saveVersion(revise ? 'Before revising' : 'Before tailoring', 'you', J, ST.model);
-    /* The current draft (or the master resume) goes along as approved wording, so tailoring improves it instead of starting over. */
-    const baseline = resumeText(ST.model || masterFor(track));
-    const r = await api('POST', 'api/ai/tailor', Object.assign(meta(J), { track, instructions, baseline, revise: !!revise }));
+    const here0 = JOB && JOB.key === J.key;
+    const cur = (here0 && ST.model) || (st && st.resume && st.resume.current) || null;
+    const before = cur && here0 ? { model: I.clone(ST.model), notes: ST.notes ? I.clone(ST.notes) : null } : null;
+    if (cur) await saveVersion(revise ? 'Before revising' : 'Before updating', 'you', J, cur);
+    const start = cur || masterFor(track), update = !revise && !fresh && !!(cur || tbTailored(track));
+    const baseline = revise || update ? draftText(start) : resumeText(start);
+    const r = await api('POST', 'api/ai/tailor', Object.assign(meta(J), { track, instructions, baseline, revise: !!revise, update }));
     AI.status = r.status;
     /* Bound to J: if you opened another job meanwhile, the result is saved to this job and that editor is not touched. */
     const model = fromAI(r.result, P.data);
-    const trimmed = await fitOnePage(model, (st.job && st.job.analysis && st.job.analysis.keywords) || []);
+    if (cur) { model.font = cur.font || model.font; model.size = cur.size || model.size; if (cur.boldKeywords === false) model.boldKeywords = false; }
+    const kws = (st.job && st.job.analysis && st.job.analysis.keywords) || [];
+    model.bold = boldTerms(model, kws, r.result.keywordsUsed);
+    const trimmed = await fitOnePage(model, kws);
     const notes = { changes: r.result.changes, questions: r.result.questions, keywordsSkipped: r.result.keywordsSkipped, keywordsUsed: r.result.keywordsUsed, model: (AI.status.modelLabels[r.usage.model] || r.usage.model) + (r.usage.provider === 'pro' ? ' via Claude Pro' : ''), cost: r.usage.cost, track };
     if (revise) notes.request = instructions.trim();
-    await saveVersion(`Claude · ${notes.model}${instructions ? (revise ? ' · revise: ' : ' · ') + instructions.slice(0, 40) : ''}`, 'ai', J, model, notes);
+    await saveVersion(`Claude · ${notes.model}${revise ? ' · revise: ' + instructions.slice(0, 40) : update ? ' · update' + (instructions ? ': ' + instructions.slice(0, 32) : '') : fresh && cur ? ' · rebuilt from Profile' : instructions ? ' · ' + instructions.slice(0, 40) : ''}`, 'ai', J, model, notes);
     const unv = model.sections.reduce((n, s) => n + (s.entries || []).reduce((m, e) => m + e.bullets.filter((b) => needsCheck(b)).length, 0), 0);
     const here = JOB && JOB.key === J.key;
-    if (here) { ST.model = model; ST.notes = notes; ST.trimmed = trimmed; ST.undo = revise && before ? Object.assign(before, { key: J.key }) : null; ST.revText = revise ? '' : ST.revText; scheduleFit(); }
-    I.toast(`${here ? (revise ? 'Revised' : 'Tailored') : `Resume for ${J.company} ${revise ? 'revised' : 'tailored'}`} · ${usedText(r.usage)}${trimmed.length ? ' · trimmed to one page' : ''}${unv ? ` · ${unv} bullet${unv > 1 ? 's' : ''} to check` : ''}`);
+    if (here) { ST.model = model; ST.notes = notes; ST.trimmed = trimmed; ST.undo = before ? Object.assign(before, { key: J.key }) : null; ST.revText = revise ? '' : ST.revText; scheduleFit(); }
+    I.toast(`${here ? (revise ? 'Revised' : update ? 'Updated for this posting' : 'Tailored') : `Resume for ${J.company} ${revise ? 'revised' : update ? 'updated' : 'tailored'}`} · ${usedText(r.usage)}${trimmed.length ? ' · trimmed to one page' : ''}${unv ? ` · ${unv} bullet${unv > 1 ? 's' : ''} to check` : ''}`);
   } catch (e) { I.toast(e.message); }
   finally { ST.busy = ''; ST.busyKey = null; I.render(); }
 }
@@ -1080,26 +1286,27 @@ function revisePanel(J, a, canTailor, why) {
       <button class="btn primary" type="submit" ${canTailor && !busy ? '' : 'disabled'} title="${esc(why || '')}">${busy ? `Revising… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : 'Revise'}</button></div>
     <div class="rv-foot"><div class="rv-ideas" role="group" aria-label="Ideas">${REVISE_IDEAS.map((x) => `<button type="button" class="chip rv-idea" data-rv="${esc(x)}" ${busy ? 'disabled' : ''}>${esc(x)}</button>`).join('')}</div>
       <span class="sub">${why ? esc(why) : `${usesPro('tailor') ? 'Claude Pro · no API cost' : 'about the cost of a tailor'} · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}↵ to send`}</span></div>
-    ${req || undo ? `<div class="rv-last">${req ? `<span class="sub">Last request: “${esc(req)}”</span>` : ''}${undo ? `<button class="btn sm ghost" type="button" data-jb="rv-undo">Undo revision</button>` : ''}</div>` : ''}
+    ${req || undo ? `<div class="rv-last">${req ? `<span class="sub">Last request: “${esc(req)}”</span>` : ''}${undo ? `<button class="btn sm ghost" type="button" data-jb="rv-undo">Undo last Claude change</button>` : ''}</div>` : ''}
   </form>`;
 }
 async function tailor() {
   const J = JOB, st = JOBS.get(J.key);
   const trackOpts = TRACKS.map((t) => `<option value="${t}" ${t === J.track ? 'selected' : ''}>${t} · ${I.TRACK_NAME[t]}</option>`).join('');
-  const cfg = AI.status.config;
-  I.openDialog(`<form class="mbody" id="tlForm" method="dialog"><h2 id="dlgTitle">Tailor a resume for ${esc(J.company)}</h2>
-    <p class="empty">Claude writes from your Profile only (confirmed points), targets this posting’s keywords and follows your resume rules. Your current draft is kept as a version.</p>
+  const cfg = AI.status.config, page = hasPage(J, J.track), mine = !!ST.model;
+  I.openDialog(`<form class="mbody" id="tlForm" method="dialog"><h2 id="dlgTitle">${page ? 'Update' : 'Tailor'} the resume for ${esc(J.company)}</h2>
+    <p class="empty">${page ? `Claude edits ${mine ? 'the page you have now' : `your ${esc(J.track)} base resume`}: it keeps the sections, entries and wording, and changes only what makes it fit this posting better (true keywords, a stronger point, skill order). Every change is listed afterwards.` : 'Claude writes from your Profile only (confirmed points), targets this posting’s keywords and follows your resume rules.'} ${mine ? 'Your current page is kept as a version.' : ''}</p>
     <div class="grid2"><label class="field"><span>Track</span><select id="tlTrack">${trackOpts}</select><span class="hint">sets the lead-with order from your Profile</span></label>
       <label class="field"><span>Model</span><input type="text" readonly value="${esc(modelName('tailor'))}"><span class="hint">change in Settings → Claude API</span></label></div>
     <label class="field"><span>Instructions for this version <span class="hint">optional</span></span><textarea id="tlIns" rows="3" placeholder="e.g. Lead with the tracker project; keep the TrailUp project off"></textarea></label>
     <label class="switch"><input type="checkbox" id="tlPost" ${cfg.includePosting ? 'checked' : ''}> Include a trimmed posting excerpt (better wording, about 1.5K more input tokens)</label>
-    <div class="mfoot"><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn primary" type="submit">Tailor</button></div></form>`);
+    ${page ? '<label class="switch"><input type="checkbox" id="tlFresh"> Start over: rebuild the page from my Profile instead of editing it</label>' : ''}
+    <div class="mfoot"><button class="btn ghost" type="button" data-close>Cancel</button><button class="btn primary" type="submit">${page ? 'Update' : 'Tailor'}</button></div></form>`);
   $('#tlForm').addEventListener('submit', async (ev) => {
     ev.preventDefault();
-    const track = $('#tlTrack').value, instructions = $('#tlIns').value, inc = $('#tlPost').checked;
+    const track = $('#tlTrack').value, instructions = $('#tlIns').value, inc = $('#tlPost').checked, fresh = !!($('#tlFresh') && $('#tlFresh').checked);
     I.dlg.close();
     if (inc !== cfg.includePosting) { try { AI.status = await api('POST', 'api/ai/config', { includePosting: inc }); } catch (e) { I.toast('Could not save this choice: ' + e.message + ' Try again.'); } }
-    await runTailor(J, track, instructions);
+    await runTailor(J, track, instructions, false, fresh);
   });
 }
 async function rewrite(bid) {
@@ -1154,7 +1361,8 @@ function rsAction(a, el) {
   if (k === 'rw') { ST.rw = ST.rw && ST.rw.id === r[0] ? null : { id: r[0], mode: 'stronger', options: null }; return rerenderKeepFocus(); }
   if (k === 'rwm') { ST.rw.mode = r[0]; ST.rw.custom = ($('#rwCustom') || {}).value || ''; return rerenderKeepFocus(); }
   if (k === 'rwgo') return rewrite(r[0]);
-  if (k === 'rwuse') { const b = findBullet(r[0]); b.text = ST.rw.options[n[1]].text; ST.rw = null; }
+  if (k === 'okb') { const b = findBullet(r[0]); if (b) b.unverified = false; I.toast('Marked as checked'); }
+  else if (k === 'rwuse') { const b = findBullet(r[0]); b.text = ST.rw.options[n[1]].text; ST.rw = null; }
   else if (k === 'mvb') mv(m.sections[n[0]].entries[n[1]].bullets, n[2], n[3]);
   else if (k === 'hideb') { const b = m.sections[n[0]].entries[n[1]].bullets[n[2]]; b.hidden = !b.hidden; }
   else if (k === 'delb') m.sections[n[0]].entries[n[1]].bullets.splice(n[2], 1);
@@ -1232,7 +1440,7 @@ async function jobAction(k) {
   if (k === 'base') {
     if (!P.data || !P.data.basics.name) return I.toast('Fill in your Profile first.');
     if (ST.model) await saveVersion('Before reset to master', 'you');
-    const tb = tbTailored(J.track), m = masterFor(J.track), A = st.job && st.job.analysis; const h = await fitOnePage(m, A && A.keywords); ST.model = m; ST.notes = null; ST.trimmed = h; await saveVersion(tb ? `${J.track} base resume` : 'Master resume', 'base'); I.render();
+    const tb = tbTailored(J.track), m = masterFor(J.track), A = st.job && st.job.analysis; if (A) m.bold = boldTerms(m, A.keywords); const h = await fitOnePage(m, A && A.keywords); ST.model = m; ST.notes = null; ST.trimmed = h; await saveVersion(tb ? `${J.track} base resume` : 'Master resume', 'base'); I.render();
     return I.toast(`Started from your ${tb ? J.track + ' base' : 'master'} resume · free${h.length ? ' · trimmed to fit one page' : ''}`);
   }
   if (k === 'version') { await saveVersion('Saved by you', 'you'); I.render(); return I.toast('Version saved'); }
@@ -1308,7 +1516,7 @@ document.addEventListener('input', (e) => {
     setPath(P.data, t.dataset.pf, v); saveProfile(); if (t.classList.contains('auto')) autosize(t); return;
   }
   if (t.dataset.rs && ST.model) {
-    const v = t.dataset.rst === 'lines' ? lines(t.value) : t.dataset.rst === 'num' ? +t.value : t.value;
+    const v = t.dataset.rst === 'lines' ? lines(t.value) : t.dataset.rst === 'num' ? +t.value : t.dataset.rst === 'bool' ? t.checked : t.value;
     setPath(ST.model, t.dataset.rs, v);
     if (t.classList.contains('auto')) autosize(t);
     clearTimeout(ST.liveT); ST.liveT = setTimeout(() => { const kw = $('#rsKw'); if (kw) kw.innerHTML = kwPanel(); }, 150); scheduleSave(); scheduleFit();
@@ -1365,6 +1573,7 @@ document.addEventListener('click', async (e) => {
   const pfa = t.closest('[data-pfa]'); if (pfa) { e.preventDefault(); return profileAction(pfa.dataset.pfa, pfa); }
   const toc = t.closest('[data-pftoc]'); if (toc) { e.preventDefault(); history.replaceState(null, '', '#profile/' + toc.dataset.pftoc); const el = document.getElementById('s-' + toc.dataset.pftoc); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const jb = t.closest('[data-jb]'); if (jb) { e.preventDefault(); return jobAction(jb.dataset.jb); }
+  const gt = t.closest('[data-goto]'); if (gt) { e.preventDefault(); if (gt.hasAttribute('data-close') && I.dlg && I.dlg.open) I.dlg.close(); return goTo(gt.dataset.goto); }
   const jc = t.closest('[data-jcopy]'); if (jc) { e.preventDefault(); return navigator.clipboard.writeText(jc.dataset.jcopy).then(() => { jc.textContent = 'Copied'; setTimeout(() => { jc.textContent = 'Copy'; }, 1400); }, () => I.toast('Copy failed')); }
   const rsa = t.closest('[data-rsa]'); if (rsa) { e.preventDefault(); return rsAction(rsa.dataset.rsa, rsa); }
   const lt = t.closest('[data-lt]'); if (lt) { e.preventDefault(); return letterAction(lt.dataset.lt, lt); }
@@ -1452,7 +1661,7 @@ function masterFor(track) {
   if (!tbTailored(track)) return baseResume(P.data, track);
   const m = I.clone(tbDoc(track).current);
   m.header = { name: P.data.basics.name, contact: contactLine(P.data.basics) }; // contact details always from the Profile as it is now
-  return m;
+  normResume(m); return m;
 }
 function tbPaper(m) { const keep = ST.fit; ST.fit = null; try { return paper(m); } finally { ST.fit = keep; } }
 function tbDialog(t) {
@@ -1461,7 +1670,7 @@ function tbDialog(t) {
     <div class="tb-grid"><div class="tb-paper rs-paper">${tbPaper(m)}</div>
       <div class="tb-side">
         ${(n.changes || []).length ? `<details class="why" open><summary>What Claude did for ${esc(t)}</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>` : ''}
-        ${(n.questions || []).length ? `<div class="notice"><span><b>Need from you:</b> ${n.questions.map(esc).join(' · ')} <a href="#profile" data-close>Add to Profile →</a></span></div>` : ''}
+        ${(n.questions || []).length ? questionList(n.questions, true) : ''}
         ${(n.keywordsSkipped || []).length ? `<p class="sub">Left out (not supported by your Profile): ${n.keywordsSkipped.map(esc).join(', ')}</p>` : ''}
         <form class="revise" id="tbForm" aria-label="Ask Claude to revise the ${esc(t)} base resume">
           <label for="tbIns" class="rv-l"><b>Ask Claude to revise</b><span class="sub">Claude edits this base and keeps the rest.</span></label>
@@ -1470,9 +1679,10 @@ function tbDialog(t) {
           <span class="sub">${busy ? `Claude is writing. About ${usesPro('tailor') ? '1–2 min' : '30–60 s'}; you can close this and keep working.` : `${usesPro('tailor') ? 'Claude Pro · no API cost' : 'about the cost of a tailor'} · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}↵ to send`}</span>
         </form>
         <div class="tb-acts">${undo ? '<button class="btn sm ghost" type="button" data-tb="undo:' + t + '">Undo last change</button>' : ''}
-          <button class="btn sm ghost" type="button" data-tb="retailor:${t}" ${busy || !ready('tailor') ? 'disabled' : ''}>Re-tailor from Profile</button>
+          <button class="btn sm ghost" type="button" data-tb="retailor:${t}" ${busy || !ready('tailor') ? 'disabled' : ''} title="Claude edits this page and keeps the rest">${tbTailored(t) ? 'Update with Claude' : 'Tailor with Claude'}</button>
+          ${tbTailored(t) ? `<button class="btn sm ghost" type="button" data-tb="rebuild:${t}" ${busy || !ready('tailor') ? 'disabled' : ''} title="Writes a new page from your Profile">Rebuild from Profile</button>` : ''}
           ${tbTailored(t) ? `<button class="btn sm ghost" type="button" data-tb="reset:${t}" ${busy ? 'disabled' : ''}>Back to Profile order</button>` : ''}</div>
-        <p class="sub">Hand edits belong in a job’s resume (step 2). To change the facts themselves, edit your Profile, then re-tailor.</p>
+        <p class="sub">Hand edits belong in a job’s resume (step 2). To change the facts themselves, edit your Profile, then update.</p>
       </div></div>
     <div class="mfoot"><span class="spacer"></span><button class="btn primary" type="button" data-close>Done</button></div></div>`;
 }
@@ -1483,19 +1693,20 @@ async function tbSave(t, model, label, by, notes) {
   const r = await api('PUT', 'api/base', { track: t, resume: model, label, by, notes: notes || {}, baseUpdatedAt: d && d.updatedAt });
   TB.docs = Object.assign({}, TB.docs, { [t]: r.resume }); return r.resume;
 }
-async function tbRun(t, instructions, revise) {
+async function tbRun(t, instructions, revise, fresh) {
   if (TB.busy) return;
   TB.busy = t; tbRefresh();
   try {
     const before = tbTailored(t) ? { model: I.clone(tbDoc(t).current), notes: I.clone(tbDoc(t).notes || {}) } : null;
     const cur = masterFor(t);
-    const r = await api('POST', 'api/ai/base', { track: t, instructions, baseline: revise || before ? resumeText(cur) : resumeText(baseResume(P.data, t)), revise: !!revise });
+    const update = !!before && !revise && !fresh;
+    const r = await api('POST', 'api/ai/base', { track: t, instructions, baseline: revise || update ? draftText(cur) : resumeText(baseResume(P.data, t)), revise: !!revise, update });
     AI.status = r.status;
-    const model = fromAI(r.result, P.data), keep = ST.fit; await fitOnePage(model, []); ST.fit = keep;
+    const model = fromAI(r.result, P.data), keep = ST.fit; model.bold = boldTerms(model, [], r.result.keywordsUsed); await fitOnePage(model, []); ST.fit = keep;
     const notes = { changes: r.result.changes, questions: r.result.questions, keywordsSkipped: r.result.keywordsSkipped, keywordsUsed: r.result.keywordsUsed, model: (AI.status.modelLabels[r.usage.model] || r.usage.model) + (r.usage.provider === 'pro' ? ' via Claude Pro' : ''), cost: r.usage.cost };
     if (revise) notes.request = instructions.trim();
     if (before) await tbSave(t, before.model, revise ? 'Before revising' : 'Before re-tailoring', 'you', before.notes);
-    await tbSave(t, model, `Claude · ${notes.model}${revise ? ' · revise: ' + instructions.slice(0, 40) : ''}`, 'ai', notes);
+    await tbSave(t, model, `Claude · ${notes.model}${revise ? ' · revise: ' + instructions.slice(0, 40) : update ? ' · update' : ''}`, 'ai', notes);
     TB.undo = before ? Object.assign(before, { t }) : null; if (revise) TB.rev = '';
     I.toast(`${t} base resume ${revise ? 'revised' : 'tailored'} · ${usedText(r.usage)}${TB.open !== t ? ' · open Documents to review it' : ''}`);
     if (!TB.open && !revise) tbOpen(t);
@@ -1505,6 +1716,7 @@ async function tbRun(t, instructions, revise) {
 async function tbAction(act, t) {
   if (act === 'open') return tbOpen(t);
   if (act === 'tailor' || act === 'retailor') return tbRun(t, '', false);
+  if (act === 'rebuild') return tbRun(t, '', false, true);
   if (act === 'reset') {
     const m = baseResume(P.data, t), keep = ST.fit; await fitOnePage(m, []); ST.fit = keep;
     TB.undo = { t, model: I.clone(tbDoc(t).current), notes: I.clone(tbDoc(t).notes || {}) };
@@ -1534,6 +1746,7 @@ async function docDownload(kind, fmt, key) {
   } else {
     const r = (DOCS.list || []).find((x) => x.key === key); if (!r || !r[kind]) return;
     model = kind === 'letter' ? letterExport(r[kind].current) : r[kind].current; label = r.company;
+    if (kind === 'resume') { model = I.clone(model); normResume(model); }
   }
   const tpl = kind === 'letter' ? (P.data.coverLetterFileName || (P.data.resumeFileName || 'Resume_[Company]').replace(/Resume/, 'Cover_Letter')) : P.data.resumeFileName;
   const name = (tpl || 'Resume_[Company]').replace('[Company]', label.replace(/[^A-Za-z0-9]+/g, '')) || 'Document';
@@ -1582,6 +1795,7 @@ I.HOOKS.afterRender.push((v) => {
   if (v === 'profile' && P.focus) { const el = $(P.focus); P.focus = null; if (el) el.focus(); }
   if (v === 'profile') { const sub = location.hash.split('/')[1]; if (sub && !rProfile.scrolled) { rProfile.scrolled = true; const el = document.getElementById('s-' + sub); if (el) el.scrollIntoView({ block: 'start' }); } }
   if (v !== 'profile') rProfile.scrolled = false;
+  applyGoto();
 });
 /* Revise box: keep the typed request across re-renders, fill it from an idea, send with the button or ⌘↵ / Ctrl+↵. */
 function sendRevise() {

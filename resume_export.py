@@ -13,9 +13,14 @@ Resume model (also used by the page):
   "header": {"name": str, "contact": str},
   "sections": [ {"kind": "summary", "title": str, "text": str}
               | {"kind": "skills", "title": str, "lines": [{"label": str, "value": str}]}
-              | {"kind": "entries", "title": str, "entries": [{"title", "date", "subtitle", "subdate", "lines": [str], "bullets": [{"text"}], "hidden"}]}
+              | {"kind": "entries", "title": str, "entries": [{"title", "loc", "date", "subtitle", "subdate", "lines": [str], "bullets": [{"text"}], "hidden"}]}
               | {"kind": "list", "title": str, "items": [str]} ] }
 Sections or entries with "hidden": true are left out.
+Layout (US one-page standard): centered bold name and contact line; plain uppercase section headings over a rule;
+each entry is "Organization (bold) ........ Location (italic)" then "Title or degree (italic) ........ Dates (italic)";
+when an entry has no location, its date sits on the first line. Detail lines and skills are bullets.
+Optional "bold": [str] lists the posting keywords to set in bold wherever they appear in bullets and the summary
+(whole words, any case); "boldKeywords": false turns that off.
 """
 import io
 import re
@@ -74,19 +79,40 @@ class Spec:
         s = self.size
         self.lead = s * 1.17
         self.name_size = round(s * 1.75, 1)
-        self.head_size = s + 0.5
+        self.head_size = s + 1.5
         self.margin_x = float(model.get("marginX") or (0.75 if self.letter else 0.6)) * 72
         self.margin_y = float(model.get("marginY") or (0.75 if self.letter else 0.5)) * 72
         self.gap_section = s * 0.62 * tight
         self.gap_rule = s * 0.22 * tight
-        self.gap_entry = s * 0.32 * tight
-        self.bullet_indent = 13.0
+        self.gap_entry = s * 0.5 * tight
+        self.bullet_indent = 22.0
+        self.bullet_x = 9.0  # the bullet glyph sits indented, the text hangs after it
         self.text_w = PAGE_W - 2 * self.margin_x
 
 
+def bold_segments(text, terms):
+    """Split text into [(segment, is_bold)], bolding every whole-word occurrence of the terms (longest first)."""
+    terms = sorted({clean(t) for t in terms or [] if clean(t) and len(clean(t)) >= 2}, key=len, reverse=True)
+    if not text or not terms:
+        return [(text, False)]
+    rx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(re.escape(t) for t in terms) + r")(?![A-Za-z0-9+#])", re.I)
+    out, i = [], 0
+    for m in rx.finditer(text):
+        if m.start() > i:
+            out.append((text[i:m.start()], False))
+        out.append((m.group(0), True))
+        i = m.end()
+    if i < len(text):
+        out.append((text[i:], False))
+    return out or [(text, False)]
+
+
 def blocks(model):
-    """Flatten the model into drawable blocks (shared by both writers)."""
+    """Flatten the model into drawable blocks (shared by both writers). Bullets and the summary carry a third item:
+    their text split into (segment, is_bold) pieces for the keywords to show in bold."""
     out = []
+    terms = model.get("bold") if model.get("boldKeywords", True) is not False and isinstance(model.get("bold"), list) else []
+    terms = [str(t) for t in terms if isinstance(t, str)][:80]
     h = model.get("header") or {}
     if h.get("name"):
         out.append(("name", clean(h["name"])))
@@ -114,7 +140,7 @@ def blocks(model):
             continue
         kind, body = sec.get("kind"), []
         if kind == "summary" and clean(sec.get("text")):
-            body.append(("text", clean(sec["text"])))
+            body.append(("text", clean(sec["text"]), bold_segments(clean(sec["text"]), terms)))
         elif kind == "skills":
             body += [("skill", clean(l.get("label")), clean(l.get("value"))) for l in sec.get("lines") or [] if clean(l.get("value")) and not l.get("hidden")]
         elif kind == "list":
@@ -123,11 +149,19 @@ def blocks(model):
             for e in sec.get("entries") or []:
                 if e.get("hidden"):
                     continue
-                body.append(("entry", clean(e.get("title")), clean(e.get("date"))))
-                if clean(e.get("subtitle")) or clean(e.get("subdate")):
-                    body.append(("sub", clean(e.get("subtitle")), clean(e.get("subdate"))))
-                body += [("text", clean(x)) for x in e.get("lines") or [] if clean(x)]
-                body += [("bullet", clean(b.get("text"))) for b in e.get("bullets") or [] if clean(b.get("text")) and not b.get("hidden")]
+                loc, date, sub, subdate = clean(e.get("loc")), clean(e.get("date")), clean(e.get("subtitle")), clean(e.get("subdate"))
+                if loc:  # Organization ... Location / Title ... Dates
+                    dates = " – ".join(x for x in (date, subdate) if x) if date != subdate else date
+                    body.append(("entry", clean(e.get("title")), loc))
+                    if sub or dates:
+                        body.append(("sub", sub, dates))
+                else:
+                    body.append(("entry", clean(e.get("title")), date))
+                    if sub or subdate:
+                        body.append(("sub", sub, subdate))
+                body += [("bullet", clean(x)) for x in e.get("lines") or [] if clean(x)]
+                body += [("bullet", clean(b.get("text")), bold_segments(clean(b.get("text")), terms))
+                         for b in e.get("bullets") or [] if clean(b.get("text")) and not b.get("hidden")]
         if body:
             out.append(("heading", clean(sec.get("title") or "").upper()))
             out += body
@@ -135,26 +169,36 @@ def blocks(model):
 
 
 def wrap(runs, maxw, size, first_offset=0.0):
-    """runs: [(text, font)] -> lines of runs. Breaks at spaces; very long words are split."""
-    words = []
+    """runs: [(text, font)] -> lines of runs. Breaks at spaces only: pieces of one word in different fonts
+    (a bold keyword followed by a comma) stay together on one line."""
+    words = []  # each word: [(piece, font)], or [(" ", font)] for a space
+    glue = False
     for text, font in runs:
-        for i, wd in enumerate(re.split(r"(\s+)", text)):
-            if wd:
-                words.append((wd, font))
+        for wd in re.split(r"(\s+)", text):
+            if not wd:
+                continue
+            if wd.isspace():
+                words.append([(" ", font)])
+                glue = False
+            elif glue and words:
+                words[-1].append((wd, font))
+            else:
+                words.append([(wd, font)])
+                glue = True
     lines, cur, cw = [], [], first_offset
-    for wd, font in words:
-        ww = width(wd, font, size)
-        if wd.isspace():
+    for w in words:
+        if w[0][0] == " ":
             if cur:
-                cur.append((" ", font))
-                cw += width(" ", font, size)
+                cur.append(w[0])
+                cw += width(" ", w[0][1], size)
             continue
+        ww = sum(width(t, f, size) for t, f in w)
         if cw + ww > maxw and any(not t.isspace() for t, _ in cur):
             while cur and cur[-1][0].isspace():
                 cur.pop()
             lines.append(cur)
             cur, cw = [], 0.0
-        cur.append((wd, font))
+        cur.extend(w)
         cw += ww
     while cur and cur[-1][0].isspace():
         cur.pop()
@@ -210,29 +254,30 @@ def layout(model, size=None, tight=1.0):
             first_heading = False
             need(gap + sp.lead * 2.2)  # keep a heading with its first line
             y += gap
-            text_lines([(b[1], sp.bold)], sp.margin_x, sp.text_w, sp.head_size, sp.head_size * 1.15)
+            text_lines([(b[1], sp.reg)], sp.margin_x, sp.text_w, sp.head_size, sp.head_size * 1.15)
             y += 1.6
             ops.append(("rule", sp.margin_x, y, sp.margin_x + sp.text_w))
             y += sp.gap_rule
         elif k == "entry":
             need(sp.gap_entry + sp.lead * 2)
             y += sp.gap_entry
-            dw = width(b[2], sp.reg, sp.size) + 12 if b[2] else 0
-            text_lines([(b[1], sp.bold)], sp.margin_x, sp.text_w - dw, sp.size, sp.lead, right=(b[2], sp.reg) if b[2] else None)
+            dw = width(b[2], sp.ital, sp.size) + 12 if b[2] else 0
+            text_lines([(b[1], sp.bold)], sp.margin_x, sp.text_w - dw, sp.size, sp.lead, right=(b[2], sp.ital) if b[2] else None)
         elif k == "sub":
             dw = width(b[2], sp.ital, sp.size) + 12 if b[2] else 0
             text_lines([(b[1], sp.ital)], sp.margin_x, sp.text_w - dw, sp.size, sp.lead, right=(b[2], sp.ital) if b[2] else None)
         elif k == "text":
-            text_lines([(b[1], sp.reg)], sp.margin_x, sp.text_w, sp.size, sp.lead)
-        elif k == "skill":
-            text_lines([(b[1] + ": ", sp.bold), (b[2], sp.reg)], sp.margin_x, sp.text_w, sp.size, sp.lead)
-        elif k == "bullet":
+            runs = [(t, sp.bold if bo else sp.reg) for t, bo in b[2]] if len(b) > 2 else [(b[1], sp.reg)]
+            text_lines(runs, sp.margin_x, sp.text_w, sp.size, sp.lead)
+        elif k in ("bullet", "skill"):
             first = True
-            for ln in wrap([(b[1], sp.reg)], sp.text_w - sp.bullet_indent, sp.size):
+            runs = ([(b[1] + ": ", sp.bold), (b[2], sp.reg)] if k == "skill" else
+                    [(t, sp.bold if bo else sp.reg) for t, bo in b[2]] if len(b) > 2 else [(b[1], sp.reg)])
+            for ln in wrap(runs, sp.text_w - sp.bullet_indent, sp.size):
                 need(sp.lead)
                 y += sp.lead
                 if first:
-                    ops.append(("runs", sp.margin_x + 3, y - sp.lead * 0.22, ([("•", sp.reg)], sp.size)))
+                    ops.append(("runs", sp.margin_x + sp.bullet_x, y - sp.lead * 0.22, ([("•", sp.reg)], sp.size)))
                     first = False
                 ops.append(("runs", sp.margin_x + sp.bullet_indent, y - sp.lead * 0.22, (ln, sp.size)))
     pages.append(ops)
@@ -330,7 +375,7 @@ def to_docx(model, auto_fit=True):
     def para(runs_xml, before=0.0, line=None, jc=None, tabs=False, border=False, numbered=False, keep=False):
         ppr = f'<w:spacing w:before="{_tw(before)}" w:after="0" w:line="{_tw(line or sp.lead)}" w:lineRule="exact"/>'
         if numbered:
-            ppr = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' + ppr + f'<w:ind w:left="{_tw(sp.bullet_indent)}" w:hanging="{_tw(sp.bullet_indent - 3)}"/>'
+            ppr = '<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr>' + ppr + f'<w:ind w:left="{_tw(sp.bullet_indent)}" w:hanging="{_tw(sp.bullet_indent - sp.bullet_x)}"/>'
         if tabs:
             ppr = f'<w:tabs><w:tab w:val="right" w:pos="{tab_pos}"/></w:tabs>' + ppr
         if border:
@@ -363,19 +408,19 @@ def to_docx(model, auto_fit=True):
         elif k == "heading":
             gap = sp.gap_section * (0.6 if first_heading else 1)
             first_heading = False
-            body.append(para(run(b[1], bold=True, sz=sp.head_size), before=gap, line=sp.head_size * 1.15, border=True, keep=True))
+            body.append(para(run(b[1], sz=sp.head_size), before=gap, line=sp.head_size * 1.15, border=True, keep=True))
         elif k == "entry":
-            r = run(b[1], bold=True) + ('<w:r><w:tab/></w:r>' + run(b[2]) if b[2] else "")
+            r = run(b[1], bold=True) + ('<w:r><w:tab/></w:r>' + run(b[2], ital=True) if b[2] else "")
             body.append(para(r, before=sp.gap_entry, tabs=True, keep=True))
         elif k == "sub":
             r = run(b[1], ital=True) + ('<w:r><w:tab/></w:r>' + run(b[2], ital=True) if b[2] else "")
             body.append(para(r, tabs=True, keep=True))
         elif k == "text":
-            body.append(para(run(b[1])))
+            body.append(para("".join(run(t, bold=bo) for t, bo in b[2]) if len(b) > 2 else run(b[1])))
         elif k == "skill":
-            body.append(para(run(b[1] + ": ", bold=True) + run(b[2])))
+            body.append(para(run(b[1] + ": ", bold=True) + run(b[2]), numbered=True))
         elif k == "bullet":
-            body.append(para(run(b[1]), numbered=True))
+            body.append(para("".join(run(t, bold=bo) for t, bo in (b[2] if len(b) > 2 else [(b[1], False)]) if t), numbered=True))
     mx, my = _tw(sp.margin_x), _tw(sp.margin_y)
     document = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                 '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
@@ -383,7 +428,7 @@ def to_docx(model, auto_fit=True):
     numbering = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                  '<w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
                  '<w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="bullet"/>'
-                 f'<w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="{_tw(sp.bullet_indent)}" w:hanging="{_tw(sp.bullet_indent - 3)}"/></w:pPr>'
+                 f'<w:lvlText w:val="•"/><w:lvlJc w:val="left"/><w:pPr><w:ind w:left="{_tw(sp.bullet_indent)}" w:hanging="{_tw(sp.bullet_indent - sp.bullet_x)}"/></w:pPr>'
                  f'<w:rPr><w:rFonts w:ascii="{sp.word}" w:hAnsi="{sp.word}"/></w:rPr></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>')
     styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
               '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr>'

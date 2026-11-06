@@ -541,5 +541,5 @@
   const retryDelay = (n) => RETRY_SECONDS[Math.min(Math.max(0, n), RETRY_SECONDS.length - 1)];
 
   return { WEIGHT_KEYS, SKILL_NAMES, DEFAULTS, inferTrack, degreesOf, sponsorOf, trackOf, daysBetween, components, score, action, merge3, mergeById, mergeSet, mergeObject, mergeDeep, stable,
-    FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, nk, splitTerms, factCheck, OPT_EXCLUDED, saveFailure, retryDelay };
+    FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, nk, ALIAS, splitTerms, factCheck, OPT_EXCLUDED, saveFailure, retryDelay };
 });

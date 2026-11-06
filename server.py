@@ -811,7 +811,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 track = str(b.get("track") or "SWE")
                 lead = ((profile.get("tracks") or {}).get(track) or {}).get("leadWith", "")
                 result, row = ai.tailor(job_meta(b), profile, track, lead, str(b.get("instructions") or ""), profile.get("resumeRules") or [],
-                                        str(profile.get("resumeActivities") or "auto"), str(b.get("baseline") or "")[:8000], bool(b.get("revise")))
+                                        str(profile.get("resumeActivities") or "auto"), str(b.get("baseline") or "")[:9000], bool(b.get("revise")),
+                                        bool(b.get("update")))
                 return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
             if path == "/api/ai/rewrite":
                 result, row = ai.rewrite(job_meta(b), str(b.get("bullet") or ""), [str(x) for x in b.get("sources") or []][:8],
@@ -842,7 +843,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 track = str(b.get("track") or "")
                 lead = ((profile.get("tracks") or {}).get(track) or {}).get("leadWith", "")
                 result, row = ai.base_tailor(profile, track, lead, str(b.get("instructions") or ""), profile.get("resumeRules") or [],
-                                             str(profile.get("resumeActivities") or "auto"), str(b.get("baseline") or "")[:8000], bool(b.get("revise")))
+                                             str(profile.get("resumeActivities") or "auto"), str(b.get("baseline") or "")[:9000], bool(b.get("revise")),
+                                        bool(b.get("update")))
                 return self._json(200, {"result": result, "usage": row, "status": ai.status()}) or True
             if path in ("/api/resume", "/api/letter"):
                 if not isinstance(b.get("resume"), dict):
