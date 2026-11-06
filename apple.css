@@ -787,3 +787,29 @@ button.src:focus-visible{outline:2px solid var(--tint);outline-offset:2px}
 @media (max-width:700px){.fixlist li{flex-direction:column;align-items:stretch}.fix-a{justify-content:flex-start}}
 .fix-w .chip{align-self:flex-start}
 .qa dt:has(+ dd.multi){align-self:start;padding-top:2px}
+/* Resume score */
+.rscore{border:.5px solid var(--line);border-radius:var(--r-row);padding:12px;margin:0 0 12px;background:var(--surface)}
+.rs-parts{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px}
+.rs-parts li{display:grid;grid-template-columns:92px minmax(60px,1fr) 30px;align-items:center;gap:4px 8px;font-size:12px}
+.rs-parts .rs-pl small{color:var(--muted);font-weight:400}
+.rs-parts .rs-pv{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.rs-parts .rs-pn{grid-column:1 / -1;margin-top:-2px}
+.rs-parts .bar{height:6px;border-radius:3px;background:var(--fill-3, var(--line));overflow:hidden}
+.rs-parts .bar>span{display:block;height:100%;background:var(--accent);border-radius:3px}
+.rs-fixes{margin-top:10px;font-size:12px}
+.rs-fixes>summary{cursor:pointer}
+.rs-fixes ol{margin:6px 0 0;padding-left:18px;display:grid;gap:6px}
+.rs-fixes .chip{font-size:10px;padding:0 6px;text-transform:capitalize}
+.rs-fixes .fix-q{display:block;margin-top:2px}
+/* Before you send */
+.todo-panel{border:.5px solid var(--line);border-radius:var(--r-row);padding:8px 12px;margin:10px 0;background:var(--surface)}
+.todo-panel>summary{cursor:pointer;font-size:13px}
+.todo-panel>.notice{margin:8px 0 0;border:0;padding:4px 0;background:transparent}
+/* Version compare */
+.vd-list{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:8px;max-height:60vh;overflow:auto}
+.vd-list li{padding:8px 10px;border-radius:var(--r-row);border:.5px solid var(--line);font-size:13px;display:grid;gap:4px}
+.vd-list del{color:var(--bad);text-decoration-thickness:1px}
+.vd-list ins{color:var(--good);text-decoration:none}
+.vd-list ins::before{content:"+ "}.vd-list del::before{content:"− "}
+.vd-pick{list-style:none;margin:10px 0;padding:0;display:grid;gap:6px}
+.chip.listed{border-style:dashed}

@@ -218,6 +218,11 @@ function goTo(target) {
   if (kind === 'fld') { GOTO.pending = { sel: '#pf-' + arg.replace(/\./g, '-'), focus: true }; rProfile.scrolled = true; return go('#profile/' + (arg.startsWith('basics') ? 'basics' : 'prefs')); }
   if (kind === 'el') { GOTO.pending = { sel: arg, focus: true }; rProfile.scrolled = true; return go('#profile/prefs'); }
   if (kind === 'sec') { GOTO.pending = { sel: '#s-' + arg }; rProfile.scrolled = true; return go('#profile/' + arg); }
+  if (kind === 'rskills' && JOB && ST.model) {
+    const sk = ST.model.sections.find((x) => x.kind === 'skills'); if (sk) ST.sec[sk.id] = true;
+    GOTO.pending = { sel: sk ? `.rs-sec[data-sid="${cssq(sk.id)}"]` : '#studio', focus: 'input[data-rs$=".value"]' };
+    return go(`#job/${encodeURIComponent(JOB.id)}/resume`);
+  }
   if ((kind === 'bul' || kind === 'ck') && JOB) {
     if (kind === 'bul' && ST.model) for (const sct of ST.model.sections) if ((sct.entries || []).some((e) => (e.bullets || []).some((b) => b.id === arg))) ST.sec[sct.id] = true;
     GOTO.pending = kind === 'bul' ? { sel: `[data-bid="${cssq(arg)}"]`, focus: 'textarea' } : { sel: '#rsChecks', open: true };
@@ -392,9 +397,17 @@ const SEC_TITLE = { summary: 'Summary', education: 'Education', skills: 'Technic
 /* Standing resume rules applied to every resume, new or saved: the Profile's name in the header, no "Additional"
    section, and Professional Experience directly under Technical Skills. Returns true when it changed something. */
 const isAdditional = (s) => s.kind === 'list' && /^additional\b/i.test(String(s.title || '').trim());
+/* Resume model v2 (Nov 2026): entries carry "loc" (city, right of the organization); education details are one line
+   each; bullets carry "gen" (their text when Claude wrote them, so an edit clears Claude's "unverified" mark).
+   normResume() upgrades any older model on load; there is no separate migration step. */
+const RESUME_V = 2;
 function normResume(m) {
   if (!m || !Array.isArray(m.sections)) return false;
-  const sig = () => JSON.stringify([m.header && m.header.name, m.sections.map((s) => [s.id || s.title, (s.entries || []).map((e) => e.title + '|' + (e.loc || ''))])]), before = sig();
+  const sig = () => JSON.stringify([m.v, m.header && m.header.name, m.sections.map((s) => [s.id || s.title, (s.entries || []).map((e) => e.title + '|' + (e.loc || '') + '|' + (e.lines || []).join('|'))])]), before = sig();
+  if ((m.v || 1) < 2) {
+    for (const s of m.sections) if (s.key === 'education') for (const e of s.entries || []) e.lines = (e.lines || []).flatMap((l) => String(l).split(/\s+\|\s+/)).map((l) => l.trim().replace(/^(Relevant )?Coursework:/, 'Relevant Coursework:')).filter(Boolean);
+    m.v = RESUME_V;
+  }
   if (P.data && P.data.basics && P.data.basics.name) m.header = Object.assign({}, m.header, { name: P.data.basics.name });
   m.sections = m.sections.filter((s) => !isAdditional(s));
   for (const s of m.sections) for (const e of s.entries || []) {
@@ -408,31 +421,43 @@ function normResume(m) {
 }
 /* Posting keywords this resume really contains (the same matching as the keyword panel, aliases included). The
    preview and the .docx/.pdf exports set them in bold in bullets and the summary. Soft skills are never bolded. */
-function boldTerms(m, keywords, extra) {
-  const softs = new Set((keywords || []).filter((k) => k.kind === 'soft' || k.kind === 'credential').map((k) => C.nk(k.term)));
-  const tech = (keywords || []).filter((k) => k.kind !== 'soft' && k.kind !== 'credential');
-  const more = (extra || []).filter((x) => typeof x === 'string' && !softs.has(C.nk(x))).map((t) => ({ term: t, importance: 1 }));
-  const hit = C.keywordScore(resumeText(m), [...tech, ...more]).hit, forms = new Set();
-  for (const k of hit) {
-    const key = C.nk(k.term); forms.add(String(k.term).trim()); if (key) forms.add(key);
-    for (const [a, v] of Object.entries(C.ALIAS || {})) if (v === key) forms.add(a);
+/* Bold only what a recruiter scans for: the posting's important tools and skills (importance 2-3, required skills
+   first), never soft skills or generic words. Returned in priority order; the renderer bolds at most two per bullet. */
+function boldTerms(m, keywords, extra, required) {
+  const softs = new Set((keywords || []).filter((k) => k.kind === 'soft' || k.kind === 'credential' || k.kind === 'domain').map((k) => C.nk(k.term)));
+  const req = new Set((required || []).flatMap((x) => String(x).split('|')).map((x) => C.nk(x.trim())));
+  const tech = (keywords || []).filter((k) => (k.kind === 'tool' || k.kind === 'skill' || !k.kind) && (+k.importance || 1) >= 2);
+  const more = (extra || []).filter((x) => typeof x === 'string' && !softs.has(C.nk(x)) && !tech.some((k) => C.nk(k.term) === C.nk(x))).map((t) => ({ term: t, importance: 1 }));
+  const hit = C.keywordScore(resumeText(m), [...tech, ...more]).hit;
+  const rank = (k) => (req.has(C.nk(k.term)) ? 10 : 0) + (+k.importance || 1);
+  const forms = [];
+  for (const k of hit.slice().sort((x, y) => rank(y) - rank(x))) {
+    const key = C.nk(k.term), fs = [String(k.term).trim(), ...Object.entries(C.ALIAS || {}).filter(([, v]) => v === key).map(([a]) => a)];
+    for (const f of fs) if (f && f.length >= 2 && !forms.some((x) => x.toLowerCase() === f.toLowerCase()) && !/^(database|data|ml|ai|js|py)$/i.test(f)) forms.push(f);
   }
-  return [...forms].filter((x) => x && x.length >= 2).sort();
+  return forms;
 }
 /* Recompute the bold terms of job J's resume from its analysis and Claude's notes; true when they changed. */
 function applyBold(m, J) {
   if (!m || !J) return false;
   const st = JOBS.get(J.key), a = st && st.job && st.job.analysis, n = JOB && JOB.key === J.key ? ST.notes : st && st.resume && st.resume.notes;
   if (!a && !(n && (n.keywordsUsed || []).length)) return false;
-  const terms = boldTerms(m, a ? a.keywords : [], n && n.keywordsUsed);
+  const terms = boldTerms(m, a ? a.keywords : [], n && n.keywordsUsed, a ? a.requiredSkills : []);
   if (JSON.stringify(terms) === JSON.stringify(m.bold || [])) return false;
   m.bold = terms; return true;
 }
-function boldHtml(text, m) {
-  const terms = m && m.boldKeywords !== false ? (m.bold || []).slice().sort((x, y) => y.length - x.length) : [];
-  if (!terms.length) return esc(text);
-  const rx = new RegExp('(?<![A-Za-z0-9])(' + terms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')(?![A-Za-z0-9+#])', 'gi');
-  return String(text || '').split(rx).map((x, i) => i % 2 ? `<b>${esc(x)}</b>` : esc(x)).join('');
+/* Same rule as resume_export.bold_segments: the first two terms (in priority order) found in the text, first occurrence. */
+function boldHtml(text, m, limit = 2) {
+  const terms = m && m.boldKeywords !== false ? (m.bold || []) : [], t = String(text || ''), spans = [];
+  for (const term of terms) {
+    if (spans.length >= limit) break;
+    const r = new RegExp('(?<![A-Za-z0-9])' + term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![A-Za-z0-9+#])', 'i').exec(t);
+    if (r && !spans.some(([a, b]) => r.index < b && a < r.index + r[0].length)) spans.push([r.index, r.index + r[0].length]);
+  }
+  if (!spans.length) return esc(t);
+  let out = '', i = 0;
+  for (const [a, b] of spans.sort((x, y) => x[0] - y[0])) { out += esc(t.slice(i, a)) + `<b>${esc(t.slice(a, b))}</b>`; i = b; }
+  return out + esc(t.slice(i));
 }
 const dates = (e) => [e.start, e.end].filter(Boolean).join(' – ');
 function contactLine(b) { return [b.location, b.phone, b.email, b.linkedin, b.github, b.website].filter(Boolean).join(' | '); }
@@ -456,14 +481,24 @@ function baseResume(p, track) {
 }
 function fromAI(r, p) {
   const sections = [];
-  const ent = (e) => ({ id: sid(), title: e.title, loc: e.location || '', date: e.date, subtitle: e.subtitle, subdate: '', lines: e.lines || [], bullets: (e.bullets || []).map((b) => ({ id: sid(), text: b.text, src: b.source, unverified: !!b.unverified, issues: b.issues || [] })) });
+  const tidy = (t) => String(t || '').trim().replace(/\s*\.$/, '');
+  const ent = (e) => ({ id: sid(), title: e.title, loc: e.location || '', date: e.date, subtitle: e.subtitle, subdate: '', lines: e.lines || [], bullets: (e.bullets || []).map((b) => ({ id: sid(), text: tidy(b.text), gen: tidy(b.text), src: b.source, unverified: !!b.unverified, issues: b.issues || [] })) });
   for (const k of (r.sectionOrder && r.sectionOrder.length ? r.sectionOrder : ['education', 'skills', 'experience', 'projects', 'leadership'])) {
     if (k === 'summary' && r.summary) sections.push({ id: sid(), kind: 'summary', title: SEC_TITLE.summary, text: r.summary });
     else if (k === 'skills' && (r.skills || []).length) sections.push({ id: sid(), kind: 'skills', title: SEC_TITLE.skills, lines: r.skills });
     else if (['education', 'experience', 'projects', 'leadership'].includes(k) && (r[k] || []).length) sections.push({ id: sid(), kind: 'entries', key: k, title: SEC_TITLE[k], entries: r[k].map(ent) });
   }
-  const m = { v: 1, font: (ST.model && ST.model.font) || 'serif', size: (ST.model && ST.model.size) || 10.5, header: { name: p.basics.name, contact: contactLine(p.basics) }, sections };
+  const m = { v: RESUME_V, font: (ST.model && ST.model.font) || 'serif', size: (ST.model && ST.model.size) || 10.5, header: { name: p.basics.name, contact: contactLine(p.basics) }, sections };
   if (ST.model && ST.model.boldKeywords === false) m.boldKeywords = false;
+  /* A GPA of 3.0 or higher is always shown, as its own line (Rice CCD guide; many employers screen on it). Clear the
+     GPA field in Profile › Education to keep it off every resume. */
+  const edu = sections.find((x) => x.key === 'education');
+  for (const e of (edu && edu.entries) || []) {
+    const pe = (p.education || []).find((x) => x.org && String(e.title || '').toLowerCase().startsWith(String(x.org).toLowerCase())), g = pe && String(pe.gpa || '').trim();
+    const val = g && parseFloat(g), scale = g && parseFloat((/\/\s*([\d.]+)/.exec(g) || [])[1] || '4');
+    e.lines = (e.lines || []).flatMap((l) => String(l).split(/\s+\|\s+/)).map((l) => l.trim()).filter(Boolean);
+    if (val && val / scale >= 0.75 && !e.lines.some((l) => /^GPA\b/i.test(l))) e.lines.unshift('GPA: ' + g);
+  }
   normResume(m); return m;
 }
 /* The current page as text for Claude: its sections and entries in order, and each bullet with its Profile source ids,
@@ -513,7 +548,9 @@ function factIssues(b) {
   if (!P.data || !b || !b.text) return [];
   return C.factCheck(b.text, sourceText(b.src), C.skillSet(P.data, I.S.settings));
 }
-const needsCheck = (b) => !!b.unverified || factIssues(b).length > 0;
+/* Claude's own "unverified" mark applies to the wording it wrote; once you edit the bullet only the token-free fact
+   check decides (it re-runs on every change, so a fixed bullet clears itself). */
+const needsCheck = (b) => (!!b.unverified && (b.gen === undefined || b.gen === b.text)) || factIssues(b).length > 0;
 /* Letter paragraphs are checked sentence by sentence. A sentence with no number or tool (thanks, availability) needs no
    source; one that states a checkable fact must be backed by the paragraph's cited Profile facts. */
 const SENT = (t) => String(t || '').split(/(?<=[.!?])\s+(?=[A-Z0-9"“])/).map((x) => x.trim()).filter(Boolean);
@@ -637,7 +674,8 @@ async function saveVersion(label, by, J, model, notes) {
 /* One-page status above the editor: a warning with a fix when it runs over, or what was hidden to make it fit. */
 function pageNote() {
   if (ST.fit && ST.fit.pages > 1) return `<div class="notice warn"><span><b>${ST.fit.pages} pages.</b> Recruiters expect one page for an internship. Fit it automatically (hides the least relevant items first; you can turn any back on), or shorten bullets yourself.</span><button class="btn sm primary" type="button" data-jb="fit1">Fit to one page</button></div>`;
-  if (ST.fit && ST.fit.pages === 1 && ST.fit.fill < 0.85 && !(ST.trimmed && ST.trimmed.length)) return `<div class="notice"><span><b>The page is ${Math.round(ST.fit.fill * 100)}% full.</b> There is room for about ${ST.fit.fill < 0.75 ? 'one more project or 3–4 bullets' : '1–2 more bullets'}: turn a hidden item back on with its ● switch, or add your strongest missing project.</span></div>`;
+  if (ST.fit && ST.fit.pages === 1 && (ST.fit.size < COMFORT_PT || ST.fit.tight < 1)) return `<div class="notice"><span><b>Crowded:</b> it only fits at ${ST.fit.size} pt${ST.fit.tight < 1 ? ' with tightened spacing' : ''}. Recruiters skim a page with some air faster. Hide one or two weaker bullets, or let the tracker pick them.</span><button class="btn sm" type="button" data-jb="fit1">Make it roomier</button></div>`;
+  if (ST.fit && ST.fit.pages === 1 && ST.fit.fill < 0.8 && !(ST.trimmed && ST.trimmed.length)) return `<div class="notice"><span><b>The page is ${Math.round(ST.fit.fill * 100)}% full.</b> There is room for about ${ST.fit.fill < 0.75 ? 'one more project or 3–4 bullets' : '1–2 more bullets'}: turn a hidden item back on with its ● switch, or add your strongest missing project.</span></div>`;
   if (ST.trimmed && ST.trimmed.length) return `<div class="notice"><span><b>Hidden to keep one page:</b> ${esc(trimText(ST.trimmed).replace(/\.$/, ''))}. Turn any back on with its ● switch, then hide something else.</span><button class="btn sm ghost" type="button" data-jb="trim-ok">OK</button></div>`;
   return '';
 }
@@ -646,6 +684,7 @@ function updateLive() {
   const pn = $('#rsPageNote'); if (pn) pn.innerHTML = pageNote();
   const pv = $('#rsPaper'); if (pv) { pv.innerHTML = paper(ST.model, ST.fit && ST.fit.size); pv.classList.toggle('over', !!(ST.fit && ST.fit.pages > 1)); fitPaper(); }
   const kw = $('#rsKw'); if (kw) kw.innerHTML = kwPanel();
+  const sc = $('#rsScore'); if (sc) { const open = sc.querySelector('details') ? sc.querySelector('details').open : true; sc.innerHTML = scorePanel(); const d = sc.querySelector('details'); if (d) d.open = open; }
   const ft = $('#rsFit'); if (ft) ft.innerHTML = fitText();
   const ck = $('#rsChecks'); if (ck) { const open = ck.querySelector('details') && ck.querySelector('details').open; ck.innerHTML = checksBox(resumeChecks(ST.model, ST.fit), 'Resume checklist'); if (open !== undefined && ck.querySelector('details')) ck.querySelector('details').open = open || ck.querySelector('details').open; }
 }
@@ -727,14 +766,16 @@ function matchPanel(J, a) {
     ? `<div class="fp"><span class="fp-l">${esc(p.label)}</span><span class="fbar" role="img" aria-label="${Math.round(p.v * 100)}%"><span style="width:${Math.round(p.v * 100)}%;background:${p.v >= 0.8 ? 'var(--score-hi)' : p.v >= 0.5 ? 'var(--score-mid)' : 'var(--bad)'}"></span></span><span class="num fp-n">${Math.round(p.v * 100)}%</span><span class="fp-note">${esc(p.note)}</span></div>`
     : `<div class="fp unknown"><span class="fp-l">${esc(p.label)}</span><span class="fbar"></span><span class="num fp-n">n/a</span><span class="fp-note">${esc(p.note)} · not counted</span></div>`;
   const inferred = new Set((f.skills.inferred || []).map((x) => x.term));
-  const chips = (xs, cls) => xs.map((x) => `<span class="chip ${cls}${inferred.has(x) ? ' inferred' : ''}" ${inferred.has(x) ? `title="Inferred from ${esc((f.skills.inferred.find((y) => y.term === x) || {}).from || '')} · half credit"` : ''}>${esc(x)}${inferred.has(x) ? ' ~' : ''}</span>`).join('');
+  const depth = new Map((f.skills.evidence || []).map((x) => [x.term, x.depth]));
+  const DT = { work: 'Shown in a job: full credit', project: 'Shown in a project: 90% credit', listed: 'Only listed in Skills or coursework: 70% credit. Add a confirmed point that shows you using it to raise this.' };
+  const chips = (xs, cls) => xs.map((x) => { const d = depth.get(x); return `<span class="chip ${cls}${inferred.has(x) ? ' inferred' : ''}${d === 'listed' ? ' listed' : ''}" title="${inferred.has(x) ? `Inferred from ${esc((f.skills.inferred.find((y) => y.term === x) || {}).from || '')} · half credit` : esc(DT[d] || '')}">${esc(x)}${inferred.has(x) ? ' ~' : d === 'listed' ? ' ◦' : d === 'project' ? ' ▪' : ''}</span>`; }).join('');
   return `<section class="panel jb-match"><h2>Candidate fit <small>your Profile vs. this posting · computed here, no tokens</small></h2>
     <div class="kw-head">${fitRing(f)}<div><b>${f.verdict === 'blocked' ? `Not eligible${f.rawTotal !== null ? ` · background fit ${f.rawTotal} (not counted)` : ''}` : f.total === null ? 'Not enough information to score' : `Fit ${f.total} of 100`}</b><div class="sub">Assessed ${Math.round(f.coverage * 100)}% of the weight; components marked n/a are left out, not counted as gaps. This is not an employer’s ATS score or a chance of an offer.</div></div></div>
     ${eligibilityList(f)}
     <div class="fps">${f.parts.map(bar).join('')}</div>
     <div class="kw-l"><span class="sk-l">Required</span>${chips(f.skills.reqHit, 'v-yes')}${chips(f.skills.reqMiss, 'miss')}${!f.skills.reqHit.length && !f.skills.reqMiss.length ? '<span class="sub">none listed</span>' : ''}</div>
     <div class="kw-l"><span class="sk-l">Preferred</span>${chips(f.skills.optHit, 'v-yes')}${chips(f.skills.optMiss, 'miss')}${!f.skills.optHit.length && !f.skills.optMiss.length ? '<span class="sub">none listed</span>' : ''}</div>
-    ${inferred.size ? '<p class="sub">~ inferred from a related skill you list (half credit). Confirm before you claim it.</p>' : ''}
+    <p class="sub">Credit follows the evidence in your Profile: shown in a job 100% · ▪ shown in a project 90% · ◦ only listed 70%${inferred.size ? ' · ~ inferred from a related skill 50% (confirm before you claim it)' : ''}. ${[...depth.values()].includes('listed') ? '<button type="button" class="linkbtn" data-goto="sec:projects">Show a listed skill in a project →</button>' : ''}</p>
     ${f.flagged.length ? `<p class="sub">On your “do not claim” list: ${f.flagged.map(esc).join(', ')}</p>` : ''}</section>`;
 }
 /* Where this draft stands: written by Claude or you, reviewed by you, exported (this exact content), applied. */
@@ -743,7 +784,6 @@ function lifecycle(doc, kind, J) {
   const step = (on, label, hint) => `<li class="${on ? 'on' : ''}" title="${esc(hint)}"><span aria-hidden="true">${on ? '●' : '○'}</span>${label}<span class="sr">${on ? ', done' : ', not yet'}</span></li>`;
   const rev = st.reviewed ? '' : `<button class="btn xs" type="button" data-${kind === 'letter' ? 'lt' : 'jb'}="review" ${doc ? '' : 'disabled'}>Mark reviewed</button>`;
   return `<div class="lc"><ol class="lc-steps" aria-label="Document status">
-    ${step(st.generated, 'Claude draft', 'Written by Claude from your confirmed Profile facts')}
     ${step(st.reviewed, 'Reviewed', st.reviewed ? 'You reviewed this exact content' : 'Read every line, then mark it reviewed')}
     ${step(st.exported, st.exported ? `Exported ${(st.exportedFormats || []).map((x) => '.' + x).join(' ')}` : st.exportedBefore ? 'Edited since export' : 'Exported', st.exported ? 'This content was exported' : st.exportedBefore ? 'An earlier draft was exported; export again before you send it' : 'Not exported yet')}
     ${step(applied, 'Applied', applied ? 'Marked applied' : 'Not marked applied')}</ol>${rev}</div>`;
@@ -839,13 +879,13 @@ function rsEditor(m) {
     return (s.entries || []).map((e, ei) => `<div class="rs-ent${e.hidden ? ' off' : ''}"><div class="rs-eh">${t(`sections.${si}.entries.${ei}.title`, e.title, 'b', s.key === 'projects' ? 'Project' : 'Organization')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates') : t(`sections.${si}.entries.${ei}.loc`, e.loc || '', 'r i', 'City, State')}${t(`sections.${si}.entries.${ei}.subtitle`, e.subtitle, 'i', s.key === 'education' ? 'Degree' : s.key === 'projects' ? 'Role / context' : 'Job title')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.subdate`, e.subdate, 'r i', '') : t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates')}</div>
       ${(e.lines || []).length || s.key === 'education' ? `<textarea class="auto" rows="1" data-rs="sections.${si}.entries.${ei}.lines" data-rst="lines" aria-label="Detail lines" placeholder="Detail lines (no bullet), one per line">${esc((e.lines || []).join('\n'))}</textarea>` : ''}
       <ul class="rbs">${(e.bullets || []).map((b, bi) => bulletRow(si, ei, bi, b, e.bullets.length)).join('')}</ul>
-      <div class="row"><button class="btn sm ghost" type="button" data-rsa="addb:${si}:${ei}">+ Bullet</button><span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hidee:${si}:${ei}">${e.hidden ? 'Show entry' : 'Hide entry'}</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:-1" ${ei ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:1" ${ei < s.entries.length - 1 ? '' : 'disabled'}>↓</button><button class="btn sm ghost danger" type="button" data-rsa="dele:${si}:${ei}">Delete</button></div></div>`).join('');
+      <div class="row"><button class="btn sm ghost" type="button" data-rsa="addb:${si}:${ei}">+ Bullet</button>${(() => { const h = (e.bullets || []).filter((b) => b.hidden).length; return h ? `<span class="sub">${h} hidden (◌): not on the page</span>` : ''; })()}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hidee:${si}:${ei}">${e.hidden ? 'Show entry' : 'Hide entry'}</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:-1" ${ei ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:1" ${ei < s.entries.length - 1 ? '' : 'disabled'}>↓</button><button class="btn sm ghost danger" type="button" data-rsa="dele:${si}:${ei}">Delete</button></div></div>`).join('');
   };
   return `<div class="rs-ed">
     <div class="rs-hd">${t('header.name', m.header.name, 'b', 'Name')}${t('header.contact', m.header.contact, '', 'Contact line')}
       <div class="row"><label class="field inline"><span>Font</span><select data-rs="font"><option value="serif" ${m.font !== 'sans' ? 'selected' : ''}>Times New Roman</option><option value="sans" ${m.font === 'sans' ? 'selected' : ''}>Arial</option></select></label>
         <label class="field inline"><span>Size</span><select data-rs="size" data-rst="num">${[11, 10.5, 10, 9.5].map((x) => `<option value="${x}" ${+m.size === x ? 'selected' : ''}>${x} pt</option>`).join('')}</select></label><label class="switch" title="Posting keywords that appear in your bullets are set in bold"><input type="checkbox" data-rs="boldKeywords" data-rst="bool" ${m.boldKeywords !== false ? 'checked' : ''}> Bold posting keywords</label><span class="sub">Export shrinks to fit one page, never below 10 pt.</span></div></div>
-    ${m.sections.map((s, si) => { const open = ST.sec[s.id] !== false; return `<details class="rs-sec${s.hidden ? ' off' : ''}" data-sid="${s.id}" ${open ? 'open' : ''}><summary><b>${esc(s.title)}</b><span class="cnt">${s.kind === 'entries' ? plural((s.entries || []).length, 'entry', 'entries') : ''}</span></summary>
+    ${m.sections.map((s, si) => { const open = ST.sec[s.id] !== false; return `<details class="rs-sec${s.hidden ? ' off' : ''}" data-sid="${s.id}" ${open ? 'open' : ''}><summary><b>${esc(s.title)}</b><span class="cnt">${s.kind === 'entries' ? plural((s.entries || []).length, 'entry', 'entries') : ''}${(() => { const h = (s.entries || []).reduce((n2, e) => n2 + (e.hidden ? 1 : 0) + (e.bullets || []).filter((b) => b.hidden).length, 0); return h ? ` · <span class="warn-t">${h} hidden</span>` : ''; })()}</span></summary>
       <div class="rs-sbody"><div class="row">${t(`sections.${si}.title`, s.title, 'b', 'Section title')}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hides:${si}">${s.hidden ? 'Show section' : 'Hide section'}</button><button class="btn sm ghost" type="button" data-rsa="mvs:${si}:-1" ${si ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mvs:${si}:1" ${si < m.sections.length - 1 ? '' : 'disabled'}>↓</button></div>${secBody(s, si)}</div></details>`; }).join('')}</div>`;
 }
 function rwPanel(b, kws) {
@@ -857,15 +897,64 @@ function rwPanel(b, kws) {
     <div class="row"><button class="btn sm primary" type="button" data-rsa="rwgo:${b.id}" ${ready('rewrite') && !r.busy ? '' : 'disabled'}>${r.busy ? 'Writing…' : 'Get 3 options'}</button><span class="sub">${costLabel('rewrite', e)}</span><button class="btn sm ghost" type="button" data-rsa="rw:${b.id}">Close</button></div>
     ${r.options ? `<ol class="rw-opts">${r.options.map((o, i) => { const iss = factIssues({ text: o.text, src: b.src }); return `<li><span>${esc(o.text)}${iss.length ? `<small class="src no fc" title="${esc(iss.join('\n'))}">⚠ ${esc(iss.join(' · '))}</small>` : ''}</span><button class="btn sm" type="button" data-rsa="rwuse:${b.id}:${i}">Use</button></li>`; }).join('')}</ol>` : ''}</div>`;
 }
+/* Compare the current page with a saved version, bullet by bullet: what was added, removed or reworded. */
+function bulletMap(m) {
+  const out = [];
+  for (const s of (m && m.sections) || []) for (const e of s.entries || []) for (const b of e.bullets || []) if (!b.hidden && b.text) out.push({ sec: s.title, ent: (e.title || '').split(',')[0], text: b.text.trim() });
+  for (const s of (m && m.sections) || []) for (const l of s.lines || []) if (!l.hidden && l.value) out.push({ sec: s.title, ent: l.label, text: l.value.trim() });
+  return out;
+}
+function diffDialog(v) {
+  const a = bulletMap(v.resume), b = bulletMap(ST.model), words = (t) => new Set(t.toLowerCase().match(/[a-z0-9+#.%]+/g) || []);
+  const sim = (x, y) => { const A = words(x), B = words(y); let n = 0; for (const w of A) if (B.has(w)) n++; return n / Math.max(1, Math.max(A.size, B.size)); };
+  const usedB = new Set(), rows = [];
+  for (const x of a) {
+    const same = b.findIndex((y, i) => !usedB.has(i) && y.text === x.text);
+    if (same >= 0) { usedB.add(same); continue; }
+    let best = -1, bs = 0.5; b.forEach((y, i) => { if (!usedB.has(i) && y.ent === x.ent) { const s2 = sim(x.text, y.text); if (s2 > bs) { bs = s2; best = i; } } });
+    if (best >= 0) { usedB.add(best); rows.push(['chg', x, b[best]]); } else rows.push(['del', x]);
+  }
+  b.forEach((y, i) => { if (!usedB.has(i)) rows.push(['add', null, y]); });
+  const lab = { chg: 'Reworded', del: 'Only in the version', add: 'Only on the current page' };
+  return `<div class="mbody vdiff"><h2 id="dlgTitle">Compare with “${esc(v.label)}”</h2><p class="sub">${esc(new Date(v.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${rows.length ? plural(rows.length, 'difference') : 'No differences in bullets or skills'}</p>
+    ${rows.length ? `<ul class="vd-list">${rows.map(([k, x, y]) => `<li class="vd-${k}"><span class="chip tag">${lab[k]}</span> <b>${esc((x || y).ent)}</b>${k === 'chg' ? `<del>${esc(x.text)}</del><ins>${esc(y.text)}</ins>` : k === 'del' ? `<del>${esc(x.text)}</del>` : `<ins>${esc(y.text)}</ins>`}</li>`).join('')}</ul>` : ''}
+    <div class="mfoot"><span class="spacer"></span><button class="btn ghost" type="button" data-close>Close</button><button class="btn primary" type="button" data-vrestore="${esc(v.id)}">Restore this version</button></div></div>`;
+}
 function versionsSel(doc) {
   const vs = (doc && doc.versions) || [];
   if (!vs.length) return '';
-  return `<select id="rsVer" aria-label="Versions"><option value="">Versions (${vs.length})…</option>${vs.slice().reverse().map((v) => `<option value="${v.id}">${esc(new Date(v.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(v.label)}</option>`).join('')}</select>`;
+  return `<button class="btn sm ghost" type="button" data-jb="compare">Compare…</button><select id="rsVer" aria-label="Versions"><option value="">Versions (${vs.length})…</option>${vs.slice().reverse().map((v) => `<option value="${v.id}">${esc(new Date(v.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(v.label)}</option>`).join('')}</select>`;
 }
 function stepNav(J, prev, next) {
   const id = esc(encodeURIComponent(J.id)), L = { overview: 'Analyze', resume: 'Resume', letter: 'Cover letter', apply: 'Apply' };
   return `<nav class="stepnav" aria-label="Previous and next step">${prev ? `<a class="btn ghost" href="#job/${id}/${prev}">← ${L[prev]}</a>` : ''}<span class="grow"></span>${next.map(([k, primary, label]) => `<a class="btn${primary ? ' primary' : ''}" href="#job/${id}/${k}">${label || 'Next: ' + L[k]} →</a>`).join('')}</nav>`;
 }
+/* ---------- resume score (core.resumeScore) and its panel ---------- */
+function rsScore(m, J) {
+  if (!m) return null;
+  const st = JOBS.get((J || JOB || {}).key) || {}, a = st.job && st.job.analysis;
+  const flagged = []; for (const s of m.sections) for (const e of s.entries || []) for (const b of e.bullets || []) if (!b.hidden && needsCheck(b)) flagged.push(b.id);
+  return C.resumeScore(m, { analysis: a || null, skills: P.data ? C.skillSet(P.data, I.S.settings) : null, layout: m === ST.model && ST.fit ? ST.fit : null, flagged });
+}
+const RS_BAND = (t) => t === null ? '' : t >= 85 ? 'Strong' : t >= 70 ? 'Good, a few fixes' : t >= 55 ? 'Needs work' : 'Weak';
+function fixRef(f) {
+  const r = f.ref || {};
+  if (r.bullet) return `<button type="button" class="linkbtn" data-goto="bul:${esc(r.bullet)}">Go to the bullet →</button>`;
+  if (r.action === 'fit1') return `<button type="button" class="linkbtn" data-jb="fit1">Fix it for me →</button>`;
+  if (r.goto === 'skills') return `<button type="button" class="linkbtn" data-goto="rskills">Open Technical Skills →</button>`;
+  if (r.entry && ST.model) { for (const sc of ST.model.sections) for (const e of sc.entries || []) if (e.id === r.entry && (e.bullets || [])[0]) return `<button type="button" class="linkbtn" data-goto="bul:${esc(e.bullets[0].id)}">Go to the entry →</button>`; }
+  if (r.goto === 'basics') return `<button type="button" class="linkbtn" data-goto="fld:basics.linkedin">Profile › Basics →</button>`;
+  return '';
+}
+function scorePanel() {
+  const r = rsScore(ST.model, JOB); if (!r) return '';
+  const top = r.fixes.slice(0, 6);
+  return `<div class="rscore"><div class="kw-head"><span class="ring sm ${r.total === null ? '' : I.band(r.total)}" style="--p:${r.total || 0}"><span>${r.total === null ? '–' : r.total}</span></span>
+      <div><b>Resume score ${r.total === null ? '' : r.total}</b><div class="sub">${esc(RS_BAND(r.total))} · how ready this page is for this posting. It checks wording and evidence only; your fit for the job is on the Analyze step.</div></div></div>
+    <ul class="rs-parts">${r.parts.filter((x) => x.v !== null).map((x) => `<li><span class="rs-pl">${esc(x.label)} <small>${x.weight}</small></span><span class="bar"><span style="width:${Math.round(x.v * 100)}%"></span></span><span class="rs-pv">${Math.round(x.v * 100)}</span><span class="sub rs-pn">${esc(x.note)}</span></li>`).join('')}</ul>
+    ${top.length ? `<details class="rs-fixes" open><summary><b>Biggest gains</b> <span class="sub">${r.fixes.length} fix${r.fixes.length > 1 ? 'es' : ''} in all</span></summary><ol>${top.map((f) => `<li><span class="chip tag">${esc(f.k)}</span> ${esc(f.text)}${f.ref && f.ref.text ? `<span class="sub fix-q">“${esc(f.ref.text.length > 90 ? f.ref.text.slice(0, 88) + '…' : f.ref.text)}”</span>` : ''} ${fixRef(f)}</li>`).join('')}</ol></details>` : '<p class="sub pos">Nothing left to fix.</p>'}</div>`;
+}
+
 /* Bullets to check, each with what is wrong and buttons to the bullet and to the Profile fact behind it. */
 function checkList() {
   const items = [];
@@ -903,14 +992,14 @@ function studioPanel(J, st) {
     ${a && !isTailored() ? `<div class="tailor-nudge"><div><b>This is your master resume, not tailored to this posting yet.</b><span class="sub">Tailoring edits this page for this ${esc(J.track || '')} role: it keeps your layout and wording and adds the posting’s keywords only where they are true. The keyword match on the right shows the gap; your current draft is kept as a version.</span></div>
       <div class="tn-act"><button class="btn primary" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'}>${busy ? `Tailoring… about ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : '✨ Tailor with Claude'}</button><span class="sub">${why ? esc(why) : costLabel('tailor', eT)}</span></div></div>` : ''}
     <div id="rsPageNote">${pageNote()}</div>
-    ${unv ? checkList() : ''}
-    ${n && (n.questions || []).length ? questionList(n.questions) : ''}
+    ${unv || (n && (n.questions || []).length) ? `<details class="todo-panel" ${unv ? 'open' : ''}><summary><b>Before you send</b> <span class="sub">${[unv ? plural(unv, 'bullet') + ' to check' : '', n && (n.questions || []).length ? plural(n.questions.length, 'question') + ' from Claude' : ''].filter(Boolean).join(' · ')}</span></summary>
+      ${unv ? checkList() : ''}${n && (n.questions || []).length ? questionList(n.questions) : ''}</details>` : ''}
     ${n && (n.changes || []).length ? `<details class="why rs-notes"><summary>What Claude changed (${n.changes.length})</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
       ${(n.keywordsSkipped || []).length ? `<p class="sub">Left out (not supported by your Profile): ${n.keywordsSkipped.map(esc).join(', ')}. Have one of them? Add it in <button type="button" class="linkbtn" data-goto="sec:skills">Profile › Skills</button>, then update.</p>` : ''}</details>` : ''}
     ${revisePanel(J, a, canTailor, why)}
     <div class="rs-grid"><div class="rs-left">${rsEditor(ST.model)}</div>
       <div class="rs-right"><div class="rs-sticky"><div class="row rs-exp"><span id="rsFit">${fitText()}</span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-jb="docx">.docx</button><button type="button" data-jb="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-jb="copy">Copy text</button></div>
-        <div id="rsPaper" class="rs-paper">${paper(ST.model, ST.fit && ST.fit.size)}</div><div id="rsKw" class="rs-kw">${kwPanel()}</div><div id="rsChecks">${checksBox(resumeChecks(ST.model, ST.fit), 'Resume checklist')}</div></div></div></div></section>
+        <div id="rsScore">${scorePanel()}</div><div id="rsPaper" class="rs-paper">${paper(ST.model, ST.fit && ST.fit.size)}</div><div id="rsKw" class="rs-kw">${kwPanel()}</div><div id="rsChecks">${checksBox(resumeChecks(ST.model, ST.fit), 'Resume checklist')}</div></div></div></div></section>
     ${stepNav(J, 'overview', [['apply', false, 'Skip to Apply'], ['letter', true]])}`;
 }
 function rJob() {
@@ -938,7 +1027,7 @@ function rJob() {
   const lState = !LT.model ? '' : (LT.notes && LT.notes.model) || exported(st.letter) ? 'done' : 'part';
   const steps = [
     ['overview', 'Analyze', a ? (st.job.analysisState === 'stale' ? 'part' : 'done') : '', a ? (st.job.analysisState === 'stale' ? 'Posting changed · re-analyze' : f.verdict === 'blocked' ? 'Not eligible' : f.total === null ? 'Fit: not enough info' : `Fit ${f.total}`) : J.l ? `Priority ${J.l.total}` : 'Not analyzed'],
-    ['resume', 'Resume', rState, ST.model ? `${isTailored() ? 'Tailored' : exported(st.resume) ? 'Master · exported' : 'Master draft · not tailored'}${ks !== null ? ` · ${ks}% keywords` : ''}` : 'Not started'],
+    ['resume', 'Resume', rState, ST.model ? `${isTailored() ? 'Tailored' : exported(st.resume) ? 'Master · exported' : 'Master draft · not tailored'}${(() => { const r = rsScore(ST.model, J); return r && r.total !== null ? ` · score ${r.total}` : ks !== null ? ` · ${ks}% keywords` : ''; })()}` : 'Not started'],
     ['letter', 'Cover letter', lState, LT.model ? (LT.notes && LT.notes.model ? 'Written with Claude' : 'Draft') : 'Optional'],
     ['apply', 'Apply', appliedOn ? 'done' : '', appliedOn ? `Applied ${I.fmt(appliedOn)}` : ST.model ? 'Ready when you are' : 'After the resume']];
   const SR = { done: ', done', part: ', in progress', '': '' };
@@ -966,7 +1055,7 @@ function applyPanel(J, st, appliedOn) {
   const answers = [['Work authorization', pr.authStatement], ['Will you need sponsorship?', pr.needsSponsorship === null || pr.needsSponsorship === undefined ? '' : pr.needsSponsorship ? 'Yes' : 'No'], ['Graduation', ymLong(pr.graduation)], ['Availability', (p.coverLetter || {}).availability || pr.availability],
     ['Email', b.email], ['Phone', b.phone], ['LinkedIn', b.linkedin], ['GitHub', b.github], ['Website', b.website]].filter(([, v]) => v);
   const kit = `<section class="panel"><h2>Your application kit</h2>
-    ${doc('Resume', fileBase(p.resumeFileName, J) + '.docx', ST.model, `${isTailored() ? 'tailored for ' + esc(J.company) : 'master resume'} · ${pages(ST.fit)}${ks !== null ? ` · ${ks}% keywords` : ''}`, rWarn, 'jb', 'resume', 'Build the resume')}
+    ${doc('Resume', fileBase(p.resumeFileName, J) + '.docx', ST.model, `${isTailored() ? 'tailored for ' + esc(J.company) : 'master resume'} · ${pages(ST.fit)}${(() => { const r = rsScore(ST.model, J); return r && r.total !== null ? ` · resume score ${r.total}` : ''; })()}${ks !== null ? ` · ${ks}% keywords` : ''}`, rWarn, 'jb', 'resume', 'Build the resume')}
     ${doc('Cover letter', fileBase(p.coverLetterFileName || 'Cover_Letter_[Company]', J) + '.docx', LT.model, LT.model ? `${LT.notes && LT.notes.model ? 'written with Claude' : 'draft'} · ${pages(LT.fit)}` : 'Optional. Send one when the posting asks for it, or to explain a specific interest.', [], 'lt', 'letter', 'Write one')}</section>`;
   const copyRow = (k, v, multi) => `<dt>${esc(k)}</dt><dd${multi ? ' class="multi"' : ''}><span>${esc(v)}</span><button class="btn sm ghost" type="button" data-jcopy="${esc(v)}" aria-label="Copy ${esc(k)}">Copy</button></dd>`;
   const exp = experienceAnswers(J);
@@ -1262,7 +1351,7 @@ async function runTailor(J, track, instructions, revise, fresh) {
     const model = fromAI(r.result, P.data);
     if (cur) { model.font = cur.font || model.font; model.size = cur.size || model.size; if (cur.boldKeywords === false) model.boldKeywords = false; }
     const kws = (st.job && st.job.analysis && st.job.analysis.keywords) || [];
-    model.bold = boldTerms(model, kws, r.result.keywordsUsed);
+    model.bold = boldTerms(model, kws, r.result.keywordsUsed, (st.job && st.job.analysis && st.job.analysis.requiredSkills) || []);
     const trimmed = await fitOnePage(model, kws);
     const notes = { changes: r.result.changes, questions: r.result.questions, keywordsSkipped: r.result.keywordsSkipped, keywordsUsed: r.result.keywordsUsed, model: (AI.status.modelLabels[r.usage.model] || r.usage.model) + (r.usage.provider === 'pro' ? ' via Claude Pro' : ''), cost: r.usage.cost, track };
     if (revise) notes.request = instructions.trim();
@@ -1381,6 +1470,7 @@ function rsAction(a, el) {
 /* Keep the resume on one page at 10 pt or larger by hiding the least valuable content first, and say what was hidden.
    Order: Leadership & Activities (unless you chose "Always"), then the bullets that match the fewest posting keywords
    (experience keeps 3, projects keep 2), then extra projects, then the summary. Nothing is deleted: each item keeps its ● switch. */
+const COMFORT_PT = 10.5; // trimming stops once the page fits at this size with normal spacing
 async function fitOnePage(m, keywords) {
   const mode = (P.data && P.data.resumeActivities) || 'auto', hidden = [];
   const kws = (keywords || []).map((k) => ({ re: new RegExp('(^|[^a-z0-9])' + String(k.term || k).toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])'), w: +k.importance || 1 }));
@@ -1396,13 +1486,15 @@ async function fitOnePage(m, keywords) {
     if (!keepEntries) { L.hidden = true; for (let j = hidden.length - 1; j >= 0; j--) if (hidden[j].endsWith('(activity)')) hidden.splice(j, 1); hidden.push('Leadership & Activities section'); return true; }
     return false;
   };
+  /* Value of a bullet: posting relevance first, then evidence (a number is worth about one important keyword),
+     then position (Claude and you put the strongest first), with experience kept over projects. Long bullets cost space. */
   const trimBullet = () => {
     let best = null;
     for (const k of ['projects', 'experience']) {
       const S2 = sec(k); if (!S2) continue;
       vis(S2.entries).forEach((e, ei) => {
         const bs = vis(e.bullets), floor = k === 'experience' ? 3 : 2; if (bs.length <= floor) return;
-        bs.forEach((b, bi) => { const sc = rel(b.text) * 100 - (b.text || '').length / 10 - ei * 3 - bi + (k === 'experience' ? 40 : 0); if (!best || sc < best.sc) best = { b, e, sc }; });
+        bs.forEach((b, bi) => { const sc = rel(b.text) * 100 + (/\d/.test(b.text || '') ? 250 : 0) - (b.text || '').length / 10 - ei * 3 - bi * 4 + (bi === 0 ? 200 : 0) + (k === 'experience' ? 40 : 0); /* the first bullet says what the work was: keep it */ if (!best || sc < best.sc) best = { b, e, sc }; });
       });
     }
     if (!best) return false; best.b.hidden = true; hidden.push(`1 bullet in ${name(best.e)}`); return true;
@@ -1417,7 +1509,7 @@ async function fitOnePage(m, keywords) {
   for (let i = 0; i < 40; i++) {
     let f; try { f = await api('POST', 'api/resume/fit', { resume: m }); } catch (_) { break; }
     ST.fit = f;
-    if (f.pages === 1 && f.size >= 10) break;
+    if (f.pages === 1 && f.size >= COMFORT_PT && f.tight >= 1) break;
     if (!steps.some((fn) => fn())) break;
   }
   return hidden;
@@ -1440,12 +1532,18 @@ async function jobAction(k) {
   if (k === 'base') {
     if (!P.data || !P.data.basics.name) return I.toast('Fill in your Profile first.');
     if (ST.model) await saveVersion('Before reset to master', 'you');
-    const tb = tbTailored(J.track), m = masterFor(J.track), A = st.job && st.job.analysis; if (A) m.bold = boldTerms(m, A.keywords); const h = await fitOnePage(m, A && A.keywords); ST.model = m; ST.notes = null; ST.trimmed = h; await saveVersion(tb ? `${J.track} base resume` : 'Master resume', 'base'); I.render();
+    const tb = tbTailored(J.track), m = masterFor(J.track), A = st.job && st.job.analysis; if (A) m.bold = boldTerms(m, A.keywords, [], A.requiredSkills); const h = await fitOnePage(m, A && A.keywords); ST.model = m; ST.notes = null; ST.trimmed = h; await saveVersion(tb ? `${J.track} base resume` : 'Master resume', 'base'); I.render();
     return I.toast(`Started from your ${tb ? J.track + ' base' : 'master'} resume · free${h.length ? ' · trimmed to fit one page' : ''}`);
   }
   if (k === 'version') { await saveVersion('Saved by you', 'you'); I.render(); return I.toast('Version saved'); }
+  if (k === 'compare') {
+    const vs = ((st.resume && st.resume.versions) || []).slice().reverse(); if (!vs.length || !ST.model) return;
+    const pick = vs.find((v) => v.label.startsWith('Before')) || vs[0];
+    I.openDialog(`<div class="mbody"><h2 id="dlgTitle">Compare the current page with…</h2><ul class="vd-pick">${vs.slice(0, 15).map((v) => `<li><button type="button" class="btn sm ${v === pick ? 'primary' : 'ghost'}" data-vdiff="${esc(v.id)}">${esc(new Date(v.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(v.label)}</button></li>`).join('')}</ul><div class="mfoot"><span class="spacer"></span><button class="btn ghost" type="button" data-close>Cancel</button></div></div>`, 'wide');
+    return;
+  }
   if (k === 'review') return markReviewed('resume');
-  if (k === 'fit1') { const A = st.job && st.job.analysis; const h = await fitOnePage(ST.model, A && A.keywords); ST.trimmed = h; scheduleSave(); I.render(); return I.toast(h.length ? 'Trimmed to fit one page' : ST.fit && ST.fit.pages > 1 ? 'Still over one page: shorten some bullets by hand' : 'Already fits one page'); }
+  if (k === 'fit1') { const A = st.job && st.job.analysis; const h = await fitOnePage(ST.model, A && A.keywords); ST.trimmed = h; scheduleSave(); I.render(); return I.toast(h.length ? `Hid ${h.length} item${h.length > 1 ? 's' : ''} so it fits one page at ${COMFORT_PT} pt` : ST.fit && ST.fit.pages > 1 ? 'Still over one page: shorten some bullets by hand' : ST.fit && ST.fit.size < COMFORT_PT ? 'Nothing left to hide safely: shorten a bullet by hand' : 'Already fits one page'); }
   if (k === 'trim-ok') { ST.trimmed = null; return I.render(); }
   if (k === 'docx' || k === 'pdf') return exportAs(k);
   if (k === 'copy') { const t = resumeText(ST.model); return navigator.clipboard.writeText(t).then(() => I.toast('Resume text copied'), () => I.toast('Copy failed')); }
@@ -1573,6 +1671,8 @@ document.addEventListener('click', async (e) => {
   const pfa = t.closest('[data-pfa]'); if (pfa) { e.preventDefault(); return profileAction(pfa.dataset.pfa, pfa); }
   const toc = t.closest('[data-pftoc]'); if (toc) { e.preventDefault(); history.replaceState(null, '', '#profile/' + toc.dataset.pftoc); const el = document.getElementById('s-' + toc.dataset.pftoc); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
   const jb = t.closest('[data-jb]'); if (jb) { e.preventDefault(); return jobAction(jb.dataset.jb); }
+  const vd = t.closest('[data-vdiff]'); if (vd) { e.preventDefault(); const v = ((JOBS.get(JOB.key) || {}).resume.versions || []).find((x) => x.id === vd.dataset.vdiff); if (v) I.dlg.innerHTML = diffDialog(v); return; }
+  const vr = t.closest('[data-vrestore]'); if (vr) { e.preventDefault(); const sel = $('#rsVer'); I.dlg.close(); if (sel) { sel.value = vr.dataset.vrestore; sel.dispatchEvent(new Event('change', { bubbles: true })); } return; }
   const gt = t.closest('[data-goto]'); if (gt) { e.preventDefault(); if (gt.hasAttribute('data-close') && I.dlg && I.dlg.open) I.dlg.close(); return goTo(gt.dataset.goto); }
   const jc = t.closest('[data-jcopy]'); if (jc) { e.preventDefault(); return navigator.clipboard.writeText(jc.dataset.jcopy).then(() => { jc.textContent = 'Copied'; setTimeout(() => { jc.textContent = 'Copy'; }, 1400); }, () => I.toast('Copy failed')); }
   const rsa = t.closest('[data-rsa]'); if (rsa) { e.preventDefault(); return rsAction(rsa.dataset.rsa, rsa); }

@@ -26,6 +26,8 @@
       'Regression', 'Tableau', 'Data visualization', 'ETL', 'Data modeling', 'Databases', 'Git', 'Java', 'C#', 'C/C++',
       'JavaScript', 'LLMs', 'Prompt engineering'],
     noSponsorPenalty: 20,
+    /* A posting that will not sponsor never ranks above this, so it never sits among your first-priority listings. */
+    noSponsorCap: 40,
     recencyHalfLife: 5,
     topScore: 75,
     minScore: 55,
@@ -166,7 +168,7 @@
     if (c.noSponsor) flags.push('No sponsorship');
     if (l.source === 'simplify' && !l.textRead) flags.push('Text not read');
     return {
-      total: Math.max(0, Math.round(sum - c.penalty)), parts, pen: c.penalty, track: c.track,
+      total: Math.max(0, Math.min(c.noSponsor ? DEFAULTS.noSponsorCap : 100, Math.round(sum - c.penalty))), parts, pen: c.penalty, track: c.track,
       matched: c.matched, missing: c.missing, sponsor: c.noSponsor ? 'no' : c.friendly ? 'yes' : 'unknown', flags
     };
   }
@@ -318,7 +320,33 @@
     const add = (k) => { if (!k || no.has(k) || set.has(k)) return; set.add(k); for (const x of EXPANDS[k] || []) add(x); };
     for (const r of raw) add(nk(r));
     for (const k of set) for (const x of IMPLIES[k] || []) if (!set.has(x) && !no.has(x) && !implied.has(x)) implied.set(x, k);
-    return { set, implied, no };
+    /* Evidence: where the Profile shows the skill used. 'work' (a job's tech or confirmed points) beats 'project'
+       (a project or course project) beats 'listed' (only a skills line or coursework). Recruiters weigh shown use more
+       than a listed skill, so the match score does too. */
+    const blob = (secs) => secs.flatMap((sec) => (profile[sec] || []).filter((e) => !e.hidden).flatMap((e) => [e.tech, e.title, e.name, e.context,
+      ...(e.points || []).filter((p) => !p.confirm).map((p) => p.text)])).filter(Boolean).join(' \n ').toLowerCase();
+    const work = ' ' + blob(['experience']) + ' ', proj = ' ' + blob(['projects', 'leadership']) + ' ';
+    const formsOf = (k) => [k, ...Object.keys(ALIAS).filter((x) => ALIAS[x] === k)];
+    const depth = new Map();
+    for (const k of set) {
+      const f = formsOf(k), inW = f.some((x) => wordRe(x).test(work)), inP = !inW && f.some((x) => wordRe(x).test(proj));
+      depth.set(k, inW ? 'work' : inP ? 'project' : 'listed');
+    }
+    for (const [k, v] of Object.entries(EXPANDS)) if (set.has(k)) for (const x of v) if (depth.get(x) === 'listed') depth.set(x, depth.get(k));
+    return { set, implied, no, depth };
+  }
+  const DEPTH_CREDIT = { work: 1, project: 0.9, listed: 0.7 };
+  const DEPTH_LABEL = { work: 'used at work', project: 'used in a project', listed: 'listed only' };
+  /* Evidence level of a skill you have: 'work' | 'project' | 'listed' | 'implied' | null. */
+  function skillDepth(term, S) {
+    const h = hasSkill(term, S);
+    if (h !== 'direct') return h;
+    if (!S.depth) return 'work';
+    const k = nk(term);
+    if (S.depth.has(k)) return S.depth.get(k);
+    let best = null;
+    if (k.length >= 4) { const re = wordRe(k); for (const x of S.set) if (x.length >= 4 && (re.test(x) || wordRe(x).test(k))) { const d = S.depth.get(x); if (!best || DEPTH_CREDIT[d] > DEPTH_CREDIT[best]) best = d; } }
+    return best || 'listed';
   }
   /* 'direct' | 'implied' | null */
   function hasSkill(term, S) {
@@ -362,22 +390,24 @@
     req = uniq(req); opt = uniq(opt).filter((x) => !req.some((r) => nk(r) === nk(x)));
     /* "Java | Python | C++" is one requirement met by any one option. */
     const label = new Map();
+    const depthOf = new Map();
     const kind = new Map([...req, ...opt].map((x) => {
       const ops = anyOf(x);
-      if (ops.length < 2) return [x, hasSkill(x, S)];
+      if (ops.length < 2) { const d = skillDepth(x, S); if (d && d !== 'implied') depthOf.set(x, d); return [x, hasSkill(x, S)]; }
       const got = ops.map((o) => [o, hasSkill(o, S)]), d = got.filter((g) => g[1] === 'direct'), im = got.filter((g) => g[1] === 'implied');
       label.set(x, d.length ? d.map((g) => g[0]).join(' / ') : im.length ? im[0][0] : ops.join(' or '));
+      if (d.length) depthOf.set(x, d.map((g) => skillDepth(g[0], S)).sort((a2, b2) => DEPTH_CREDIT[b2] - DEPTH_CREDIT[a2])[0]);
       return [x, d.length ? 'direct' : im.length ? 'implied' : null];
     }));
     const show = (x) => label.get(x) || x;
-    const credit = (x) => kind.get(x) === 'direct' ? 1 : kind.get(x) === 'implied' ? IMPLIED_CREDIT : 0;
+    const credit = (x) => kind.get(x) === 'direct' ? DEPTH_CREDIT[depthOf.get(x) || 'work'] : kind.get(x) === 'implied' ? IMPLIED_CREDIT : 0;
     const reqHit = req.filter((x) => kind.get(x)), optHit = opt.filter((x) => kind.get(x));
     const inferred = [...reqHit, ...optHit].filter((x) => kind.get(x) === 'implied').map((x) => ({ term: show(x), from: S.implied.get(nk(show(x))) }));
     const denom = 2 * req.length + opt.length, haveSkills = S.set.size > 0;
     v.skills = denom && haveSkills ? (2 * req.reduce((t, x) => t + credit(x), 0) + opt.reduce((t, x) => t + credit(x), 0)) / denom : null;
     const flagged = [...req, ...opt].filter((x) => S.no.has(nk(x)));
     notes.skills = !denom ? 'The posting lists no concrete skills' : !haveSkills ? 'Your Profile lists no skills yet'
-      : `${reqHit.length}/${req.length} required · ${optHit.length}/${opt.length} preferred${inferred.length ? ` · ${inferred.length} inferred` : ''}`;
+      : `${reqHit.length}/${req.length} required · ${optHit.length}/${opt.length} preferred${inferred.length ? ` · ${inferred.length} inferred` : ''}${(() => { const l = [...reqHit, ...optHit].filter((x) => depthOf.get(x) === 'listed').length; return l ? ` · ${l} listed only (not shown in a job or project)` : ''; })()}`;
     // education and graduation window
     const au = a.audience || {}, levels = au.degreeLevels || [];
     const pursuing = pref.degreePursuing || '', held = Array.isArray(pref.degreesHeld) ? pref.degreesHeld : [];
@@ -461,7 +491,7 @@
     const rawTotal = total;
     if (blockers.length && total !== null) total = Math.min(total, BLOCKED_CAP);
     return { total, rawTotal, coverage: Math.round(coverage * 100) / 100, verdict, parts, track, blockers, open: open.map((e) => e.label), eligibility, flagged,
-      skills: { reqHit: reqHit.map(show), reqMiss: req.filter((x) => reqHit.indexOf(x) < 0).map(show), optHit: optHit.map(show), optMiss: opt.filter((x) => optHit.indexOf(x) < 0).map(show), inferred } };
+      skills: { evidence: [...reqHit, ...optHit].map((x) => ({ term: show(x), depth: kind.get(x) === 'implied' ? 'implied' : depthOf.get(x) || 'work', required: req.indexOf(x) >= 0 })), reqHit: reqHit.map(show), reqMiss: req.filter((x) => reqHit.indexOf(x) < 0).map(show), optHit: optHit.map(show), optMiss: opt.filter((x) => optHit.indexOf(x) < 0).map(show), inferred } };
   }
 
   /* Literal keyword coverage of the resume text: share of the posting's keywords (weighted by importance) that appear
@@ -528,6 +558,110 @@
     return out;
   }
 
+  /* ---------- resume score: how ready this resume is for this posting (0-100) ----------
+     Five parts, each 0-1, weighted: Match 35 (the posting's required and preferred skills that you truly have and that
+     the resume shows), Impact 25 (bullets with a number; bullets that open with an action verb), Clarity 15 (length,
+     vague phrases, repeated openers), Format 15 (one page at a readable size, density, 2-5 bullets per entry, LinkedIn,
+     section order) and Truth 10 (bullets whose cited Profile facts do not back them). A part that cannot be assessed
+     (no analysis, no layout yet) is left out and the rest is rescaled. Every lost point comes with a fix. */
+  const RS_WEIGHTS = { match: 35, impact: 25, clarity: 15, format: 15, truth: 10 };
+  const RS_LABEL = { match: 'Match', impact: 'Impact', clarity: 'Clarity', format: 'Format', truth: 'Truth' };
+  const WEAK_START = /^(responsible|duties|tasks?|was|were|is|are|i|my|the|a|an|worked on|helped|assisted|in charge|participated)\b/i;
+  const VAGUE = /\b(responsible for|helped( to)?|assisted (with|in)|worked on|various|a variety of|etc\.?|successfully|effectively|utilized|participated in|duties included)\b/i;
+  function resumeScore(m, ctx) {
+    ctx = ctx || {};
+    const a = ctx.analysis || null, S = ctx.skills || null, L = ctx.layout || null, flagged = new Set(ctx.flagged || []);
+    const secs = ((m && m.sections) || []).filter((x) => !x.hidden);
+    const lines = [];
+    for (const x of secs) {
+      lines.push(x.text || '', ...(x.lines || []).filter((l) => !l.hidden).map((l) => `${l.label}: ${l.value}`), ...(x.items || []));
+      for (const e of x.entries || []) if (!e.hidden) lines.push(e.title, e.subtitle, ...(e.lines || []), ...(e.bullets || []).filter((b) => !b.hidden).map((b) => b.text));
+    }
+    const t = ' ' + lines.filter(Boolean).join('\n').toLowerCase().replace(/[ \t]+/g, ' ') + ' ';
+    const bullets = [];
+    for (const x of secs) if (x.kind === 'entries' && x.key !== 'education') for (const e of x.entries || []) if (!e.hidden) for (const b of e.bullets || []) if (!b.hidden && String(b.text || '').trim()) bullets.push({ b, e, sec: x });
+    const v = {}, notes = {}, fixes = [];
+    const fix = (k, text, ref, gain) => fixes.push({ k, text, ref: ref || null, gain: gain || 1 });
+    const shown = (term) => { const k = nk(term); return [...new Set([k, String(term || '').toLowerCase().trim(), ...Object.keys(ALIAS).filter((x) => ALIAS[x] === k)])].filter(Boolean).some((f) => affirmed(f, t) === 'yes'); };
+    // match
+    if (a && S) {
+      const items = [], seen = new Set();
+      const add = (term, w, req) => { const ops = anyOf(term); const key = ops.map(nk).join('|'); if (!key || seen.has(key)) return; seen.add(key); items.push({ term, ops, w, req }); };
+      (a.requiredSkills || []).forEach((x) => add(x, 2, true));
+      (a.preferredSkills || []).forEach((x) => add(x, 1, false));
+      (a.keywords || []).filter((k) => (k.kind === 'tool' || k.kind === 'skill') && num(k.importance, 1) >= 2).forEach((k) => add(k.term, 1, false));
+      let have = 0, got = 0; const miss = [];
+      for (const it of items) {
+        const mine = it.ops.filter((o) => hasSkill(o, S));
+        if (!mine.length) continue;
+        have += it.w;
+        if (it.ops.some(shown)) got += it.w; else miss.push({ term: mine[0], req: it.req, w: it.w });
+      }
+      v.match = have ? got / have : null;
+      notes.match = have ? `${Math.round(got / have * 100)}% of the posting's skills you have are on the page` : 'None of the posting\'s listed skills are in your Profile';
+      miss.sort((x, y) => y.w - x.w).forEach((x) => fix('match', `Show “${x.term}”${x.req ? ' (required)' : ''}: you have it, but this resume never says so. Add it to Technical Skills, or to the bullet where you used it`, { goto: 'skills', term: x.term }, x.w * 2));
+    } else notes.match = 'Analyze the posting to score the match';
+    // impact
+    if (bullets.length) {
+      const withNum = bullets.filter((x) => /\d/.test(x.b.text)), weak = bullets.filter((x) => WEAK_START.test(x.b.text.trim()));
+      const numShare = withNum.length / bullets.length;
+      v.impact = 0.65 * Math.min(1, numShare / 0.5) + 0.35 * (1 - weak.length / bullets.length);
+      notes.impact = `${withNum.length} of ${bullets.length} bullets have a number · ${bullets.length - weak.length} open with an action verb`;
+      if (numShare < 0.5) {
+        const cand = bullets.filter((x) => !/\d/.test(x.b.text)).slice(0, Math.max(1, Math.ceil(bullets.length * 0.5) - withNum.length));
+        cand.forEach((x) => fix('impact', 'Add a number your Profile has (users, records, time saved, team size, accuracy) or swap in a quantified point', { bullet: x.b.id, text: x.b.text }, 1));
+      }
+      weak.forEach((x) => fix('impact', 'Open with an action verb (Built, Designed, Reduced…), not a duty or helper word', { bullet: x.b.id, text: x.b.text }, 1));
+    } else notes.impact = 'No bullets yet';
+    // clarity
+    if (bullets.length) {
+      let bad = 0;
+      for (const x of bullets) {
+        const tx = x.b.text.trim(), why = [];
+        if (tx.length > 200) why.push('runs past two lines');
+        if (tx.length < 45) why.push('too short to show what you did and why it mattered');
+        if (VAGUE.test(tx)) why.push(`vague wording (“${(VAGUE.exec(tx) || [''])[0]}”)`);
+        if (/\.$/.test(tx)) why.push('ends with a period');
+        if (why.length) { bad++; fix('clarity', why.join('; '), { bullet: x.b.id, text: tx }, 0.6); }
+      }
+      const rep = [];
+      for (const x of secs) if (x.kind === 'entries') {
+        const first = {};
+        for (const y of bullets.filter((z) => z.sec === x)) { const w = (y.b.text.trim().split(/\s+/)[0] || '').toLowerCase().replace(/[^a-z-]/g, ''); if (w) (first[w] = first[w] || []).push(y); }
+        for (const [w, ys] of Object.entries(first)) if (ys.length > 1) { rep.push(w); ys.slice(1).forEach((y) => fix('clarity', `“${w[0].toUpperCase() + w.slice(1)}” already opens another bullet in ${x.title}: vary the verb`, { bullet: y.b.id, text: y.b.text }, 0.5)); }
+      }
+      v.clarity = Math.max(0, 1 - (bad + rep.length * 0.5) / bullets.length);
+      notes.clarity = bad || rep.length ? `${bad} bullet${bad === 1 ? '' : 's'} to tighten${rep.length ? ` · repeated opener: ${rep.join(', ')}` : ''}` : 'Concise, specific bullets';
+    }
+    // format
+    const checks = [];
+    if (L) {
+      checks.push([3, L.pages === 1, L.pages === 1 ? 'One page' : `${L.pages} pages`, 'Fit it to one page: hide the least relevant bullets', { action: 'fit1' }]);
+      const roomy = L.pages === 1 && L.size >= 10.5 && (L.tight === undefined || L.tight >= 1);
+      checks.push([2, roomy, roomy ? `Readable at ${L.size} pt` : `Crowded (${L.size} pt${L.tight < 1 ? ', tight spacing' : ''})`, 'Too dense to skim: hide one or two weaker bullets so it fits at 10.5 pt with normal spacing', { action: 'fit1' }]);
+      if (L.pages === 1) checks.push([1, L.fill >= 0.8, `${Math.round(L.fill * 100)}% of the page used`, 'The page has room: turn a hidden bullet back on or add a stronger point', null]);
+    }
+    const ents = secs.filter((x) => x.kind === 'entries' && x.key !== 'education').flatMap((x) => (x.entries || []).filter((e) => !e.hidden));
+    const off = ents.filter((e) => { const n = (e.bullets || []).filter((b) => !b.hidden && String(b.text || '').trim()).length; return n && (n < 2 || n > 5); });
+    checks.push([2, !off.length, off.length ? `${off.length} entr${off.length > 1 ? 'ies' : 'y'} outside 2–5 bullets` : '2–5 bullets per entry', 'Give each job or project 2–5 bullets', off.length ? { entry: off[0].id } : null]);
+    const contact = String((m && m.header && m.header.contact) || '');
+    checks.push([1, /linkedin/i.test(contact), 'LinkedIn in the header', 'Add your LinkedIn URL in Profile › Basics', { goto: 'basics' }]);
+    const ix = (k) => secs.findIndex((x) => x.key === k || x.kind === k), ex = ix('experience'), sk = ix('skills');
+    checks.push([1, ex < 0 || sk < 0 || ex === sk + 1, 'Experience right under Skills', 'Move Professional Experience directly under Technical Skills', null]);
+    { let all = 0, ok = 0; for (const [w, pass, , tip, ref] of checks) { all += w; if (pass) ok += w; else fix('format', tip, ref, w * 0.8); } v.format = all ? ok / all : null; notes.format = checks.filter((c) => !c[1]).map((c) => c[2]).join(' · ') || checks.map((c) => c[2]).slice(0, 2).join(' · '); }
+    // truth
+    if (bullets.length) {
+      const f = bullets.filter((x) => flagged.has(x.b.id));
+      v.truth = Math.max(0, 1 - f.length / Math.max(3, bullets.length / 3));
+      notes.truth = f.length ? `${f.length} bullet${f.length > 1 ? 's' : ''} not backed by the cited Profile facts` : 'Every bullet is backed by its Profile facts';
+      f.forEach((x) => fix('truth', 'Not backed by its Profile facts: fix the bullet or add the true fact to your Profile', { bullet: x.b.id, text: x.b.text }, 3));
+    }
+    let all = 0, got = 0;
+    const parts = Object.keys(RS_WEIGHTS).map((k) => { const ok = v[k] !== undefined && v[k] !== null; if (ok) { all += RS_WEIGHTS[k]; got += RS_WEIGHTS[k] * v[k]; } return { k, label: RS_LABEL[k], v: ok ? Math.round(v[k] * 100) / 100 : null, weight: RS_WEIGHTS[k], note: notes[k] || '' }; });
+    fixes.sort((x, y) => y.gain - x.gain);
+    return { total: all ? Math.round(got / all * 100) : null, parts, fixes, bullets: bullets.length };
+  }
+
   /* What a failed save means for the page. status 0 = the request never reached the server.
      'offline' and 'server' are retried with backoff; 'rejected' and 'corrupt' are not (retrying cannot fix them). */
   function saveFailure(status) {
@@ -541,5 +675,6 @@
   const retryDelay = (n) => RETRY_SECONDS[Math.min(Math.max(0, n), RETRY_SECONDS.length - 1)];
 
   return { WEIGHT_KEYS, SKILL_NAMES, DEFAULTS, inferTrack, degreesOf, sponsorOf, trackOf, daysBetween, components, score, action, merge3, mergeById, mergeSet, mergeObject, mergeDeep, stable,
-    FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, nk, ALIAS, splitTerms, factCheck, OPT_EXCLUDED, saveFailure, retryDelay };
+    FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, skillDepth, DEPTH_LABEL, nk, ALIAS,
+    resumeScore, RS_WEIGHTS, WEAK_START, VAGUE, splitTerms, factCheck, OPT_EXCLUDED, saveFailure, retryDelay };
 });

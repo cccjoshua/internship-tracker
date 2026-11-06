@@ -25,7 +25,7 @@ test('#1 unknown components get no free points and are not counted as gaps', () 
   // skills 1.0 + role 1.0 known; education/experience/location/auth unknown -> excluded, coverage 50% -> no total
   assert.equal(r.total, null);
   const r2 = C.fit(PROFILE, Object.assign({ audience: { degreeLevels: ['Master'] }, location: { workMode: 'onsite', places: ['Austin, TX'] } }, a), { settings: SET, role: 'Software Engineer Intern' });
-  assert.equal(r2.total, 100);
+  assert.equal(r2.total, 93); // Python is only listed (0.7 credit), SQL is shown at work: skills 0.85, everything else full
   assert.equal(r2.verdict, 'check'); // sponsorship and CPT/OPT not stated: open questions, not a score bonus
   assert.ok(r2.open.includes('Future sponsorship'));
 });

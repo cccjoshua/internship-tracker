@@ -216,7 +216,7 @@ class StudioTest(unittest.TestCase):
             self.assertEqual(self.j("POST", "/api/ai/tailor", self.job(track="SWE"))[0], 200)
             system = " ".join(b["text"] for b in self.calls[-1]["system"])
             self.assertIn(phrase, system)
-            self.assertIn("fill one page", system)
+            self.assertIn("fit one page at 10.5 pt", system)
 
     def test_revise_applies_one_request_to_the_draft(self):
         self.req("POST", "/api/ai/key", {"key": KEY})
@@ -264,9 +264,9 @@ class StudioTest(unittest.TestCase):
         user = body["messages"][0]["content"] if isinstance(body["messages"][0]["content"], str) else " ".join(c.get("text", "") for c in body["messages"][0]["content"])
         self.assertIn("MY APPROVED DRAFT LINE", user)
         self.assertIn("not a whitelist", system)
-        self.assertIn("90-100% full", system)
+        self.assertIn("85-95% full", system)
         self.assertIn("PROFESSIONAL EXPERIENCE", system)
-        self.assertIn("always keep a GPA", system)
+        self.assertIn("GPA is 3.0 or higher", system)
 
     def test_versions_keep_their_notes_and_index_sees_a_restored_tailored_draft(self):
         k = self.job()["key"]

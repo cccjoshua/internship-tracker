@@ -90,18 +90,33 @@ class Spec:
         self.text_w = PAGE_W - 2 * self.margin_x
 
 
-def bold_segments(text, terms):
-    """Split text into [(segment, is_bold)], bolding every whole-word occurrence of the terms (longest first)."""
-    terms = sorted({clean(t) for t in terms or [] if clean(t) and len(clean(t)) >= 2}, key=len, reverse=True)
-    if not text or not terms:
+BOLD_PER_LINE = 2  # more than two bold terms in one bullet reads as keyword stuffing and stops guiding the eye
+
+
+def bold_segments(text, terms, limit=BOLD_PER_LINE):
+    """Split text into [(segment, is_bold)]. terms come in priority order (most important first): the first `limit`
+    terms that occur in the text are bolded at their first occurrence (whole words, any case)."""
+    seen, order = set(), []
+    for t in terms or []:
+        t = clean(t)
+        if len(t) >= 2 and t.lower() not in seen:
+            seen.add(t.lower())
+            order.append(t)
+    if not text or not order:
         return [(text, False)]
-    rx = re.compile(r"(?<![A-Za-z0-9])(?:" + "|".join(re.escape(t) for t in terms) + r")(?![A-Za-z0-9+#])", re.I)
+    spans = []
+    for t in order:
+        if len(spans) >= limit:
+            break
+        m = re.search(r"(?<![A-Za-z0-9])" + re.escape(t) + r"(?![A-Za-z0-9+#])", text, re.I)
+        if m and not any(m.start() < e and s0 < m.end() for s0, e in spans):
+            spans.append((m.start(), m.end()))
     out, i = [], 0
-    for m in rx.finditer(text):
-        if m.start() > i:
-            out.append((text[i:m.start()], False))
-        out.append((m.group(0), True))
-        i = m.end()
+    for s0, e in sorted(spans):
+        if s0 > i:
+            out.append((text[i:s0], False))
+        out.append((text[s0:e], True))
+        i = e
     if i < len(text):
         out.append((text[i:], False))
     return out or [(text, False)]
@@ -140,7 +155,7 @@ def blocks(model):
             continue
         kind, body = sec.get("kind"), []
         if kind == "summary" and clean(sec.get("text")):
-            body.append(("text", clean(sec["text"]), bold_segments(clean(sec["text"]), terms)))
+            body.append(("text", clean(sec["text"]), bold_segments(clean(sec["text"]), terms, 3)))
         elif kind == "skills":
             body += [("skill", clean(l.get("label")), clean(l.get("value"))) for l in sec.get("lines") or [] if clean(l.get("value")) and not l.get("hidden")]
         elif kind == "list":

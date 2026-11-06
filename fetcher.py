@@ -60,6 +60,7 @@ DEFAULT_WEIGHTS = {"fit": 30, "skills": 25, "sponsor": 20, "recency": 15, "degre
 DEFAULT_TARGETS = ["SWE", "DE", "DA", "DS", "BIE"]
 DEFAULT_PLACES = ["TX", "Remote"]
 NO_SPONSOR_PENALTY = 20
+NO_SPONSOR_CAP = 40  # a posting that will not sponsor never ranks above this (core.js DEFAULTS.noSponsorCap)
 RECENCY_HALF_LIFE = 5
 MAX_TEXT_READS = 150  # per run; the rest are read on the next run
 
@@ -759,7 +760,7 @@ def score_parts(l, settings=None, today=None):
     total = 0.0
     for p in parts:
         total += p["pts"]
-    c["total"] = max(0, math.floor(total - c["penalty"] + 0.5))  # JavaScript Math.round
+    c["total"] = max(0, min(NO_SPONSOR_CAP if c["noSponsor"] else 100, math.floor(total - c["penalty"] + 0.5)))  # JavaScript Math.round
     c["parts"] = parts
     return c
 

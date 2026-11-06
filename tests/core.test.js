@@ -136,7 +136,7 @@ test('budget: scoring 3,000 listings stays under 150 ms', () => {
 });
 
 test('a one-of requirement counts once and is met by any option', () => {
-  const P = { skills: [{ value: 'Python, Java, SQL' }] }, ctx = { settings: {}, role: 'Software Engineer Intern' };
+  const P = { skills: [{ value: 'Python, Java, SQL' }], experience: [{ id: 'w', tech: 'Python, Java, SQL', points: [] }] }, ctx = { settings: {}, role: 'Software Engineer Intern' };
   const r = C.fit(P, { requiredSkills: ['Java | Python | C++ | Go', 'Rust'], preferredSkills: ['Ruby | Perl'] }, ctx);
   const sk = r.parts.find((p) => p.k === 'skills');
   assert.equal(sk.note, '1/2 required · 0/1 preferred');
@@ -153,7 +153,7 @@ test('without concrete skills, work habits are not scored as missing skills', ()
   assert.equal(sk.known, false);
   assert.equal(sk.note, 'The posting lists no concrete skills');
   const b = Object.assign({}, a, { keywords: [...a.keywords, { term: 'Python', importance: 2, kind: 'tool' }] });
-  assert.equal(C.fit(P, b, { settings: {} }).parts.find((p) => p.k === 'skills').note, '1/1 required · 0/0 preferred');
+  assert.equal(C.fit(P, b, { settings: {} }).parts.find((p) => p.k === 'skills').note, '1/1 required · 0/0 preferred · 1 listed only (not shown in a job or project)');
 });
 
 test('one-of options inside a label, and Git suggests version control', () => {
@@ -166,4 +166,52 @@ test('one-of options inside a label, and Git suggests version control', () => {
 test('"Database systems" in a posting matches "Databases" in the Profile', () => {
   const S = C.skillSet({ skills: [{ value: 'Databases' }] }, {});
   assert.equal(C.hasSkill('Database systems', S), 'direct');
+});
+
+/* ---------- evidence-weighted match, no-sponsorship cap, resume score ---------- */
+test('skills shown at work count more than skills only listed', () => {
+  const a = { requiredSkills: ['Python', 'SQL'], preferredSkills: [] };
+  const listed = { skills: [{ value: 'Python, SQL' }] };
+  const shown = Object.assign({}, listed, { experience: [{ id: 'w', tech: 'SQL', points: [{ id: 'w.1', text: 'Wrote Python scripts', confirm: false }] }] });
+  const proj = Object.assign({}, listed, { projects: [{ id: 'p', tech: 'Python, SQL', points: [] }] });
+  const v = (P) => C.fit(P, a, { settings: {} }).parts.find((p) => p.k === 'skills').v;
+  assert.equal(v(shown), 1);
+  assert.equal(v(proj), 0.9);
+  assert.equal(v(listed), 0.7);
+  const S = C.skillSet(shown, {});
+  assert.equal(C.skillDepth('python', S), 'work');
+  assert.equal(C.fit(listed, a, { settings: {} }).skills.evidence[0].depth, 'listed');
+  // an unconfirmed point is not evidence
+  const unconf = Object.assign({}, listed, { experience: [{ id: 'w', points: [{ id: 'w.1', text: 'Wrote Python scripts', confirm: true }] }] });
+  assert.equal(C.skillDepth('Python', C.skillSet(unconf, {})), 'listed');
+});
+
+test('a posting that will not sponsor never ranks above the cap', () => {
+  const s = C.score(L({ noSponsor: true, h1b: 99999 }), {}, '2026-10-28');
+  assert.ok(s.total <= C.DEFAULTS.noSponsorCap);
+  assert.equal(C.action(s, {})[0], 'low');
+});
+
+const RES = (bullets, extra) => Object.assign({ header: { name: 'A', contact: 'Houston, TX | a@b.c | linkedin.com/in/a' }, sections: [
+  { id: 's1', kind: 'skills', title: 'Technical Skills', lines: [{ label: 'Languages', value: 'Python' }] },
+  { id: 's2', kind: 'entries', key: 'experience', title: 'Professional Experience', entries: [{ id: 'e1', title: 'Acme', bullets }] }] }, extra || {});
+test('resume score: match counts only skills you have, and every lost point has a fix', () => {
+  const P = { skills: [{ value: 'Python, SQL' }], experience: [{ id: 'w', tech: 'Python, SQL', points: [] }] };
+  const a = { requiredSkills: ['Python', 'SQL', 'Kafka'], preferredSkills: [], keywords: [] };
+  const good = [{ id: 'b1', text: 'Built a Python ETL job that loads 2,000 records nightly into SQL Server for 3 teams' }, { id: 'b2', text: 'Reduced report runtime 40% by rewriting SQL queries with window functions and indexes' }];
+  const r = C.resumeScore(RES(good), { analysis: a, skills: C.skillSet(P, {}), layout: { pages: 1, size: 10.5, tight: 1, fill: 0.9 } });
+  assert.equal(r.parts.find((p) => p.k === 'match').v, 1);          // Kafka is not yours, so it is not counted against you
+  assert.equal(r.total, 100);
+  assert.deepEqual(r.fixes, []);
+  const weak = [{ id: 'b1', text: 'Responsible for various reports.' }, { id: 'b2', text: 'Helped the team' }];
+  const w = C.resumeScore(RES(weak), { analysis: a, skills: C.skillSet(P, {}), layout: { pages: 1, size: 10, tight: 0.8, fill: 0.99 }, flagged: ['b1'] });
+  assert.ok(w.total < 50, String(w.total));
+  assert.ok(w.fixes.some((f) => f.k === 'match' && /SQL/.test(f.text)));
+  assert.ok(w.fixes.some((f) => f.k === 'truth' && f.ref.bullet === 'b1'));
+  assert.ok(w.fixes.some((f) => f.k === 'format' && /dense/.test(f.text)));
+  assert.ok(w.fixes.some((f) => f.k === 'clarity' && /vague/.test(f.text)));
+  // without an analysis or a layout those parts are left out, not scored as zero
+  const n = C.resumeScore(RES(good), {});
+  assert.equal(n.parts.find((p) => p.k === 'match').v, null);
+  assert.ok(n.total >= 90);
 });
