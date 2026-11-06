@@ -392,7 +392,7 @@ dialog.menu{background:var(--material-strong);-webkit-backdrop-filter:var(--blur
   .top .tools{grid-row:auto;order:1}
   .titlebar .sub{font-size:13px}
 }
-body:has(#stubBanner) .rail{top:30px;height:calc(100vh - 30px)}
+@media (min-width:761px){body:has(#stubBanner) .rail{top:30px;height:calc(100vh - 30px)}}
 
 
 /* ---------------------------------------------------------------- search palette (palette.js) */
@@ -813,3 +813,7 @@ button.src:focus-visible{outline:2px solid var(--tint);outline-offset:2px}
 .vd-list ins::before{content:"+ "}.vd-list del::before{content:"− "}
 .vd-pick{list-style:none;margin:10px 0;padding:0;display:grid;gap:6px}
 .chip.listed{border-style:dashed}
+
+/* Resume toolbar wraps on narrow screens instead of pushing the versions menu off the page */
+.rs-bar{flex-wrap:wrap;min-width:0}
+.rs-bar #rsVer{min-width:0;max-width:100%;flex:1 1 180px}
