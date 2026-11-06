@@ -399,7 +399,7 @@ function resolveJob(id) {
   const b = app || l, url = (app && app.url) || (l && l.url) || '';
   return { id, app, l, company: b.company, role: b.role, url, location: (app && app.location) || (l && l.location) || '',
     locations: l ? (l.locations && l.locations.length ? l.locations : [l.location]) : [app.location].filter(Boolean),
-    track: (app && app.track) || (l && TRACKS.includes(l.t) && l.t) || I.inferTrack(b.role) || 'SWE', h1b: l ? l.h1b : null,
+    track: (app && app.track) || (l && TRACKS.includes(l.t) && l.t) || I.inferTrack(b.role) || 'SWE', h1b: l ? l.h1b : null, lca: l ? l.lca : null, l0: l,
     deadline: (app && app.deadline) || (l && l.deadline) || '', posted: (l && l.posted) || (app && app.posted) || '', key: I.listingKey({ url, company: b.company, role: b.role }) };
 }
 const curId = () => decodeURIComponent((location.hash.split('/')[1] || ''));
@@ -747,7 +747,7 @@ const quote = (q) => q ? `<q class="ev-q">${esc(q)}</q>` : '';
 function factsPanel(J, a, job) {
   if (!a) {
     const l = J.l;
-    const known = l ? [['Degree (Simplify)', [...new Set((l.degrees || [l.degree]).filter(Boolean))].join(', ') || '—'], ['H-1B approvals', l.h1b === null || l.h1b === undefined ? 'No record' : Number(l.h1b).toLocaleString('en-US')],
+    const known = l ? [['Degree (Simplify)', [...new Set((l.degrees || [l.degree]).filter(Boolean))].join(', ') || '—'], ['Employer H-1B record', I.sponsorRecords(l).join(' · ') || 'No record'],
       ['Sponsorship wording', l.sponsor === 'no' ? 'Says no sponsorship' : l.sponsor === 'yes' ? 'CPT/OPT friendly' : 'Not found'], ['Skills found', (l.skillsFound || []).join(', ') || '—'], ['Deadline', l.deadline ? I.fmt(l.deadline) : 'Not stated']] : [];
     return `<section class="panel jb-facts"><h2>Job facts <small>${known.length ? 'from the free refresh' : ''}</small></h2>
       ${known.length ? `<dl class="facts">${known.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
@@ -770,7 +770,7 @@ function factsPanel(J, a, job) {
       ${row('Deadline', tm.deadline ? esc(I.fmt(tm.deadline)) : '')}
       ${row('Location', esc([lc.workMode !== 'unknown' ? lc.workMode : '', (lc.places || []).join('; '), lc.relocation].filter(Boolean).join(' · ')))}
       ${row('Pay', esc(a.pay))}
-      <dt>Sponsorship</dt><dd><span class="chip ${scls}">${stx}</span>${J.h1b ? ` <span class="sub">${Number(J.h1b).toLocaleString('en-US')} H-1B approvals (USCIS ${esc((AI.status && AI.status.h1b && AI.status.h1b.label) || 'FY2023')})</span>` : ''}${sp.note ? ` <span class="sub">${esc(sp.note)}</span>` : ''}${quote(sp.evidence)}</dd>
+      <dt>Sponsorship</dt><dd><span class="chip ${scls}">${stx}</span>${J.l0 && I.sponsorRecords(J.l0).length ? ` <span class="sub">${esc(I.sponsorRecords(J.l0).join(' · '))}</span>` : ''}${sp.note ? ` <span class="sub">${esc(sp.note)}</span>` : ''}${quote(sp.evidence)}</dd>
     </dl>
     ${(a.redFlags || []).length ? `<div class="notice warn"><span><b>Watch out:</b> ${a.redFlags.map(esc).join(' · ')}</span></div>` : ''}
     <details class="why" open><summary>Responsibilities</summary><ul class="jb-ul">${(a.responsibilities || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul></details>
@@ -848,7 +848,7 @@ async function markReviewed(kind) {
   try { await putDoc(kind, J, model, { reviewed: true }); I.toast('Marked reviewed · editing it again clears this'); I.render(); } catch (e) { I.toast(e.message); }
 }
 /* ---------- fit helpers (shared by the job page panels) ---------- */
-function fitOf(J, a) { return C.fit(P.data, a, { settings: I.S.settings, role: J.role, track: J.track, h1b: J.h1b, h1bYear: (AI.status && AI.status.h1b && AI.status.h1b.year) || '', locations: J.locations }); }
+function fitOf(J, a) { return C.fit(P.data, a, { settings: I.S.settings, role: J.role, track: J.track, h1b: J.h1b, h1bYear: (AI.status && AI.status.h1b && AI.status.h1b.label) || '', lca: J.lca, lcaPeriod: (AI.status && AI.status.lca && AI.status.lca.label) || '', locations: J.locations }); }
 function fitRing(f) {
   if (f.verdict === 'blocked') return `<span class="ring blocked" style="--p:100" title="Not eligible: ${esc(f.blockers.join('; '))}"><span aria-hidden="true">✕</span><span class="sr">Not eligible</span></span>`;
   if (f.total === null) return `<span class="ring none" title="Not enough information"><span>—</span></span>`;
@@ -1648,8 +1648,14 @@ function dataChecks() {
     if (f.error) add('err', 'Listings', `The last refresh failed: ${f.error}`, '<a class="btn xs" href="#settings/search">Refresh settings</a>');
     else if (age > 26) add('warn', 'Listings', `Listings were last refreshed ${Math.round(age)} hours ago (the Mac may have been asleep or offline)`, '<a class="btn xs" href="#settings/search">Refresh now</a>');
     if (f.usingCache) add('warn', 'Listings', 'SimplifyJobs could not be reached at the last refresh, so an older copy of the feed was used', '');
-    const y = +String(f.h1b || '').replace(/\D/g, '') || 0, fyNow = new Date().getFullYear() + (new Date().getMonth() >= 9 ? 1 : 0);
-    if (y && fyNow - y >= 2) add('warn', 'Listings', `H-1B approval counts come from ${f.h1b}, ${fyNow - y} fiscal years old. Download the newest year from the USCIS H-1B Employer Data Hub (Download → all employers) and import it`, '<a class="btn xs" href="https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub" target="_blank" rel="noopener">Open USCIS hub ↗</a><button class="btn xs" type="button" data-ai="h1bpick">Import file…</button>');
+    /* USCIS stopped publishing yearly employer files after FY2023, so an old USCIS year is not something you can fix.
+       Current sponsorship comes from DOL's quarterly LCA files: ask for one when none is loaded or the newest is
+       more than two quarters behind (DOL publishes about six weeks after each quarter ends). */
+    const lm = (AI.status && AI.status.lca) || {}, DOL = '<a class="btn xs" href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener">Open DOL data ↗</a><button class="btn xs" type="button" data-ai="lcapick">Import file…</button>';
+    const lagDays = lm.to ? (Date.now() - new Date(lm.to + 'T12:00:00').getTime()) / 864e5 : 0;
+    if (AI.status && !lm.to) add('warn', 'Listings', `Sponsorship counts use USCIS approvals from ${f.h1b || 'FY2023'}, the last year USCIS published. Import DOL’s latest quarterly LCA file to see which employers filed for software and data H-1Bs in the last 12 months`, DOL);
+    else if (lagDays > 200) add('warn', 'Listings', `The newest DOL filing data ends ${I.fmt(lm.to)}. A newer quarter is out; import it`, DOL);
+    else if (lm.partial) add('info', 'Listings', `DOL filing counts cover ${lm.label}, less than 12 months. Import the earlier quarters of the same year for full-year counts`, DOL);
     const unread = F.listings.filter((l) => l.source === 'simplify' && !l.textRead).length;
     if (unread) add('info', 'Listings', `${plural(unread, 'listing')} could not be read (the career site blocked it), so skills, deadline and sponsorship come from the feed only`, '');
   }
@@ -1662,6 +1668,18 @@ function dataCheckPanel() {
   return `<section class="panel" id="s-health"><h2>Data check <small>${L.length ? `${errs ? plural(errs, 'problem') : ''}${errs && warns ? ' · ' : ''}${warns ? plural(warns, 'thing') + ' to check' : ''}${!errs && !warns ? 'notes only' : ''}` : 'everything looks right'}</small></h2>
     <p class="sub">Checks your applications, resumes, Profile and listings for missing, contradictory or stale data. Runs every time you open this page; nothing is changed until you press a button.</p>
     ${L.length ? `<ul class="fixlist dcheck">${L.map((x) => `<li><span class="fix-w"><b><span class="dc-sev ${SEV[x.sev][0]}">${SEV[x.sev][1]}</span> ${esc(x.area)}</b><span class="fix-t">${esc(x.text)}</span></span><span class="fix-a">${x.fix}</span></li>`).join('')}</ul>` : '<p class="pos">No missing, contradictory or stale data found.</p>'}</section>`;
+}
+/* ---------- settings: DOL LCA filings (current sponsorship signal) ---------- */
+function lcaField(m) {
+  const n = (x) => Number(x || 0).toLocaleString('en-US');
+  return `<div class="field" id="s-lca"><span>Recent H-1B filings <span class="hint">U.S. Department of Labor · the current signal that an employer sponsors software and data roles</span></span>
+    <div class="row">${m.to ? `<span class="chip v-yes">${esc(m.label)}</span><span class="sub">${n(m.techFilings)} tech filings (SOC 15-) of ${n(m.filings)} certified H-1B filings · ${n(m.employers)} employers · ${esc((m.files || []).join(', ').replace(/_/g, ' '))}</span>` : '<span class="chip tag">Not imported</span><span class="sub">Listings use USCIS approvals only</span>'}
+      <button class="btn sm" type="button" data-ai="lcapick">Import a DOL quarter…</button><input type="file" id="lcaFile" accept=".xlsx,.csv" hidden></div>
+    <details class="why"><summary>How to import and what the number means</summary><ol class="jb-ul">
+      <li>Open DOL’s <a href="https://www.dol.gov/agencies/eta/foreign-labor/performance" target="_blank" rel="noopener noreferrer">OFLC performance data</a> page, Disclosure Data, LCA Programs (H-1B, H-1B1, E-3).</li>
+      <li>Download the newest quarter (for example LCA_Disclosure_Data_FY2026_Q4.xlsx). Files are large; import as many quarters as you like, a case is counted once.</li>
+      <li>Import it here. Reading takes about a minute; every listing updates right away.</li></ol>
+      <p class="sub">Counted: certified H-1B Labor Condition Applications in computer and math occupations (software, data, analytics: SOC 15-xxxx) in the 12 months up to the newest decision date. An LCA is filed before every H-1B petition, so it shows an employer sponsoring these roles now. It is not an approved visa and includes transfers and extensions, and a posting’s own words about sponsorship always override it.</p></details></div>`;
 }
 /* ---------- settings: Claude API ---------- */
 function rSettings() {
@@ -1698,14 +1716,11 @@ function rSettings() {
       <div class="share"><span class="prog ${pct >= 90 ? '' : 'done'}"><span style="width:${pct}%"></span></span>${money(u.spend)} of ${budget ? money(budget) : 'no limit'}</div>
       <table class="calib" tabindex="0"><thead><tr><th>Task</th><th>Calls</th><th>Via Pro</th><th>Input</th><th>Cached</th><th>Output</th><th>API cost</th><th>Saved by Pro</th></tr></thead><tbody>${Object.entries(u.byTask).map(([k, b]) => `<tr><td>${esc(st.taskLabels[k] || k)}</td><td class="n">${b.calls}</td><td class="n">${b.proCalls || 0}</td><td class="n">${(b.in + b.cacheWrite).toLocaleString('en-US')}</td><td class="n">${b.cacheRead.toLocaleString('en-US')}</td><td class="n">${b.out.toLocaleString('en-US')}</td><td class="n">${money(b.cost)}</td><td class="n">${b.saved ? money(b.saved) : '—'}</td></tr>`).join('') || '<tr><td colspan="8" class="empty">No calls yet this month.</td></tr>'}</tbody></table>
       ${u.recent.length ? `<details class="why"><summary>Last ${u.recent.length} calls · ${money(u.allTime)} all time</summary><ul class="snaps">${u.recent.map((r) => `<li><span class="mono">${esc(r.at.slice(5, 16).replace('T', ' '))}</span><span>${esc(st.taskLabels[r.task] || r.task)} · ${esc(r.target)}</span><span class="mono" style="margin-left:auto">${money(r.cost)}</span></li>`).join('')}</ul></details>` : ''}</div>
-    <div class="field"><span>H-1B sponsorship data <span class="hint">used in listing scores and on job pages</span></span>
-      <div class="row"><span class="chip ${h.label && h.label !== 'FY2023' ? 'v-yes' : 'tag'}">${esc(h.label || 'FY2023')}</span><span class="sub">${h.employers ? `${Number(h.employers).toLocaleString('en-US')} employers · imported ${esc((h.importedAt || '').slice(0, 10))}` : 'USCIS archive file (the newest downloadable as a direct file)'}</span>
-        <button class="btn sm" type="button" data-ai="h1bpick">Import newer data…</button><input type="file" id="h1bFile" accept=".csv,.xlsx,.txt,text/csv" hidden></div>
-      <details class="why"><summary>How to get the newest year (about a minute)</summary><ol class="jb-ul">
-        <li>Open the <a href="https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub" target="_blank" rel="noopener noreferrer">USCIS H-1B Employer Data Hub</a>.</li>
-        <li>Choose the latest fiscal year and leave the other filters empty, so the table lists all employers.</li>
-        <li>Select “Download to Excel” (or CSV) for the employer table, not the top-employers chart.</li>
-        <li>Import the file here. Every listing’s H-1B count updates right away.</li></ol></details></div>
+    ${lcaField(st.lca || {})}
+    <div class="field"><span>USCIS H-1B approvals <span class="hint">past outcomes; the stronger of the two records counts in listing scores</span></span>
+      <div class="row"><span class="chip ${h.label && h.label !== 'FY2023' ? 'v-yes' : 'tag'}">${esc(h.label || 'FY2023')}</span><span class="sub">${h.employers ? `${Number(h.employers).toLocaleString('en-US')} employers · imported ${esc((h.importedAt || '').slice(0, 10))}` : 'USCIS archive file: the last year USCIS published as a file'}</span>
+        <button class="btn sm ghost" type="button" data-ai="h1bpick">Import a USCIS file…</button><input type="file" id="h1bFile" accept=".csv,.xlsx,.txt,text/csv" hidden></div>
+      <span class="hint">USCIS has not published an employer file after FY2023. If the <a href="https://www.uscis.gov/tools/reports-and-studies/h-1b-employer-data-hub" target="_blank" rel="noopener noreferrer">Employer Data Hub</a> offers a newer year as a full download (all employers, Excel or CSV), import it here.</span></div>
     <div class="field"><span>Posting change checks <span class="hint">free · once a day, analyzed postings are re-read (no Claude call)</span></span>
       <span class="sub">${ch.lastRun ? `Last run ${esc(ch.lastRun)}: ${ch.checked} read, ${ch.changed} changed, ${ch.closed} closed.` : 'Runs after the next listings refresh.'}</span></div>
     <div class="field"><span>Fit score weights ${I.eff(true)} <span class="hint">relative; the job page’s match breakdown</span></span><div class="weights" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr) 70px);max-width:720px">${C.FIT_KEYS.map((k) => `<label for="fw-${k}">${C.FIT_LABEL[k]}</label><input id="fw-${k}" type="number" min="0" max="100" step="5" data-fitw="${k}" value="${fw[k]}">`).join('')}</div></div>
@@ -1776,6 +1791,13 @@ document.addEventListener('change', (e) => {
       .catch((e) => I.toast(e.message));
     return;
   }
+  if (t.id === 'lcaFile' && t.files && t.files[0]) {
+    const f = t.files[0]; I.toast(`Reading ${f.name}… a full quarter takes about a minute`);
+    fetch('api/lca', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-Filename': encodeURIComponent(f.name) }, body: f })
+      .then(async (r) => { const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Import failed'); AI.status = d.status; await I.refreshFeed(); I.render(); I.toast(`DOL filings updated: ${d.lca.label} · ${Number(d.lca.techFilings).toLocaleString('en-US')} tech H-1B filings · listings re-scored`); })
+      .catch((e) => I.toast(e.message));
+    return;
+  }
   if (t.dataset.fitw) { I.S.settings.fitWeights = Object.assign({}, C.FIT_WEIGHTS, I.S.settings.fitWeights || {}, { [t.dataset.fitw]: Math.max(0, Math.min(100, +t.value || 0)) }); I.settingChanged('Fit weights saved', false); }
 });
 async function aiConfig(patch, msg) { try { AI.status = await api('POST', 'api/ai/config', patch); I.toast(msg); I.render(); } catch (e) { I.toast(e.message); } }
@@ -1808,6 +1830,7 @@ document.addEventListener('click', async (e) => {
       }
       if (k === 'cccheck') { ai.disabled = true; AI.status = await api('POST', 'api/ai/claude-check', {}); I.render(); return I.toast(ccOK() ? 'Claude Code is ready with your Claude plan' : 'Claude Code is not ready yet'); }
       if (k === 'h1bpick') { const fi = $('#h1bFile'); fi.value = ''; return fi.click(); }
+      if (k === 'lcapick') { const fi = $('#lcaFile'); if (!fi) { location.hash = '#settings/claude'; return; } fi.value = ''; return fi.click(); }
       if (k === 'verify') { ai.disabled = true; const r = await api('POST', 'api/ai/verify', {}); const want = Object.values(AI.status.config.models); const miss = want.filter((m) => !r.models.includes(m)); return I.toast(miss.length ? `Key works, but these models are not available to it: ${miss.join(', ')}` : `Key works · ${r.models.length} models available`); }
     } catch (err) { I.toast(err.message); } finally { ai.disabled = false; }
   }

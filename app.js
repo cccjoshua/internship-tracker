@@ -735,8 +735,16 @@ R.table = () => {
 };
 
 const h1bLabel = () => (F.fetch && F.fetch.h1b) || 'FY2023';
+/* Employer sponsorship records, newest first: DOL filings in the last 12 months, then USCIS approvals. */
+function sponsorRecords(l) {
+  const out = [], has = (v) => typeof v === 'number';
+  if (has(l.lca)) out.push(`${Number(l.lca).toLocaleString('en-US')} tech H-1B filing${l.lca === 1 ? '' : 's'}${has(l.lcaAll) && l.lcaAll !== l.lca ? ` (${Number(l.lcaAll).toLocaleString('en-US')} in all jobs)` : ''} · DOL ${(F.fetch && F.fetch.lca) || 'last 12 months'}${l.lcaApprox ? ' · approximate name match' : ''}`);
+  if (has(l.h1b)) out.push(`${Number(l.h1b).toLocaleString('en-US')} H-1B approvals · USCIS ${h1bLabel()}${l.h1bApprox ? ' · approximate name match' : ''}`);
+  return out;
+}
 function evidence(l) {
-  const h = l.h1b === null || l.h1b === undefined ? (l.source === 'simplify' ? 'No H-1B record found for this employer' : '') : `${Number(l.h1b).toLocaleString('en-US')} H-1B approvals (USCIS ${h1bLabel()})${l.h1bApprox ? ' · approximate: matched on a shortened employer name' : ''}`;
+  const rec = sponsorRecords(l);
+  const h = rec.length ? rec.join(' · ') : (l.source === 'simplify' ? 'No H-1B record found for this employer' : '');
   const fl = (l.flags || []).map((f) => `<span class="chip ${f === 'CPT/OPT friendly' ? 'v-yes' : f === 'No sponsorship' ? 'v-no' : 'tag'}">${esc(f)}${f === 'No sponsorship' && l.pen ? ` −${l.pen}` : ''}</span>`).join('');
   return h || fl ? `<div class="ev"><span>${esc(h)}</span>${fl}</div>` : '';
 }
@@ -1429,7 +1437,7 @@ function trackListings(ids, status) {
   for (const id of ids) {
     const l = L.find((x) => x.id === id); if (!l || l.dup) continue;
     const tr = TRACKS.includes(l.t) ? l.t : inferTrack(l.role);
-    const note = [`Listing priority ${l.total} when tracked.`, l.h1b !== undefined && l.h1b !== null ? `${l.h1b} H-1B approvals (USCIS ${h1bLabel()}).` : '', (l.flags || []).length ? `Flags: ${l.flags.join(', ')}.` : '',
+    const note = [`Listing priority ${l.total} when tracked.`, sponsorRecords(l).length ? `${sponsorRecords(l).join('; ')}.` : '', (l.flags || []).length ? `Flags: ${l.flags.join(', ')}.` : '',
       l.matched.length ? `Skills to highlight: ${l.matched.join(', ')}.` : '', l.missing.length ? `Not on resume: ${l.missing.join(', ')}.` : ''].filter(Boolean).join(' ');
     const a = blankApp({ company: l.company, role: l.role, track: tr, location: l.location, url: safeUrl(l.url), posted: l.posted, deadline: l.deadline || '', sponsor: l.sponsor, sample: l.sample, priority: l.total >= 80 ? 3 : l.total >= 65 ? 2 : 1, notes: note, score: l.total, listingId: l.id, history: [{ s: 'saved', d: iso(TODAY) }] });
     if (status === 'applied') setStatus(a, 'applied');
@@ -1775,7 +1783,7 @@ window.addEventListener('beforeunload', (e) => { if (Store.queued || Store.busy)
 window.IAT = {
   $, $$, esc, clone, uid, iso, parse, fmt, ago, daysFrom, plural, safeUrl, urlKey, norm, listingKey, inferTrack,
   R, VIEWS, HOOKS, UI, render, route, go, toast, save, scored, visibleListings, resumeFor, ring, band, link, eff, stChip, opts,
-  trackListings, openDrawer, loadKit, kitOf, backCrumb, jobIdForKey: (key) => { const a = S.apps.find((x) => listingKey(x) === key); if (a) return a.id; const l = scored().find((x) => listingKey(x) === key); return l ? (l.dup ? l.dup.id : l.id) : null; }, appForKey: (key) => S.apps.find((x) => listingKey(x) === key) || null, checkpoint, setStatus, menuAt, openDialog, dlg, settingChanged, appliedOn, refreshFeed: () => checkRemote(),
+  trackListings, openDrawer, loadKit, sponsorRecords, kitOf, backCrumb, jobIdForKey: (key) => { const a = S.apps.find((x) => listingKey(x) === key); if (a) return a.id; const l = scored().find((x) => listingKey(x) === key); return l ? (l.dup ? l.dup.id : l.id) : null; }, appForKey: (key) => S.apps.find((x) => listingKey(x) === key) || null, checkpoint, setStatus, menuAt, openDialog, dlg, settingChanged, appliedOn, refreshFeed: () => checkRemote(),
   LABEL, STAGES, TRACKS, TRACK_NAME, CLOSED, DEFAULTS,
   get S() { return S; }, get F() { return F; }, Store,
   palette: {

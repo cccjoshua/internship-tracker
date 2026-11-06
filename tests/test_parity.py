@@ -37,6 +37,7 @@ def random_listing(r, today):
         "category": r.choice(["", "", "Quant", "Software"]),
         "posted": posted.isoformat() if r.random() > 0.05 else "",
         "h1b": r.choice([None, 0, 1, 7, 150, 2400, 90000]),
+        "lca": r.choice([None, None, 0, 3, 40, 5000]),
         "friendly": r.random() < 0.2, "noSponsor": r.random() < 0.15, "source": "simplify", "textRead": r.random() < 0.8,
         "skillsFound": r.sample(fetcher.DEFAULT_MY_SKILLS + ["Spark", "Airflow", "AWS", "Excel", "Statistics"], r.randint(0, 8)),
         "locations": r.sample(["Austin, TX", "Remote in USA", "Seattle, WA", "Houston, Texas", "New York, NY"], r.randint(0, 3)),

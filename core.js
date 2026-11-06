@@ -96,6 +96,12 @@
     return out;
   }
 
+  /* 0..1 from employer records: the stronger of USCIS approvals (h1b) and recent DOL tech filings (lca);
+     0.3 when neither file names the employer (unknown, not a no). Mirrors fetcher.sponsor_evidence. */
+  const sponsorEvidence = (l) => {
+    const vals = [l.h1b, l.lca].filter((v) => typeof v === 'number' && isFinite(v)).map((v) => Math.min(1.0, Math.log10(1 + v) / 3));
+    return vals.length ? Math.max(...vals) : 0.3;
+  };
   const sponsorOf = (l) => (l.noSponsor || l.sponsor === 'no') ? 'no' : (l.friendly || l.sponsor === 'yes') ? 'yes' : 'unknown';
   const trackOf = (l) => l.track || inferTrack(l.role, l.category);
   const locationsOf = (l) => Array.isArray(l.locations) && l.locations.length ? l.locations : (l.location ? [l.location] : []);
@@ -128,7 +134,7 @@
     const skills = found.length ? (matched.length + 1) / (found.length + 2) : 0.5;
 
     const sp = sponsorOf(l);
-    let sponsor = (l.h1b === null || l.h1b === undefined) ? 0.3 : Math.min(1.0, Math.log10(1 + Number(l.h1b)) / 3);
+    let sponsor = sponsorEvidence(l);
     if (sp === 'yes' || l.friendly) sponsor = Math.max(sponsor, 0.9);
     const noSponsor = sp === 'no';
     if (noSponsor) sponsor = 0.0;
@@ -482,7 +488,7 @@
     else eligibility.push(elig('cptopt', 'Internship authorization (CPT/OPT)', usesOpt === false ? 'na' : 'unknown', usesOpt === false ? 'You do not need CPT/OPT' : 'Not stated in the posting'));
     if (st === 'no_sponsorship') eligibility.push(elig('sponsorship', 'Future sponsorship', needs === true ? 'fails' : needs === false ? 'meets' : 'unknown', 'Requires work authorization without sponsorship, now and in the future', ev));
     else if (st === 'sponsors') eligibility.push(elig('sponsorship', 'Future sponsorship', 'meets', 'Says it sponsors visas', ev));
-    else eligibility.push(elig('sponsorship', 'Future sponsorship', needs === false ? 'na' : 'unknown', 'Not stated' + (ctx.h1b ? ` · reference only: ${Number(ctx.h1b).toLocaleString('en-US')} H-1B approvals${ctx.h1bYear ? ' in ' + ctx.h1bYear : ''} (employer-wide, not a commitment for this role)` : ''), st === 'cpt_opt_ok' ? '' : ev));
+    else eligibility.push(elig('sponsorship', 'Future sponsorship', needs === false ? 'na' : 'unknown', 'Not stated' + (ctx.h1b || ctx.lca ? ` · reference only: ${[ctx.lca ? `${Number(ctx.lca).toLocaleString('en-US')} tech H-1B filings${ctx.lcaPeriod ? ' in ' + ctx.lcaPeriod : ' in the last 12 months'}` : '', ctx.h1b ? `${Number(ctx.h1b).toLocaleString('en-US')} H-1B approvals${ctx.h1bYear ? ' in ' + ctx.h1bYear : ''}` : ''].filter(Boolean).join(', ')} (employer-wide, not a commitment for this role)` : ''), st === 'cpt_opt_ok' ? '' : ev));
     const authFails = eligibility.some((e) => ['citizenship', 'cptopt', 'sponsorship'].includes(e.key) && e.status === 'fails');
     const authMeets = !authFails && (needs === false || st === 'sponsors') && !optOut;
     v.auth = authFails ? 0 : authMeets ? 1 : (st === 'cpt_opt_ok' && !optOut) ? 0.8 : null;
@@ -688,7 +694,7 @@
   const RETRY_SECONDS = [5, 15, 60];
   const retryDelay = (n) => RETRY_SECONDS[Math.min(Math.max(0, n), RETRY_SECONDS.length - 1)];
 
-  return { WEIGHT_KEYS, SKILL_NAMES, DEFAULTS, inferTrack, degreesOf, sponsorOf, trackOf, daysBetween, components, score, action, merge3, mergeById, mergeSet, mergeObject, mergeDeep, stable,
+  return { WEIGHT_KEYS, SKILL_NAMES, DEFAULTS, inferTrack, degreesOf, sponsorOf, sponsorEvidence, trackOf, daysBetween, components, score, action, merge3, mergeById, mergeSet, mergeObject, mergeDeep, stable,
     FIT_KEYS, FIT_LABEL, FIT_WEIGHTS, MIN_COVERAGE, fit, keywordScore, skillSet, hasSkill, skillDepth, DEPTH_LABEL, nk, ALIAS,
     resumeScore, RS_WEIGHTS, WEAK_START, VAGUE, splitTerms, factCheck, OPT_EXCLUDED, saveFailure, retryDelay };
 });

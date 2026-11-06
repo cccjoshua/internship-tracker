@@ -327,7 +327,78 @@ ORG_WORDS = {"BANCSHARES", "BANCORP", "BANCORPORATION", "HOLDING", "ENTERPRISES"
 
 
 
-class H1B:
+class EmployerIndex:
+    """Matches a listing's company name to employer names in a government file (normalized with norm_company).
+    Subclasses fill self.counts {employer: number} and call self._ready()."""
+
+    counts = {}
+    keys = []
+    last_how = None
+
+    def _ready(self):
+        self.keys = sorted(self.counts)
+
+    def _sum(self, k, word_prefix=False):
+        """Count for name k and every filing name that extends it ("CAPITAL ONE" + "CAPITAL ONE BANK").
+        word_prefix also accepts k's last word as the start of a longer word ("ALASKA AIR" -> "ALASKA AIRLINES")."""
+        names = self._names(k, word_prefix)
+        return None if names is None else sum(self.counts[x] for x in names)
+
+    def _names(self, k, word_prefix=False):
+        names = [k] if k in self.counts else []
+        if len(k) >= 3:
+            stem = k if word_prefix else k + " "
+            i = bisect.bisect_left(self.keys, stem)
+            while i < len(self.keys) and self.keys[i].startswith(stem):
+                if self.keys[i] != k:
+                    names.append(self.keys[i])
+                i += 1
+        return names or None
+
+    def match(self, company):
+        """The filing names for a listing's employer, or None. self.last_how says how the name matched: 'exact'
+        (the name or a longer filing name), 'alias' (a known legal name), or 'approx' (a shortened name or a word
+        prefix; shown as approximate)."""
+        self.last_how = None
+        k = norm_company(company)
+        if not k or not self.counts:
+            return None
+        n = self._names(k)
+        if n:
+            self.last_how = "exact"
+            return n
+        alias = H1B_ALIASES.get(k)
+        if alias:
+            n = self._names(alias)
+            if n:
+                self.last_how = "alias"
+                return n
+        words = k.split()
+        # Drop trailing words that only name the kind of organization ("FIRST CITIZENS BANCSHARES" -> "FIRST CITIZENS",
+        # "HYSTER YALE MATERIALS HANDLING" -> "HYSTER YALE"), keeping at least two words. A place or a product word is
+        # never dropped: "FEDERAL HOME LOAN BANK OF INDIANAPOLIS" is not every Federal Home Loan Bank.
+        cut = len(words)
+        while cut > 2 and words[cut - 1] in ORG_WORDS:
+            cut -= 1
+            n = self._names(" ".join(words[:cut]))
+            if n:
+                self.last_how = "approx"
+                return n
+        # The last word may be the start of the filing name's word ("ALASKA AIR" -> "ALASKA AIRLINES").
+        if len(words) >= 2 and len(words[-1]) >= 3 and len(k) >= 8:
+            n = self._names(k, word_prefix=True)
+            if n:
+                self.last_how = "approx"
+                return n
+        return None
+
+    def lookup(self, company):
+        """The count for a listing's employer, or None when no filing name matches (see match)."""
+        names = self.match(company)
+        return None if names is None else sum(self.counts[x] for x in names)
+
+
+class H1B(EmployerIndex):
     """Employer -> H-1B approvals (initial + continuing) from the USCIS H-1B Employer Data Hub."""
 
     def __init__(self, log):
@@ -353,58 +424,7 @@ class H1B:
                 _write_json(idx_path, self.counts)
             except Exception as e:
                 log(f"H-1B data unavailable ({e}); sponsorship falls back to posting text only.")
-        self.keys = sorted(self.counts)
-
-    def _sum(self, k, word_prefix=False):
-        """Approvals for name k and every filing name that extends it ("CAPITAL ONE" + "CAPITAL ONE BANK").
-        word_prefix also accepts k's last word as the start of a longer word ("ALASKA AIR" -> "ALASKA AIRLINES")."""
-        found, total = k in self.counts, self.counts.get(k, 0)
-        if len(k) >= 3:
-            stem = k if word_prefix else k + " "
-            i = bisect.bisect_left(self.keys, stem)
-            while i < len(self.keys) and self.keys[i].startswith(stem):
-                if self.keys[i] != k:
-                    total += self.counts[self.keys[i]]
-                    found = True
-                i += 1
-        return total if found else None
-
-    def lookup(self, company):
-        """Approvals for a listing's employer, or None when no filing name matches. self.last_how says how the
-        name matched: 'exact' (the name or a longer filing name), 'alias' (a known legal name), or 'approx'
-        (a shortened name or a word prefix; shown as approximate)."""
-        self.last_how = None
-        k = norm_company(company)
-        if not k or not self.counts:
-            return None
-        n = self._sum(k)
-        if n is not None:
-            self.last_how = "exact"
-            return n
-        alias = H1B_ALIASES.get(k)
-        if alias:
-            n = self._sum(alias)
-            if n is not None:
-                self.last_how = "alias"
-                return n
-        words = k.split()
-        # Drop trailing words that only name the kind of organization ("FIRST CITIZENS BANCSHARES" -> "FIRST CITIZENS",
-        # "HYSTER YALE MATERIALS HANDLING" -> "HYSTER YALE"), keeping at least two words. A place or a product word is
-        # never dropped: "FEDERAL HOME LOAN BANK OF INDIANAPOLIS" is not every Federal Home Loan Bank.
-        cut = len(words)
-        while cut > 2 and words[cut - 1] in ORG_WORDS:
-            cut -= 1
-            n = self._sum(" ".join(words[:cut]))
-            if n is not None:
-                self.last_how = "approx"
-                return n
-        # The last word may be the start of the filing name's word ("ALASKA AIR" -> "ALASKA AIRLINES").
-        if len(words) >= 2 and len(words[-1]) >= 3 and len(k) >= 8:
-            n = self._sum(k, word_prefix=True)
-            if n is not None:
-                self.last_how = "approx"
-                return n
-        return None
+        self._ready()
 
 
 def h1b_meta():
@@ -421,11 +441,14 @@ def _xlsx_rows(data):
     import zipfile
     import xml.etree.ElementTree as ET
     ns = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
-    z = zipfile.ZipFile(io.BytesIO(data))
+    z = zipfile.ZipFile(io.BytesIO(data) if isinstance(data, (bytes, bytearray)) else data)
     shared = []
-    if "xl/sharedStrings.xml" in z.namelist():
-        for si in ET.fromstring(z.read("xl/sharedStrings.xml")).iter(ns + "si"):
-            shared.append("".join(t.text or "" for t in si.iter(ns + "t")))
+    if "xl/sharedStrings.xml" in z.namelist():  # streamed: DOL's files hold millions of strings
+        with z.open("xl/sharedStrings.xml") as f:
+            for _, el in ET.iterparse(f):
+                if el.tag == ns + "si":
+                    shared.append("".join(t.text or "" for t in el.iter(ns + "t")))
+                    el.clear()
     sheets = sorted(n for n in z.namelist() if re.match(r"^xl/worksheets/sheet\d+\.xml$", n))
     if not sheets:
         raise ValueError("no worksheet in the file")
@@ -510,6 +533,156 @@ def import_h1b(data, filename=""):
             "employers": len(counts), "approvals": sum(counts.values()), "importedAt": now_local().isoformat(timespec="seconds")}
     _write_json(os.path.join(CACHE, "h1b_meta.json"), meta)
     return meta
+
+
+# ---------------------------------------------------------------- DOL LCA disclosure data
+# USCIS stopped publishing yearly H-1B Employer Data Hub files after FY2023. The Department of Labor publishes every
+# certified Labor Condition Application (the filing an employer makes before each H-1B petition) each quarter, with
+# the occupation code. Counting an employer's certified H-1B LCAs in computer and math occupations (SOC 15-xxxx)
+# over the last 12 months is the most current public signal that it sponsors software and data roles now.
+# An LCA is intent, not an approved visa, and covers transfers and extensions as well as new hires.
+LCA_PAGE = "https://www.dol.gov/agencies/eta/foreign-labor/performance"
+LCA_WINDOW_DAYS = 365
+
+
+def _lca_dir():
+    return os.path.join(CACHE, "lca")
+
+
+def _lca_date(v):
+    """DOL dates arrive as text (2026-03-31, 3/31/2026) or as Excel day numbers."""
+    v = str(v or "").strip()
+    if not v:
+        return ""
+    if re.fullmatch(r"\d{5}(\.\d+)?", v):
+        return (dt.date(1899, 12, 30) + dt.timedelta(days=int(float(v)))).isoformat()
+    m = re.match(r"(\d{4})-(\d\d)-(\d\d)", v)
+    if m:
+        return m.group(0)
+    m = re.match(r"(\d{1,2})/(\d{1,2})/(\d{4})", v)
+    if m:
+        return f"{m.group(3)}-{int(m.group(1)):02d}-{int(m.group(2)):02d}"
+    return ""
+
+
+def parse_lca(rows):
+    """Certified H-1B LCAs from a DOL LCA disclosure file: [[case number, employer, decision date, tech], ...]."""
+    rows = iter(rows)
+    header = None
+    for r in rows:
+        up = [str(x).strip().upper() for x in r]
+        if "CASE_NUMBER" in up and "EMPLOYER_NAME" in up:
+            header = up
+            break
+    if not header:
+        raise ValueError("this is not a DOL LCA disclosure file (no CASE_NUMBER and EMPLOYER_NAME columns)")
+    col = {h: i for i, h in enumerate(header)}
+    need = ["CASE_NUMBER", "CASE_STATUS", "EMPLOYER_NAME", "DECISION_DATE"]
+    missing = [h for h in need if h not in col]
+    if missing:
+        raise ValueError("missing columns " + ", ".join(missing))
+    ci, si, ei, di = (col[h] for h in need)
+    vi, oi = col.get("VISA_CLASS"), col.get("SOC_CODE")
+    width = max(ci, si, ei, di, vi or 0, oi or 0)
+    out = []
+    for r in rows:
+        if len(r) <= width:
+            r = list(r) + [""] * (width + 1 - len(r))
+        if not str(r[si]).strip().lower().startswith("certified"):
+            continue  # Certified and Certified - Withdrawn; not Denied or Withdrawn
+        if vi is not None and str(r[vi]).strip().upper() not in ("H-1B", "H1B", ""):
+            continue  # H-1B1 (Chile, Singapore) and E-3 (Australia) are not open to you
+        k = norm_company(r[ei])
+        d = _lca_date(r[di])
+        if not k or not d:
+            continue
+        out.append([str(r[ci]).strip(), k, d, 1 if str(r[oi] if oi is not None else "").strip().startswith("15-") else 0])
+    if len(out) < 100:
+        raise ValueError(f"only {len(out)} certified H-1B filings found; download a full quarterly LCA disclosure file")
+    return out
+
+
+def lca_meta():
+    return _read_json(os.path.join(CACHE, "lca_meta.json")) or {}
+
+
+def _rebuild_lca():
+    """Merge every imported quarter (a case counted once), keep the last 12 months, count per employer."""
+    import gzip
+    cases = {}
+    files = []
+    for fn in sorted(os.listdir(_lca_dir())) if os.path.isdir(_lca_dir()) else []:
+        if not fn.endswith(".json.gz"):
+            continue
+        try:
+            with gzip.open(os.path.join(_lca_dir(), fn), "rt", encoding="utf-8") as f:
+                part = json.load(f)
+        except (OSError, ValueError):
+            continue
+        files.append(fn[:-8])
+        for c in part:
+            cases[c[0] or f"{fn}:{len(cases)}"] = c
+    if not cases:
+        return {}
+    to = max(c[2] for c in cases.values())
+    frm = (dt.date.fromisoformat(to) - dt.timedelta(days=LCA_WINDOW_DAYS - 1)).isoformat()
+    tech, every = {}, {}
+    n, first = 0, to
+    for _, k, d, t in cases.values():
+        if d < frm:
+            continue
+        n += 1
+        first = min(first, d)
+        every[k] = every.get(k, 0) + 1
+        if t:
+            tech[k] = tech.get(k, 0) + 1
+    _write_json(os.path.join(CACHE, "lca_index.json"), {"tech": tech, "all": every})
+    span = first  # the earliest filing kept: later than frm until four quarters are imported
+    label = f"{dt.date.fromisoformat(span):%b %Y} – {dt.date.fromisoformat(to):%b %Y}"
+    meta = {"label": label, "from": span, "to": to, "files": files, "filings": n, "techFilings": sum(tech.values()),
+            "employers": len(every), "partial": first > (dt.date.fromisoformat(frm) + dt.timedelta(days=31)).isoformat(), "importedAt": now_local().isoformat(timespec="seconds"),
+            "source": "U.S. Department of Labor, OFLC LCA disclosure data"}
+    _write_json(os.path.join(CACHE, "lca_meta.json"), meta)
+    return meta
+
+
+def import_lca(data, filename=""):
+    """Add one quarterly DOL LCA disclosure file (.xlsx or .csv) and recount the last 12 months."""
+    import gzip
+    if data[:2] == b"PK":
+        rows = _xlsx_rows(data)
+    else:
+        text = data.decode("utf-8-sig", "replace")
+        rows = csv.reader(text.splitlines(), delimiter="\t" if "\t" in text.split("\n", 1)[0] else ",")
+    part = parse_lca(rows)
+    m = re.search(r"FY\s*(20\d\d)[ _-]*Q([1-4])", filename or "", re.I)
+    name = f"FY{m.group(1)}_Q{m.group(2)}" if m else f"{min(c[2] for c in part)}_{max(c[2] for c in part)}"
+    os.makedirs(_lca_dir(), exist_ok=True)
+    tmp = os.path.join(_lca_dir(), name + ".tmp")
+    with gzip.open(tmp, "wt", encoding="utf-8") as f:
+        json.dump(part, f, separators=(",", ":"))
+    os.replace(tmp, os.path.join(_lca_dir(), name + ".json.gz"))
+    meta = _rebuild_lca()
+    meta["lastFile"] = os.path.basename(filename or "")[:120]
+    _write_json(os.path.join(CACHE, "lca_meta.json"), meta)
+    return meta
+
+
+class LCA(EmployerIndex):
+    """Employer -> certified H-1B LCAs in the last 12 months of imported DOL data: lookup() gives the
+    computer and math (SOC 15-) count, lookup_all() every occupation."""
+
+    def __init__(self, log=None):
+        idx = _read_json(os.path.join(CACHE, "lca_index.json")) or {}
+        self.all = idx.get("all") or {}
+        self.counts = {k: idx.get("tech", {}).get(k, 0) for k in self.all}  # every filer, so 0 is a real zero
+        self._ready()
+
+    def lookup_both(self, company):
+        names = self.match(company)
+        if names is None:
+            return None, None
+        return sum(self.counts[x] for x in names), sum(self.all[x] for x in names)
 
 
 class PostingClosed(Exception):
@@ -750,6 +923,13 @@ def degrees_of(l):
     return out
 
 
+def sponsor_evidence(l):
+    """0..1 from employer records: the stronger of USCIS approvals (h1b) and recent DOL tech filings (lca).
+    0.3 when neither file names the employer (unknown, not a no). Mirrors core.js sponsorEvidence."""
+    vals = [min(1.0, math.log10(1 + float(v)) / 3) for v in (l.get("h1b"), l.get("lca")) if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return max(vals) if vals else 0.3
+
+
 def sponsor_of(l):
     if l.get("noSponsor") or l.get("sponsor") == "no":
         return "no"
@@ -772,8 +952,7 @@ def components(l, settings=None, today=None):
     missing = [k for k in found if k not in mine]
     skills = (len(matched) + 1) / (len(found) + 2) if found else 0.5
     sp = sponsor_of(l)
-    h = l.get("h1b")
-    sponsor = 0.3 if h is None else min(1.0, math.log10(1 + float(h)) / 3)
+    sponsor = sponsor_evidence(l)
     if sp == "yes" or l.get("friendly"):
         sponsor = max(sponsor, 0.9)
     no_sponsor = sp == "no"
@@ -822,7 +1001,7 @@ def score(l, settings=None, today=None):
     return score_parts(l, settings, today)["total"]
 
 
-def record(it, posted, ana, h1b_n):
+def record(it, posted, ana, h1b_n, lca=(None, None)):
     """The listing as stored in listings.json: raw facts only, scored by core.js."""
     locs = list(it.get("locations") or [])
     friendly = bool((ana or {}).get("friendly")) or it.get("sponsorship") == "Offers Sponsorship"
@@ -836,7 +1015,7 @@ def record(it, posted, ana, h1b_n):
         "term": next((t for t in (it.get("terms") or []) if t), TERM),
         "degrees": list(it.get("degrees") or []),
         "degree": "/".join(d.replace("'s", "") for d in (it.get("degrees") or [])) or "Any",
-        "h1b": h1b_n, "friendly": friendly and not no_sponsor, "noSponsor": no_sponsor,
+        "h1b": h1b_n, "lca": lca[0], "lcaAll": lca[1], "friendly": friendly and not no_sponsor, "noSponsor": no_sponsor,
         "optExcluded": bool((ana or {}).get("optExcluded")),
         "textRead": bool(ana and ana.get("read")),
         "skillsFound": list((ana or {}).get("skills") or []),
@@ -877,6 +1056,7 @@ def refresh(user, listings_state=None, log=print, progress=None):
     feed = load_feed(log, feed_meta)
     progress("Filtering listings")
     h1b = H1B(log)
+    lca = LCA(log)
     now = now_local()
     excluded = {}
 
@@ -962,9 +1142,11 @@ def refresh(user, listings_state=None, log=print, progress=None):
             if ana.get("citizen") or ana.get("clearance"):
                 drop("Citizenship or clearance required")
                 continue
-        rec = record(it, posted, ana, h1b.lookup(it.get("company_name")))
+        rec = record(it, posted, ana, h1b.lookup(it.get("company_name")), lca.lookup_both(it.get("company_name")))
         if getattr(h1b, "last_how", None) == "approx":
             rec["h1bApprox"] = True  # matched on a shortened name: shown as approximate
+        if rec["lca"] is not None and lca.last_how == "approx":
+            rec["lcaApprox"] = True
         out.append(rec)
 
     # Saved (not yet applied) applications: is the posting still open? Checked once a day.
@@ -998,7 +1180,7 @@ def refresh(user, listings_state=None, log=print, progress=None):
     deadlines = {k: v for k, v in deadlines.items() if k in app_ids}
 
     info = {"at": now.isoformat(timespec="seconds"), "feed": len(feed), "window": window,
-            "excluded": excluded, "textRead": read, "h1b": h1b_label() if h1b.counts else None, "error": None,
+            "excluded": excluded, "textRead": read, "h1b": h1b_label() if h1b.counts else None, "lca": lca_meta().get("label") if lca.counts else None, "error": None,
             "usingCache": bool(feed_meta.get("usingCache"))}
     info["deadlines"] = sum(1 for l in out if l["deadline"])
     return {"listings": out, "fetch": info, "closures": closures, "liveChecked": live, "savedDeadlines": deadlines}

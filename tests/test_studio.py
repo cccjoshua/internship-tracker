@@ -519,6 +519,57 @@ print(json.dumps({{"is_error": False, "structured_output": out, "usage": usage, 
         self.assertIn("Power BI", rec2["text"])
         self.assertNotIn("changedAt", rec2)
 
+    def test_lca_import_counts_recent_tech_filings_per_employer(self):
+        import io, zipfile
+        server._write(server.LISTINGS, {"lrev": 1, "listings": [{"id": "a", "company": "Acme Analytics", "role": "x"},
+                                                                {"id": "b", "company": "Nobody Co", "role": "y"}], "fetch": {"h1b": "FY2023"}})
+        head = ["CASE_NUMBER", "CASE_STATUS", "RECEIVED_DATE", "DECISION_DATE", "VISA_CLASS", "JOB_TITLE", "SOC_CODE", "EMPLOYER_NAME"]
+        rows = [head]
+        for i in range(120):  # filler employers so the file looks complete
+            rows.append([f"I-200-0{i}", "Certified", "", "2026-03-01", "H-1B", "Analyst", "13-2011.00", f"FILLER {i} LLC"])
+        rows += [["I-1", "Certified", "", "2026-02-02", "H-1B", "Software Engineer", "15-1252.00", "ACME ANALYTICS, INC."],
+                 ["I-2", "Certified - Withdrawn", "", "2026-05-10", "H-1B", "Data Scientist", "15-2051.00", "Acme Analytics Inc"],
+                 ["I-3", "Certified", "", "2026-05-11", "H-1B", "Accountant", "13-2011.00", "ACME ANALYTICS INC"],
+                 ["I-4", "Denied", "", "2026-05-12", "H-1B", "Software Engineer", "15-1252.00", "ACME ANALYTICS INC"],
+                 ["I-5", "Certified", "", "2026-05-12", "E-3 Australian", "Software Engineer", "15-1252.00", "ACME ANALYTICS INC"]]
+        # an .xlsx with shared strings and an Excel day number for one date
+        ss, idx = [], {}
+        def sid(v):
+            if v not in idx:
+                idx[v] = len(ss); ss.append(v)
+            return idx[v]
+        def cell(ci, ri, v):
+            ref = chr(65 + ci) + str(ri)
+            if ci == 3 and v == "2026-02-02":
+                return f'<c r="{ref}"><v>46055</v></c>'  # 2026-02-02 as an Excel serial
+            return f'<c r="{ref}" t="s"><v>{sid(v)}</v></c>' if v else ""
+        body = "".join(f'<row r="{ri}">' + "".join(cell(ci, ri, v) for ci, v in enumerate(r)) + "</row>" for ri, r in enumerate(rows, 1))
+        ns = 'xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+        esc = lambda x: x.replace("&", "&amp;").replace("<", "&lt;")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr("xl/sharedStrings.xml", f"<sst {ns}>" + "".join(f"<si><t>{esc(x)}</t></si>" for x in ss) + "</sst>")
+            z.writestr("xl/worksheets/sheet1.xml", f"<worksheet {ns}><sheetData>{body}</sheetData></worksheet>")
+        meta = server.import_lca(buf.getvalue(), "LCA_Disclosure_Data_FY2026_Q3.xlsx")
+        self.assertEqual(meta["files"], ["FY2026_Q3"])
+        L = server.load_listings()["listings"]
+        self.assertEqual((L[0]["lca"], L[0]["lcaAll"]), (2, 3))  # two tech filings, three certified H-1B in all
+        self.assertIsNone(L[1]["lca"])
+        # a second quarter as CSV: a repeated case counts once; filings older than 12 months fall out
+        csv_rows = [",".join(head), "I-2,Certified,,2026-05-10,H-1B,Data Scientist,15-2051.00,ACME ANALYTICS INC",
+                    "I-9,Certified,,2025-01-15,H-1B,Software Engineer,15-1252.00,ACME ANALYTICS INC",
+                    "I-10,Certified,,2026-08-20,H-1B,Data Engineer,15-1243.00,ACME ANALYTICS INC"]
+        csv_rows += [f"J-{i},Certified,,2026-07-01,H-1B,Analyst,13-2011.00,FILLER {i} LLC" for i in range(120)]
+        meta = server.import_lca("\n".join(csv_rows).encode(), "LCA_Disclosure_Data_FY2026_Q4.csv")
+        self.assertEqual((meta["from"], meta["to"]), ("2026-02-02", "2026-08-20"))
+        L = server.load_listings()
+        self.assertEqual(L["listings"][0]["lca"], 3)
+        self.assertEqual(L["fetch"]["lca"], meta["label"])
+        self.assertTrue(meta["partial"])  # less than 12 months imported so far
+        self.assertEqual(ai.status()["lca"]["label"], meta["label"])
+        with self.assertRaises(ValueError):
+            server.import_lca(b"Employer,Approvals\nAcme,3\n", "wrong.csv")
+
     def test_h1b_import_updates_listings(self):
         server._write(server.LISTINGS, {"lrev": 1, "listings": [{"id": "a", "company": "Acme 3, Inc.", "role": "x"}], "fetch": {"h1b": "FY2023"}})
         rows = ["Fiscal Year,Employer (Petitioner) Name,New Employment Approval,Continuation Approval"] + [f"2026,ACME {i} INC,{i},1" for i in range(80)]

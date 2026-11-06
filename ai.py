@@ -232,6 +232,7 @@ def status():
     return {"stub": stub_mode(), "configured": bool(k), "keyEnds": k[-4:] if k else "", "keySource": where if k else "", "config": c,
             "prices": PRICES, "modelLabels": MODEL_LABEL, "usage": usage_summary(), "taskLabels": TASK_LABEL, "claudeCode": claude_code(),
             "h1b": dict(fetcher.h1b_meta(), loaded=os.path.exists(os.path.join(fetcher.CACHE, "h1b_index.json"))),
+            "lca": fetcher.lca_meta(),
             "changes": _read(_p("ai", "changes.json"), {}) or {}}
 
 

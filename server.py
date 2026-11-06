@@ -335,6 +335,25 @@ def import_h1b(data, filename):
     return meta
 
 
+def import_lca(data, filename):
+    """Add a quarterly DOL LCA disclosure file and update every listing's recent-filings count right away."""
+    meta = fetcher.import_lca(data, filename)
+    lca = fetcher.LCA()
+    with LISTINGS_LOCK:
+        cur = load_listings()
+        for l in cur.get("listings") or []:
+            l["lca"], l["lcaAll"] = lca.lookup_both(l.get("company"))
+            if l["lca"] is not None and lca.last_how == "approx":
+                l["lcaApprox"] = True
+            else:
+                l.pop("lcaApprox", None)
+        if cur.get("fetch"):
+            cur["fetch"]["lca"] = meta["label"]
+        cur["lrev"] = int(cur.get("lrev", 0) or 0) + 1
+        _write(LISTINGS, cur)
+    return meta
+
+
 # ---------------------------------------------------------------- calendar
 CLOSED = {"rejected", "withdrawn", "missed", "ghosted", "expired"}
 
@@ -762,7 +781,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _studio(self, method, path):
         """Profile, Claude API and resume endpoints. Returns True when handled."""
         routes = {("PUT", "/api/profile"), ("PUT", "/api/resume"), ("PUT", "/api/base"), ("POST", "/api/ai/base"), ("POST", "/api/ai/key"), ("POST", "/api/ai/config"), ("POST", "/api/ai/verify"),
-                  ("POST", "/api/job/text"), ("POST", "/api/ai/analyze"), ("POST", "/api/ai/tailor"), ("POST", "/api/ai/rewrite"), ("POST", "/api/ai/cover"), ("PUT", "/api/letter"), ("POST", "/api/ai/claude-check"), ("POST", "/api/h1b"),
+                  ("POST", "/api/job/text"), ("POST", "/api/ai/analyze"), ("POST", "/api/ai/tailor"), ("POST", "/api/ai/rewrite"), ("POST", "/api/ai/cover"), ("PUT", "/api/letter"), ("POST", "/api/ai/claude-check"), ("POST", "/api/h1b"), ("POST", "/api/lca"),
                   ("POST", "/api/resume/fit"), ("POST", "/api/export"), ("POST", "/api/submitted")}
         if (method, path) not in routes:
             return False
@@ -770,6 +789,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self._json(403, {"error": "Cross-origin requests are not allowed."})
             return True
         try:
+            if path == "/api/lca":  # raw file upload: one quarter is 50-250 MB
+                length = self._length()
+                if length <= 0 or length > 600 * 1024 * 1024:
+                    raise ai.AIError("The file is empty or larger than 600 MB.", 413)
+                try:
+                    meta = import_lca(self.rfile.read(length), urllib.parse.unquote(self.headers.get("X-Filename") or ""))
+                except (ValueError, KeyError, OSError) as e:
+                    raise ai.AIError(f"Could not read that file: {e}.")
+                except Exception as e:  # a corrupt .xlsx (zipfile.BadZipFile, ParseError)
+                    raise ai.AIError(f"Could not read that file as a DOL LCA disclosure spreadsheet ({type(e).__name__}).")
+                return self._json(200, {"ok": True, "lca": meta, "status": ai.status()}) or True
             if path == "/api/h1b":  # raw file upload
                 length = self._length()
                 if length <= 0 or length > 80 * 1024 * 1024:
