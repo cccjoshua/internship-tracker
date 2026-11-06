@@ -10,6 +10,14 @@ const sid = () => Math.random().toString(36).slice(2, 8);
 const lines = (s) => String(s || '').split('\n').map((x) => x.trim()).filter(Boolean);
 const TRACKS = ['SWE', 'DE', 'DA', 'DS', 'BIE'];
 
+/* Drawn icons (16px grid, 1.5 stroke, currentColor): one family for every small control. */
+const svgI = (d, label) => `<svg class="ic" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const IC = {
+  up: svgI('<path d="M4 10l4-4 4 4"/>'), down: svgI('<path d="M4 6l4 4 4-4"/>'), x: svgI('<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>'),
+  eye: svgI('<path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/>'),
+  eyeOff: svgI('<path d="M2 2l12 12M6.6 3.7A6.9 6.9 0 0 1 8 3.5c4.1 0 6.5 4.5 6.5 4.5a11 11 0 0 1-1.9 2.4M10.1 10.6A2 2 0 0 1 6.9 7.4M4.2 5.1A11 11 0 0 0 1.5 8s2.4 4.5 6.5 4.5c.9 0 1.8-.2 2.5-.6"/>'),
+  dl: svgI('<path d="M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"/>'),
+};
 /* ---------- server calls ---------- */
 async function api(method, path, body) {
   const r = await fetch(path, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
@@ -136,8 +144,8 @@ function pointRow(k, i, j, x, n) {
     <textarea class="auto" rows="1" data-pf="${base}.text" aria-label="${b ? 'Bullet' : 'Fact'} text">${esc(x.text)}</textarea>
     <div class="pt-acts"><label class="pt-cf${x.confirm ? ' on' : ''}" title="Untick when this still needs checking: unconfirmed points are never sent to Claude or put on a resume"><input type="checkbox" data-pf="${base}.confirm" data-pft="inv" ${x.confirm ? '' : 'checked'}>${x.confirm ? 'Unconfirmed' : 'Confirmed'}</label>
       <span class="pt-id" title="Source id Claude cites">${esc(x.id)}</span>
-      <button class="btn icon sm ghost" type="button" data-pfa="mvp:${k}:${i}:${j}:-1" aria-label="Move up" ${j ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost" type="button" data-pfa="mvp:${k}:${i}:${j}:1" aria-label="Move down" ${j < n - 1 ? '' : 'disabled'}>↓</button>
-      <button class="btn icon sm ghost danger" type="button" data-pfa="delp:${k}:${i}:${j}" aria-label="Delete point">✕</button></div></li>`;
+      <button class="btn icon sm ghost" type="button" data-pfa="mvp:${k}:${i}:${j}:-1" aria-label="Move up" ${j ? '' : 'disabled'}>${IC.up}</button><button class="btn icon sm ghost" type="button" data-pfa="mvp:${k}:${i}:${j}:1" aria-label="Move down" ${j < n - 1 ? '' : 'disabled'}>${IC.down}</button>
+      <button class="btn icon sm ghost danger" type="button" data-pfa="delp:${k}:${i}:${j}" aria-label="Delete point">${IC.x}</button></div></li>`;
 }
 function entryCard(k, e, i, n) {
   const d = ENTRY[k], open = !!(P.open && P.open[e.id]);
@@ -296,7 +304,7 @@ function rProfile() {
 
   ${sec('skills', 'Skills', 'resume skill lines and what you can claim', `
     <div class="field"><span>Skill lines on the resume</span><div class="pf-skills">${p.skills.map((s, i) => `<div class="pf-sk"><input type="text" data-pf="skills.${i}.label" value="${esc(s.label)}" placeholder="Label" aria-label="Skill line label"><input type="text" data-pf="skills.${i}.value" value="${esc(s.value)}" placeholder="Comma-separated skills" aria-label="Skills">
-      <button class="btn icon sm ghost" type="button" data-pfa="mvs:${i}:-1" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost danger" type="button" data-pfa="dels:${i}" aria-label="Remove line">✕</button></div>`).join('')}</div>
+      <button class="btn icon sm ghost" type="button" data-pfa="mvs:${i}:-1" aria-label="Move up" ${i ? '' : 'disabled'}>${IC.up}</button><button class="btn icon sm ghost danger" type="button" data-pfa="dels:${i}" aria-label="Remove line">${IC.x}</button></div>`).join('')}</div>
       <div class="row"><button class="btn sm" type="button" data-pfa="adds">+ Skill line</button></div></div>
     <div class="field"><span>Skills the listing scorer looks for ${I.eff(true)} <span class="hint">${mine.size} of ${C.SKILL_NAMES.length} · same list as Settings</span></span><div class="checks sm">${C.SKILL_NAMES.map((k) => `<label><input type="checkbox" data-skill="${esc(k)}" ${mine.has(k) ? 'checked' : ''}> ${esc(k)}</label>`).join('')}</div></div>
     ${fld('notYet', 'Do not claim', { area: true, type: 'lines', rows: 4, hint: 'one per line · never counted as a match and Claude is told not to use them', cls: 'full' })}
@@ -689,8 +697,8 @@ async function saveVersion(label, by, J, model, notes) {
 function pageNote() {
   if (ST.fit && ST.fit.pages > 1) return `<div class="notice warn"><span><b>${ST.fit.pages} pages.</b> Recruiters expect one page for an internship. Fit it automatically (hides the least relevant items first; you can turn any back on), or shorten bullets yourself.</span><button class="btn sm primary" type="button" data-jb="fit1">Fit to one page</button></div>`;
   if (ST.fit && ST.fit.pages === 1 && (ST.fit.size < COMFORT_PT || ST.fit.tight < 1)) return `<div class="notice"><span><b>Crowded:</b> it only fits at ${ST.fit.size} pt${ST.fit.tight < 1 ? ' with tightened spacing' : ''}. Recruiters skim a page with some air faster. Hide one or two weaker bullets, or let the tracker pick them.</span><button class="btn sm" type="button" data-jb="fit1">Make it roomier</button></div>`;
-  if (ST.fit && ST.fit.pages === 1 && ST.fit.fill < 0.8 && !(ST.trimmed && ST.trimmed.length)) return `<div class="notice"><span><b>The page is ${Math.round(ST.fit.fill * 100)}% full.</b> There is room for about ${ST.fit.fill < 0.75 ? 'one more project or 3–4 bullets' : '1–2 more bullets'}: turn a hidden item back on with its ● switch, or add your strongest missing project.</span></div>`;
-  if (ST.trimmed && ST.trimmed.length) return `<div class="notice"><span><b>Hidden to keep one page:</b> ${esc(trimText(ST.trimmed).replace(/\.$/, ''))}. Turn any back on with its ● switch, then hide something else.</span><button class="btn sm ghost" type="button" data-jb="trim-ok">OK</button></div>`;
+  if (ST.fit && ST.fit.pages === 1 && ST.fit.fill < 0.8 && !(ST.trimmed && ST.trimmed.length)) return `<div class="notice"><span><b>The page is ${Math.round(ST.fit.fill * 100)}% full.</b> There is room for about ${ST.fit.fill < 0.75 ? 'one more project or 3–4 bullets' : '1–2 more bullets'}: turn a hidden item back on with its eye button, or add your strongest missing project.</span></div>`;
+  if (ST.trimmed && ST.trimmed.length) return `<div class="notice"><span><b>Hidden to keep one page:</b> ${esc(trimText(ST.trimmed).replace(/\.$/, ''))}. Turn any back on with its eye button, then hide something else.</span><button class="btn sm ghost" type="button" data-jb="trim-ok">OK</button></div>`;
   return '';
 }
 function updateLive() {
@@ -800,7 +808,7 @@ function readiness(doc, J) {
   if (sv) {
     const changed = ST.model && JSON.stringify(sv.resume) !== JSON.stringify(ST.model);
     return `<div class="ready${changed ? ' warn' : ''}"><span class="chip v-yes">Submitted ${esc(when(sv.at))}</span><span class="sub">${changed ? '<b class="warn-t">Edited since.</b> The employer has the submitted version; use it to prepare for interviews.' : 'This is exactly the page the employer has.'}</span>
-      <span class="ready-a">${changed ? '<button class="btn xs ghost" type="button" data-subcmp>Compare</button>' : ''}<span class="dlpair sm" role="group" aria-label="Download the submitted version"><span class="dlp-l" aria-hidden="true">↓ sent</span><button type="button" data-subdl="docx">.docx</button><button type="button" data-subdl="pdf">.pdf</button></span></span></div>`;
+      <span class="ready-a">${changed ? '<button class="btn xs ghost" type="button" data-subcmp>Compare</button>' : ''}<span class="dlpair sm" role="group" aria-label="Download the submitted version"><span class="dlp-l" aria-hidden="true">${IC.dl} sent</span><button type="button" data-subdl="docx">.docx</button><button type="button" data-subdl="pdf">.pdf</button></span></span></div>`;
   }
   const r = rsScore(ST.model, J), flagged = r ? r.parts.find((x) => x.k === 'truth') : null, bad = flagged && flagged.v !== null && flagged.v < 1;
   const ok = st.reviewed && r && r.total !== null && r.total >= 80 && !bad;
@@ -856,7 +864,7 @@ function stepHero(J) {
       ${ST.err && ST.err.task === 'analyze' && ST.err.key === J.key && !ST.busy ? `<div class="job-err" role="alert"><b>The analysis did not finish.</b> <span>${esc(ST.err.msg)}</span></div>` : ''}
       <button class="linkbtn" type="button" data-jb="paste">Posting won’t load? Paste the description</button>`
     : `<a class="btn primary lg" href="#settings/claude">Connect Claude</a><span class="sub">${esc(notReadyTip('analyze'))}</span>`;
-  return `<section class="panel step-hero"><div class="sh-main"><span class="eyebrow">Step 1 of 4</span><h2>Analyze the posting</h2>
+  return `<section class="panel step-hero"><div class="sh-main"><h2>Analyze the posting</h2>
       <p class="sub">Claude reads the posting once. Everything after this step uses the result, and fit and eligibility are computed here for free.</p>
       <ul class="gets">${gets.map(([b, t]) => `<li><b>${b}</b><span>${t}</span></li>`).join('')}</ul></div>
     <div class="sh-act">${act}<a class="linkbtn" href="#job/${esc(encodeURIComponent(J.id))}/resume">Skip to the resume →</a></div></section>`;
@@ -904,27 +912,27 @@ function rsEditor(m) {
     const open = ST.rw && ST.rw.id === b.id;
     return `<li class="rb${b.hidden ? ' off' : ''}" data-bid="${b.id}"><textarea class="auto" rows="1" data-rs="${p}.text" aria-label="Bullet">${esc(b.text)}</textarea>
       <div class="rb-acts">${ok ? `<button type="button" class="src ok" data-goto="pt:${esc(srcs[0])}" title="${esc(srcs.map((x) => x + ': ' + pointText(x)).join('\n'))}&#10;Click to open it in your Profile">✓ ${esc(srcs.join(', '))}</button>` : `<span class="src no" title="No profile source: check this bullet is true">⚠ no source</span>`}${issues.length ? `<span class="src no fc" title="${esc(issues.join('\n'))}">⚠ ${esc(issues[0])}${issues.length > 1 ? ` +${issues.length - 1}` : ''}</span>` : ''}<span class="grow"></span>
-        <button class="btn sm ghost${open ? ' on' : ''}" type="button" data-rsa="rw:${b.id}" title="Rewrite this bullet with Claude">✨ Rewrite</button>
-        <button class="btn icon sm ghost" type="button" data-rsa="mvb:${si}:${ei}:${bi}:-1" aria-label="Move up" ${bi ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost" type="button" data-rsa="mvb:${si}:${ei}:${bi}:1" aria-label="Move down" ${bi < n - 1 ? '' : 'disabled'}>↓</button>
-        <button class="btn icon sm ghost" type="button" data-rsa="hideb:${si}:${ei}:${bi}" aria-label="${b.hidden ? 'Show' : 'Hide'}" title="${b.hidden ? 'Show' : 'Hide'} on the resume">${b.hidden ? '◌' : '●'}</button>
-        <button class="btn icon sm ghost danger" type="button" data-rsa="delb:${si}:${ei}:${bi}" aria-label="Delete bullet">✕</button></div>
+        <button class="btn sm ghost${open ? ' on' : ''}" type="button" data-rsa="rw:${b.id}" title="Rewrite this bullet with Claude">Rewrite</button>
+        <button class="btn icon sm ghost" type="button" data-rsa="mvb:${si}:${ei}:${bi}:-1" aria-label="Move up" ${bi ? '' : 'disabled'}>${IC.up}</button><button class="btn icon sm ghost" type="button" data-rsa="mvb:${si}:${ei}:${bi}:1" aria-label="Move down" ${bi < n - 1 ? '' : 'disabled'}>${IC.down}</button>
+        <button class="btn icon sm ghost" type="button" data-rsa="hideb:${si}:${ei}:${bi}" aria-label="${b.hidden ? 'Show' : 'Hide'}" title="${b.hidden ? 'Show' : 'Hide'} on the resume">${b.hidden ? IC.eyeOff : IC.eye}</button>
+        <button class="btn icon sm ghost danger" type="button" data-rsa="delb:${si}:${ei}:${bi}" aria-label="Delete bullet">${IC.x}</button></div>
       ${open ? rwPanel(b, kws) : ''}</li>`;
   };
   const secBody = (s, si) => {
     if (s.kind === 'summary') return `<textarea class="auto" rows="2" data-rs="sections.${si}.text" aria-label="Summary">${esc(s.text)}</textarea>`;
     if (s.kind === 'list') return `<textarea class="auto" rows="2" data-rs="sections.${si}.items" data-rst="lines" aria-label="${esc(s.title)} lines">${esc((s.items || []).join('\n'))}</textarea>`;
-    if (s.kind === 'skills') return `<div class="rs-sk">${(s.lines || []).map((l, li) => `<div class="pf-sk">${t(`sections.${si}.lines.${li}.label`, l.label, '', 'Label')}${t(`sections.${si}.lines.${li}.value`, l.value, '', 'Skills')}<button class="btn icon sm ghost" type="button" data-rsa="mvl:${si}:${li}:-1" aria-label="Move up" ${li ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost danger" type="button" data-rsa="dell:${si}:${li}" aria-label="Remove">✕</button></div>`).join('')}</div><button class="btn sm ghost" type="button" data-rsa="addl:${si}">+ Line</button>`;
-    return (s.entries || []).map((e, ei) => `<div class="rs-ent${e.hidden ? ' off' : ''}"><div class="rs-eh">${t(`sections.${si}.entries.${ei}.title`, e.title, 'b', s.key === 'projects' ? 'Project' : 'Organization')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates') : t(`sections.${si}.entries.${ei}.loc`, e.loc || '', 'r i', 'City, State')}${t(`sections.${si}.entries.${ei}.subtitle`, e.subtitle, 'i', s.key === 'education' ? 'Degree' : s.key === 'projects' ? 'Role / context' : 'Job title')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.subdate`, e.subdate, 'r i', '') : t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates')}</div>
+    if (s.kind === 'skills') return `<div class="rs-sk">${(s.lines || []).map((l, li) => `<div class="pf-sk">${t(`sections.${si}.lines.${li}.label`, l.label, '', 'Label')}${t(`sections.${si}.lines.${li}.value`, l.value, '', 'Skills')}<button class="btn icon sm ghost" type="button" data-rsa="mvl:${si}:${li}:-1" aria-label="Move up" ${li ? '' : 'disabled'}>${IC.up}</button><button class="btn icon sm ghost danger" type="button" data-rsa="dell:${si}:${li}" aria-label="Remove">${IC.x}</button></div>`).join('')}</div><button class="btn sm ghost" type="button" data-rsa="addl:${si}">+ Line</button>`;
+    return (s.entries || []).map((e, ei) => `<div class="rs-ent${e.hidden ? ' off' : ''}"><div class="rs-eh">${t(`sections.${si}.entries.${ei}.title`, e.title, 'b', s.key === 'projects' ? 'Project' : 'Organization')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates') : t(`sections.${si}.entries.${ei}.loc`, e.loc || '', 'r i', 'City, State')}${t(`sections.${si}.entries.${ei}.subtitle`, e.subtitle, 'i', s.key === 'education' ? 'Degree' : s.key === 'projects' ? 'Role / context' : 'Job title')}${s.key === 'projects' ? t(`sections.${si}.entries.${ei}.subdate`, e.subdate, 'r i', 'Right side of line 2') : t(`sections.${si}.entries.${ei}.date`, e.date, 'r i', 'Dates')}</div>
       ${(e.lines || []).length || s.key === 'education' ? `<textarea class="auto" rows="1" data-rs="sections.${si}.entries.${ei}.lines" data-rst="lines" aria-label="Detail lines" placeholder="Detail lines (no bullet), one per line">${esc((e.lines || []).join('\n'))}</textarea>` : ''}
       <ul class="rbs">${(e.bullets || []).map((b, bi) => bulletRow(si, ei, bi, b, e.bullets.length)).join('')}</ul>
-      <div class="row"><button class="btn sm ghost" type="button" data-rsa="addb:${si}:${ei}">+ Bullet</button>${(() => { const h = (e.bullets || []).filter((b) => b.hidden).length; return h ? `<span class="sub">${h} hidden (◌): not on the page</span>` : ''; })()}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hidee:${si}:${ei}">${e.hidden ? 'Show entry' : 'Hide entry'}</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:-1" ${ei ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mve:${si}:${ei}:1" ${ei < s.entries.length - 1 ? '' : 'disabled'}>↓</button><button class="btn sm ghost danger" type="button" data-rsa="dele:${si}:${ei}">Delete</button></div></div>`).join('');
+      <div class="row"><button class="btn sm ghost" type="button" data-rsa="addb:${si}:${ei}">+ Bullet</button>${(() => { const h = (e.bullets || []).filter((b) => b.hidden).length; return h ? `<span class="sub">${h} hidden (◌): not on the page</span>` : ''; })()}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hidee:${si}:${ei}">${e.hidden ? 'Show entry' : 'Hide entry'}</button><button class="btn sm ghost" type="button" aria-label="Move up" data-rsa="mve:${si}:${ei}:-1" ${ei ? '' : 'disabled'}>${IC.up}</button><button class="btn sm ghost" type="button" aria-label="Move down" data-rsa="mve:${si}:${ei}:1" ${ei < s.entries.length - 1 ? '' : 'disabled'}>${IC.down}</button><button class="btn sm ghost danger" type="button" data-rsa="dele:${si}:${ei}">Delete</button></div></div>`).join('');
   };
   return `<div class="rs-ed">
     <div class="rs-hd">${t('header.name', m.header.name, 'b', 'Name')}${t('header.contact', m.header.contact, '', 'Contact line')}
       <div class="row"><label class="field inline"><span>Font</span><select data-rs="font"><option value="serif" ${m.font !== 'sans' ? 'selected' : ''}>Times New Roman</option><option value="sans" ${m.font === 'sans' ? 'selected' : ''}>Arial</option></select></label>
         <label class="field inline"><span>Size</span><select data-rs="size" data-rst="num">${[11, 10.5, 10, 9.5].map((x) => `<option value="${x}" ${+m.size === x ? 'selected' : ''}>${x} pt</option>`).join('')}</select></label><label class="switch" title="Posting keywords that appear in your bullets are set in bold"><input type="checkbox" data-rs="boldKeywords" data-rst="bool" ${m.boldKeywords !== false ? 'checked' : ''}> Bold posting keywords</label><span class="sub">Export shrinks to fit one page, never below 10 pt.</span></div></div>
     ${m.sections.map((s, si) => { const open = ST.sec[s.id] !== false; return `<details class="rs-sec${s.hidden ? ' off' : ''}" data-sid="${s.id}" ${open ? 'open' : ''}><summary><b>${esc(s.title)}</b><span class="cnt">${s.kind === 'entries' ? plural((s.entries || []).length, 'entry', 'entries') : ''}${(() => { const h = (s.entries || []).reduce((n2, e) => n2 + (e.hidden ? 1 : 0) + (e.bullets || []).filter((b) => b.hidden).length, 0); return h ? ` · <span class="warn-t">${h} hidden</span>` : ''; })()}</span></summary>
-      <div class="rs-sbody"><div class="row">${t(`sections.${si}.title`, s.title, 'b', 'Section title')}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hides:${si}">${s.hidden ? 'Show section' : 'Hide section'}</button><button class="btn sm ghost" type="button" data-rsa="mvs:${si}:-1" ${si ? '' : 'disabled'}>↑</button><button class="btn sm ghost" type="button" data-rsa="mvs:${si}:1" ${si < m.sections.length - 1 ? '' : 'disabled'}>↓</button></div>${secBody(s, si)}</div></details>`; }).join('')}</div>`;
+      <div class="rs-sbody"><div class="row">${t(`sections.${si}.title`, s.title, 'b', 'Section title')}<span class="grow"></span><button class="btn sm ghost" type="button" data-rsa="hides:${si}">${s.hidden ? 'Show section' : 'Hide section'}</button><button class="btn sm ghost" type="button" aria-label="Move up" data-rsa="mvs:${si}:-1" ${si ? '' : 'disabled'}>${IC.up}</button><button class="btn sm ghost" type="button" aria-label="Move down" data-rsa="mvs:${si}:1" ${si < m.sections.length - 1 ? '' : 'disabled'}>${IC.down}</button></div>${secBody(s, si)}</div></details>`; }).join('')}</div>`;
 }
 function rwPanel(b, kws) {
   const r = ST.rw, e = est('rewrite', 700, 260);
@@ -989,7 +997,6 @@ function scorePanel() {
   const top = r.fixes.slice(0, 6);
   return `<div class="rscore"><div class="kw-head"><span class="ring sm ${r.total === null ? '' : I.band(r.total)}" style="--p:${r.total || 0}"><span>${r.total === null ? '–' : r.total}</span></span>
       <div><b>Resume score ${r.total === null ? '' : r.total}</b><div class="sub">${esc(RS_BAND(r.total))} · how ready this page is for this posting. It checks wording and evidence only; your fit for the job is on the Analyze step.</div></div></div>
-    <p class="sub rs-one">One score replaces the old keyword percentage and checklist: Match counts only skills you truly have, so 100 is reachable without stretching the truth.</p>
     <ul class="rs-parts">${r.parts.filter((x) => x.v !== null).map((x) => `<li><span class="rs-pl">${esc(x.label)} <small>${x.weight}</small></span><span class="bar"><span style="width:${Math.round(x.v * 100)}%"></span></span><span class="rs-pv">${Math.round(x.v * 100)}</span><span class="sub rs-pn">${esc(x.note)}</span></li>`).join('')}</ul>
     ${(() => { const k = kwPanel(true); return k ? `<details class="rs-kwd"><summary><b>Posting keywords</b> <span class="sub">what the Match part counts, and what you could add to your Profile</span></summary>${k}</details>` : ''; })()}
     ${top.length ? `<details class="rs-fixes" open><summary><b>Biggest gains</b> <span class="sub">${r.fixes.length} fix${r.fixes.length > 1 ? 'es' : ''} in all</span></summary><ol>${top.map((f) => `<li><span class="chip tag">${esc(f.k)}</span> ${esc(f.text)}${f.ref && f.ref.text ? `<span class="sub fix-q">“${esc(f.ref.text.length > 90 ? f.ref.text.slice(0, 88) + '…' : f.ref.text)}”</span>` : ''} ${fixRef(f)}</li>`).join('')}</ol></details>` : '<p class="sub pos">Nothing left to fix.</p>'}</div>`;
@@ -1012,12 +1019,12 @@ function studioPanel(J, st) {
   const busy = ST.busy === 'tailor', canTailor = ready('tailor') && a && !ST.busy;
   const why = !ready('tailor') ? notReadyTip('tailor') : !a ? 'Analyze the posting first (step 1)' : '';
   if (!ST.model) {
-    return `<section class="panel rs-start" id="studio"><span class="eyebrow">Step 2 of 4</span><h2>Build the resume for this job</h2>
+    return `<section class="panel rs-start" id="studio"><h2>Build the resume for this job</h2>
       ${!P.data || !P.data.basics.name ? '<div class="notice warn"><span>Your Profile is empty, and it is the only source of facts. <a href="#profile">Fill it in first →</a></span></div>' : ''}
       <div class="choices">
         <div class="choice rec"><div class="ch-h"><b>Tailor with Claude</b><span class="chip v-yes">Recommended</span></div>
           <p>Writes from your Profile’s confirmed facts only, covers this posting’s keywords where they are true, and follows your ${esc(J.track)} playbook. Every bullet shows its source.</p>
-          <div class="ch-act"><button class="btn primary" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'}>${busy ? `Tailoring… about ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : '✨ Tailor with Claude'}</button><span class="sub">${why ? esc(why) : costLabel('tailor', eT)}</span></div>
+          <div class="ch-act"><button class="btn primary" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'}>${busy ? `Tailoring… about ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : 'Tailor with Claude'}</button><span class="sub">${why ? esc(why) : costLabel('tailor', eT)}</span></div>
           ${!a ? `<a class="linkbtn" href="#job/${esc(encodeURIComponent(J.id))}">Go to step 1 →</a>` : ''}</div>
         <div class="choice"><div class="ch-h"><b>Start from your master resume</b><span class="chip tag">Free</span></div>
           <p>Your Profile’s resume bullets, ordered for ${esc(J.track)} and fitted to one page. Instant; you edit it yourself. You can still tailor it with Claude later.</p>
@@ -1027,16 +1034,15 @@ function studioPanel(J, st) {
   const n = ST.notes, unv = ST.model.sections.reduce((c, s) => c + (s.entries || []).reduce((m, e) => m + (e.bullets || []).filter((b) => needsCheck(b) && !b.hidden).length, 0), 0);
   const origin = isTailored() ? `<span class="chip v-yes">Tailored</span><span class="sub">${esc(n.model)}${n.cost ? ' · ' + money(n.cost) : ''}</span>` : `<span class="chip tag">Master resume</span><span class="sub">${a ? 'not tailored to this posting yet' : 'from your Profile'}</span>`;
   const editOpen = ST.editOpen !== undefined ? ST.editOpen : !matchMedia('(max-width: 760px)').matches;
-  return `<section class="panel rs" id="studio"><div class="rs-top"><div class="rs-origin"><span class="eyebrow">Step 2 of 4 · Resume</span><div class="row">${origin}<span id="rsState" class="savestate">${doc && doc.updatedAt ? 'Saved' : ''}</span></div>${readiness(doc, J)}</div>
+  return `<section class="panel rs" id="studio"><div class="rs-top"><div class="rs-origin"><div class="row">${origin}<span id="rsState" class="savestate">${doc && doc.updatedAt ? 'Saved' : ''}</span></div>${readiness(doc, J)}</div>
       <div class="row rs-bar">${versionsSel(doc)}<button class="btn sm ghost" type="button" data-jb="version">Save version</button><button class="btn sm ghost" type="button" data-jb="base" title="Replace this draft with your master resume (this draft is kept as a version)">Reset to master</button>
-        ${isTailored() || !a ? `<button class="btn sm" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'} title="${esc(why || costLabel('tailor', eT).replace(/<[^>]+>/g, ''))}">${busy ? `Tailoring… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : isTailored() ? '✨ Update for this posting' : '✨ Tailor with Claude'}</button>` : ''}</div></div>
+        ${isTailored() || !a ? `<button class="btn sm" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'} title="${esc(why || costLabel('tailor', eT).replace(/<[^>]+>/g, ''))}">${busy ? `Tailoring… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : isTailored() ? 'Update for this posting' : 'Tailor with Claude'}</button>` : ''}</div></div>
     ${a && !isTailored() ? `<div class="tailor-nudge"><div><b>This is your master resume, not tailored to this posting yet.</b><span class="sub">Tailoring edits this page for this ${esc(J.track || '')} role: it keeps your layout and wording and adds the posting’s keywords only where they are true. The keyword match on the right shows the gap; your current draft is kept as a version.</span></div>
-      <div class="tn-act"><button class="btn primary" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'}>${busy ? `Tailoring… about ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : '✨ Tailor with Claude'}</button><span class="sub">${why ? esc(why) : costLabel('tailor', eT)}</span></div></div>` : ''}
-    <div class="rs-grid v2"><div class="rs-view"><div class="rs-sticky"><div class="row rs-exp"><span id="rsFit">${fitText()}</span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-jb="docx">.docx</button><button type="button" data-jb="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-jb="copy">Copy text</button></div>
+      <div class="tn-act"><button class="btn primary" type="button" data-jb="tailor" ${canTailor ? '' : 'disabled'}>${busy ? `Tailoring… about ${usesPro('tailor') ? '1–2 min' : '30–60 s'}` : 'Tailor with Claude'}</button><span class="sub">${why ? esc(why) : costLabel('tailor', eT)}</span></div></div>` : ''}
+    <div class="rs-grid v2"><div class="rs-view"><div class="rs-sticky"><div class="row rs-exp"><span id="rsFit">${fitText()}</span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">${IC.dl}</span><button type="button" data-jb="docx">.docx</button><button type="button" data-jb="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-jb="copy">Copy text</button></div>
         <div id="rsPageNote">${pageNote()}</div>
-        <div id="rsPaper" class="rs-paper">${paper(ST.model, ST.fit && ST.fit.size)}</div><p class="sub pv-tip">Click a bullet on the page to edit it.</p>
-        <div id="rsScore">${scorePanel()}</div></div></div>
-      <div class="rs-work">
+        <div id="rsPaper" class="rs-paper">${paper(ST.model, ST.fit && ST.fit.size)}</div><p class="sub pv-tip">Click a bullet on the page to edit it.</p></div></div>
+      <div class="rs-work"><div id="rsScore">${scorePanel()}</div>
     ${unv || (n && (n.questions || []).length) ? `<details class="todo-panel" ${unv ? 'open' : ''}><summary><b>Before you send</b> <span class="sub">${[unv ? plural(unv, 'bullet') + ' to check' : '', n && (n.questions || []).length ? plural(n.questions.length, 'question') + ' from Claude' : ''].filter(Boolean).join(' · ')}</span></summary>
       ${unv ? checkList() : ''}${n && (n.questions || []).length ? questionList(n.questions) : ''}</details>` : ''}
     ${n && (n.changes || []).length ? `<details class="why rs-notes"><summary>What Claude changed (${n.changes.length})</summary><ul class="jb-ul">${n.changes.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>
@@ -1091,7 +1097,7 @@ function applyPanel(J, st, appliedOn) {
   const pages = (f) => !f ? '' : f.pages === 1 ? `<span class="pos">One page</span>` : `<span class="neg">${f.pages} pages</span>`;
   const doc = (label, file, model, state, warn, act, edit, make) => `<div class="kit-row${model ? (warn ? ' part' : '') : ' empty'}"><span class="kit-ic" aria-hidden="true">${model ? (warn ? '!' : '✓') : '○'}</span>
     <div class="kit-b"><b>${label}</b><span class="sub">${model ? `${esc(file)} · ${state}` : state}</span>${warn && warn.length ? `<ul class="kit-warn">${warn.map((w) => `<li>${w}</li>`).join('')}</ul>` : ''}</div>
-    <div class="row">${model ? `<div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-${act}="docx">.docx</button><button type="button" data-${act}="pdf">.pdf</button></div><a class="btn sm ghost" href="#job/${id}/${edit}">Edit</a>` : `<a class="btn sm" href="#job/${id}/${edit}">${make} →</a>`}</div></div>`;
+    <div class="row">${model ? `<div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">${IC.dl}</span><button type="button" data-${act}="docx">.docx</button><button type="button" data-${act}="pdf">.pdf</button></div><a class="btn sm ghost" href="#job/${id}/${edit}">Edit</a>` : `<a class="btn sm" href="#job/${id}/${edit}">${make} →</a>`}</div></div>`;
   const firstUnv = unv ? (() => { for (const s of ST.model.sections) for (const e of s.entries || []) for (const x of e.bullets || []) if (!x.hidden && needsCheck(x)) return x.id; return ''; })() : '';
   const rWarn = [unv ? `${plural(unv, 'bullet needs', 'bullets need')} checking <button type="button" class="linkbtn" data-goto="bul:${esc(firstUnv)}">Show me →</button>` : '',
     rIssues ? `Resume score ${rs.total}: ${plural(rIssues, 'fix', 'fixes')} would raise it <a class="linkbtn" href="#job/${id}/resume">See them →</a>` : '',
@@ -1100,7 +1106,7 @@ function applyPanel(J, st, appliedOn) {
     ['Email', b.email], ['Phone', b.phone], ['LinkedIn', b.linkedin], ['GitHub', b.github], ['Website', b.website]].filter(([, v]) => v);
   const sv = submittedOf(st.resume);
   const kit = `<section class="panel"><h2>Your application kit</h2>
-    ${sv ? `<div class="kit-row"><span class="kit-ic" aria-hidden="true">✓</span><div class="kit-b"><b>Resume you submitted</b><span class="sub">frozen ${esc(when(sv.at))} when you marked this job applied · keep it for interviews</span></div><div class="row"><span class="dlpair" role="group" aria-label="Download the submitted resume"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-subdl="docx">.docx</button><button type="button" data-subdl="pdf">.pdf</button></span></div></div>` : ''}
+    ${sv ? `<div class="kit-row"><span class="kit-ic" aria-hidden="true">✓</span><div class="kit-b"><b>Resume you submitted</b><span class="sub">frozen ${esc(when(sv.at))} when you marked this job applied · keep it for interviews</span></div><div class="row"><span class="dlpair" role="group" aria-label="Download the submitted resume"><span class="dlp-l" aria-hidden="true">${IC.dl}</span><button type="button" data-subdl="docx">.docx</button><button type="button" data-subdl="pdf">.pdf</button></span></div></div>` : ''}
     ${doc('Resume', fileBase(p.resumeFileName, J) + '.docx', ST.model, `${isTailored() ? 'tailored for ' + esc(J.company) : 'master resume'} · ${pages(ST.fit)}${(() => { const r = rsScore(ST.model, J); return r && r.total !== null ? ` · resume score ${r.total}` : ''; })()}${ks !== null ? ` · ${ks}% keywords` : ''}`, rWarn, 'jb', 'resume', 'Build the resume')}
     ${doc('Cover letter', fileBase(p.coverLetterFileName || 'Cover_Letter_[Company]', J) + '.docx', LT.model, LT.model ? `${LT.notes && LT.notes.model ? 'written with Claude' : 'draft'} · ${pages(LT.fit)}` : 'Optional. Send one when the posting asks for it, or to explain a specific interest.', [], 'lt', 'letter', 'Write one')}</section>`;
   const copyRow = (k, v, multi) => `<dt>${esc(k)}</dt><dd${multi ? ' class="multi"' : ''}><span>${esc(v)}</span><button class="btn sm ghost" type="button" data-jcopy="${esc(v)}" aria-label="Copy ${esc(k)}">Copy</button></dd>`;
@@ -1261,7 +1267,7 @@ function letterForm(J) {
     <label class="field"><span>Why this company or team, in your words <span class="hint">the most persuasive part — Claude won’t invent it</span></span><textarea id="ltWhy" class="auto" rows="2" placeholder="e.g. I use Pinterest for project ideas and want to work on its recommendation experiments">${esc(fm.why || '')}</textarea></label>
     <details class="why lt-emph" ${(fm.emph || []).length ? 'open' : ''}><summary>Experiences to emphasize <span class="hint">optional · otherwise Claude picks the best fit${(fm.emph || []).length ? ` · ${fm.emph.length} chosen` : ''}</span></summary><div class="checks sm">${ents.map((n) => `<label><input type="checkbox" data-lt-emph value="${esc(n)}" ${(fm.emph || []).includes(n) ? 'checked' : ''}> ${esc(n.length > 48 ? n.slice(0, 46) + '…' : n)}</label>`).join('')}</div></details>
     <label class="field"><span>Other instructions <span class="hint">optional</span></span><input type="text" id="ltIns" value="${esc(fm.ins || '')}" placeholder="e.g. Keep it under 300 words; mention I can work on-site in Sunnyvale"></label>
-    <div class="row"><button class="btn primary" type="button" data-lt="write" ${ready('cover') && !LT.busy ? '' : 'disabled'}>${LT.busy ? `Writing… (about ${usesPro('cover') ? '1 min' : '20–40 s'})` : `✨ ${LT.model ? 'Rewrite the letter' : 'Write with Claude'}`}</button>
+    <div class="row"><button class="btn primary" type="button" data-lt="write" ${ready('cover') && !LT.busy ? '' : 'disabled'}>${LT.busy ? `Writing… (about ${usesPro('cover') ? '1 min' : '20–40 s'})` : `${LT.model ? 'Rewrite the letter' : 'Write with Claude'}`}</button>
       <span class="sub">${costLabel('cover', e)} · uses your Profile${(cl.samples || []).length ? ` and the style of ${plural(cl.samples.length, 'past letter')}` : ''}${ST.model ? ' and this job’s resume' : ''}</span>
       <span class="grow"></span>${LT.model ? '' : '<button class="btn ghost" type="button" data-lt="blank">Start from a template · free</button>'}</div>
     ${(cl.samples || []).length ? '' : '<p class="sub">Tip: add one or two of your past letters in <a href="#profile/cover">Profile → Cover letters</a> so drafts sound like you.</p>'}</div>`;
@@ -1273,9 +1279,9 @@ function letterEditor(m) {
     <ul class="rbs lt-ps">${m.paragraphs.map((p, i) => { const srcs = (p.src || '').split(',').map((x) => x.trim()).filter(Boolean), ok = srcs.every((x) => pointText(x) !== null), open = LT.rw && LT.rw.id === p.id;
       return `<li class="rb${p.hidden ? ' off' : ''}"><textarea class="auto" rows="3" data-lt-p="paragraphs.${i}.text" aria-label="Paragraph ${i + 1}">${esc(p.text)}</textarea>
         <div class="rb-acts"><span class="src ${ok ? 'ok' : 'no'}" title="${srcs.length ? esc(srcs.map((x) => x + ': ' + (pointText(x) || 'not in your Profile')).join('\n')) : 'No profile facts cited'}">${srcs.length ? (ok ? '✓ ' : '⚠ ') + esc(srcs.join(', ')) : 'no facts cited'}</span>${(() => { const iss = paraIssues(p); return iss.length ? `<span class="src no fc" title="${esc(iss.join('\n'))}">⚠ ${esc(iss[0])}${iss.length > 1 ? ` +${iss.length - 1}` : ''}</span>` : ''; })()}<span class="grow"></span>
-          <button class="btn sm ghost${open ? ' on' : ''}" type="button" data-lt="rw:${p.id}">✨ Rewrite</button>
-          <button class="btn icon sm ghost" type="button" data-lt="mv:${i}:-1" aria-label="Move up" ${i ? '' : 'disabled'}>↑</button><button class="btn icon sm ghost" type="button" data-lt="mv:${i}:1" aria-label="Move down" ${i < m.paragraphs.length - 1 ? '' : 'disabled'}>↓</button>
-          <button class="btn icon sm ghost danger" type="button" data-lt="del:${i}" aria-label="Delete paragraph">✕</button></div>
+          <button class="btn sm ghost${open ? ' on' : ''}" type="button" data-lt="rw:${p.id}">Rewrite</button>
+          <button class="btn icon sm ghost" type="button" data-lt="mv:${i}:-1" aria-label="Move up" ${i ? '' : 'disabled'}>${IC.up}</button><button class="btn icon sm ghost" type="button" data-lt="mv:${i}:1" aria-label="Move down" ${i < m.paragraphs.length - 1 ? '' : 'disabled'}>${IC.down}</button>
+          <button class="btn icon sm ghost danger" type="button" data-lt="del:${i}" aria-label="Delete paragraph">${IC.x}</button></div>
         ${open ? ltRwPanel(p) : ''}</li>`; }).join('')}</ul>
     <div class="row"><button class="btn sm ghost" type="button" data-lt="add">+ Paragraph</button></div>
     <div class="rs-hd">${t('closing', m.closing, '', 'Sincerely,')}${t('signature', m.signature, '', 'Your name')}
@@ -1292,17 +1298,17 @@ function ltRwPanel(p) {
 function letterPanel(J, st) {
   const a = st.job && st.job.analysis, doc = st.letter;
   const id = esc(encodeURIComponent(J.id));
-  if (!a) return `<section class="panel rs-start"><span class="eyebrow">Step 3 of 4 · optional</span><h2>Cover letter</h2><p class="sub">Analyze the posting first so the letter can speak to its requirements.</p><div class="row"><a class="btn primary" href="#job/${id}">Go to step 1 →</a><a class="btn ghost" href="#job/${id}/apply">Skip to Apply</a></div></section>`;
-  if (!LT.model) return `<section class="panel rs-start"><span class="eyebrow">Step 3 of 4 · optional</span><h2>Write the cover letter</h2><p class="sub">One page, same header and font as your resume. Many internship applications don’t ask for one; skip this step if this one doesn’t.</p>
+  if (!a) return `<section class="panel rs-start"><h2>Cover letter <small>optional</small></h2><p class="sub">Analyze the posting first so the letter can speak to its requirements.</p><div class="row"><a class="btn primary" href="#job/${id}">Go to step 1 →</a><a class="btn ghost" href="#job/${id}/apply">Skip to Apply</a></div></section>`;
+  if (!LT.model) return `<section class="panel rs-start"><h2>Write the cover letter <small>optional</small></h2><p class="sub">One page, same header and font as your resume. Many internship applications don’t ask for one; skip this step if this one doesn’t.</p>
     ${ST.model ? '' : `<div class="notice"><span>Tip: build the resume first. The letter then reuses its strongest points, so both tell the same story. <a href="#job/${id}/resume">Go to the resume →</a></span></div>`}${letterForm(J)}</section>${stepNav(J, 'resume', [['apply', false, 'Skip to Apply']])}`;
   const n = LT.notes;
   const lorigin = n && n.model ? `<span class="chip v-yes">Written with Claude</span><span class="sub">${esc(n.model)}${n.cost ? ' · ' + money(n.cost) : ''}</span>` : '<span class="chip tag">Draft</span>';
-  return `<section class="panel rs"><div class="rs-top"><div class="rs-origin"><span class="eyebrow">Step 3 of 4 · Cover letter</span><div class="row">${lorigin}<span id="ltState" class="savestate">${doc && doc.updatedAt ? 'Saved' : ''}</span></div>${lifecycle(doc, 'letter', J)}</div>
-    <div class="row rs-bar">${doc && (doc.versions || []).length ? `<select id="ltVer" aria-label="Versions"><option value="">Versions (${doc.versions.length})…</option>${doc.versions.slice().reverse().map((v) => `<option value="${v.id}">${esc(new Date(v.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(v.label)}</option>`).join('')}</select>` : ''}<button class="btn sm ghost" type="button" data-lt="version">Save version</button><button class="btn sm${LT.showForm ? ' on' : ''}" type="button" data-lt="form" aria-expanded="${!!LT.showForm}">${LT.showForm ? 'Close' : '✨ Rewrite with Claude…'}</button></div></div>
+  return `<section class="panel rs"><div class="rs-top"><div class="rs-origin"><div class="row">${lorigin}<span id="ltState" class="savestate">${doc && doc.updatedAt ? 'Saved' : ''}</span></div>${lifecycle(doc, 'letter', J)}</div>
+    <div class="row rs-bar">${doc && (doc.versions || []).length ? `<select id="ltVer" aria-label="Versions"><option value="">Versions (${doc.versions.length})…</option>${doc.versions.slice().reverse().map((v) => `<option value="${v.id}">${esc(new Date(v.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }))} · ${esc(v.label)}</option>`).join('')}</select>` : ''}<button class="btn sm ghost" type="button" data-lt="version">Save version</button><button class="btn sm${LT.showForm ? ' on' : ''}" type="button" data-lt="form" aria-expanded="${!!LT.showForm}">${LT.showForm ? 'Close' : 'Rewrite with Claude…'}</button></div></div>
     ${LT.showForm ? `<div class="panel inset">${letterForm(J)}</div>` : ''}
     ${n && ((n.notes || []).length || (n.questions || []).length) ? `<details class="why rs-notes"><summary>Notes from Claude${n.model ? ` · ${esc(n.model)} · ${money(n.cost)}` : ''}</summary><ul class="jb-ul">${(n.notes || []).map((x) => `<li>${esc(x)}</li>`).join('')}</ul>${(n.questions || []).length ? `<div class="notice"><span><b>Could make it stronger:</b> ${n.questions.map(esc).join(' · ')}</span></div>` : ''}</details>` : ''}
     <div class="rs-grid"><div class="rs-left">${letterEditor(LT.model)}</div>
-      <div class="rs-right"><div class="rs-sticky"><div class="row rs-exp"><span id="ltFit"></span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-lt="docx">.docx</button><button type="button" data-lt="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-lt="copy">Copy text</button></div>
+      <div class="rs-right"><div class="rs-sticky"><div class="row rs-exp"><span id="ltFit"></span><span class="grow"></span><div class="dlpair" role="group" aria-label="Download"><span class="dlp-l" aria-hidden="true">${IC.dl}</span><button type="button" data-lt="docx">.docx</button><button type="button" data-lt="pdf">.pdf</button></div><button class="btn sm ghost" type="button" data-lt="copy">Copy text</button></div>
         <div id="ltPaper" class="rs-paper">${LT.fit && LT.fit.render ? svgPages(LT.fit) : '<p class="empty" style="padding:16px">Laying out…</p>'}</div><div id="ltChecks">${checksBox(letterChecks(LT.model, LT.fit, J.company), 'Cover letter checklist')}</div></div></div></div></section>
     ${stepNav(J, 'resume', [['apply', true]])}`;
 }
@@ -1515,7 +1521,7 @@ function rsAction(a, el) {
 }
 /* Keep the resume on one page at 10 pt or larger by hiding the least valuable content first, and say what was hidden.
    Order: Leadership & Activities (unless you chose "Always"), then the bullets that match the fewest posting keywords
-   (experience keeps 3, projects keep 2), then extra projects, then the summary. Nothing is deleted: each item keeps its ● switch. */
+   (experience keeps 3, projects keep 2), then extra projects, then the summary. Nothing is deleted: each item keeps its eye button. */
 const COMFORT_PT = 10.5; // trimming stops once the page fits at this size with normal spacing
 async function fitOnePage(m, keywords) {
   const mode = (P.data && P.data.resumeActivities) || 'auto', hidden = [];
@@ -1782,7 +1788,7 @@ function rDocs() {
     const st = on ? `<span class="chip v-yes">Tailored by Claude</span><span class="sub">${esc(when(d.updatedAt))}${d.notes && d.notes.model ? ' · ' + esc(d.notes.model) : ''}</span>` : `<span class="sub">${esc(lead(t))}</span>`;
     const act = busy ? `<button class="btn sm" type="button" disabled>Tailoring… ${usesPro('tailor') ? '1–2 min' : '30–60 s'}</button>`
       : on ? `<button class="btn sm" type="button" data-tb="open:${t}">Review</button>`
-        : `<button class="btn sm" type="button" data-tb="tailor:${t}" ${ready('tailor') && !TB.busy ? '' : 'disabled'} title="${esc(ready('tailor') ? costLabel('tailor', est('tailor', 9000, 2600)).replace(/<[^>]+>/g, '') : notReadyTip('tailor'))}">✨ Tailor for ${t}</button>`;
+        : `<button class="btn sm" type="button" data-tb="tailor:${t}" ${ready('tailor') && !TB.busy ? '' : 'disabled'} title="${esc(ready('tailor') ? costLabel('tailor', est('tailor', 9000, 2600)).replace(/<[^>]+>/g, '') : notReadyTip('tailor'))}">Tailor for ${t}</button>`;
     return `<li><span class="dbase-t"><b>${esc(t)}</b><span class="sub">${esc(I.TRACK_NAME[t] || t)}</span></span><span class="dbase-o">${st}</span><span class="dbase-a">${act}</span>${dlPair(`base:%:${t}`, t + ' base resume')}</li>`;
   };
   const base = P.data && P.data.basics.name && targets.length ? `<section class="panel dbase"><h2>Base resumes <small>the starting point for every job resume in a track</small></h2>
@@ -1887,7 +1893,7 @@ document.addEventListener('click', (e) => { const b = e.target.closest('[data-tb
 document.addEventListener('input', (e) => { if (e.target.id === 'tbIns') TB.rev = e.target.value; });
 document.addEventListener('submit', (e) => { if (e.target.id === 'tbForm') { e.preventDefault(); tbSend(); } });
 document.addEventListener('keydown', (e) => { if (e.target.id === 'tbIns' && e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); tbSend(); } });
-const dlPair = (ref, label) => `<div class="dlpair" role="group" aria-label="Download ${esc(label)}"><span class="dlp-l" aria-hidden="true">↓</span><button type="button" data-dl="${esc(ref.replace('%', 'docx'))}" title="Word document, for most application forms">.docx</button><button type="button" data-dl="${esc(ref.replace('%', 'pdf'))}" title="PDF, for email and portals that prefer it">.pdf</button></div>`;
+const dlPair = (ref, label) => `<div class="dlpair" role="group" aria-label="Download ${esc(label)}"><span class="dlp-l" aria-hidden="true">${IC.dl}</span><button type="button" data-dl="${esc(ref.replace('%', 'docx'))}" title="Word document, for most application forms">.docx</button><button type="button" data-dl="${esc(ref.replace('%', 'pdf'))}" title="PDF, for email and portals that prefer it">.pdf</button></div>`;
 async function docDownload(kind, fmt, key) {
   let model, label;
   if (kind === 'base') {

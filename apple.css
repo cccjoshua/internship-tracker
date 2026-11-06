@@ -239,8 +239,8 @@ tbody tr:hover td{background:var(--fill-3)}
 .eyebrow{text-transform:none;letter-spacing:-.003em;font-weight:600;color:var(--muted)}
 .step-hero h2,.rs-start h2{font-size:22px;font-weight:700;letter-spacing:-.02em}
 .sh-act{border-radius:14px;background:var(--fill-3)}
-.verdict{border-left:0;box-shadow:inset 4px 0 0 var(--good),var(--card-shadow)}
-.verdict.v-warn{box-shadow:inset 4px 0 0 var(--hl),var(--card-shadow)}
+.verdict{border-left:0;box-shadow:var(--card-shadow)}
+.verdict.v-warn{box-shadow:var(--card-shadow)}
 .verdict.v-bad{box-shadow:inset 4px 0 0 var(--bad),var(--card-shadow)}
 .choice{border-radius:14px;padding:16px}
 .choice.rec{box-shadow:0 0 0 2px var(--accent),var(--card-shadow);background:var(--surface)}
@@ -799,7 +799,7 @@ button.src:focus-visible{outline:2px solid var(--tint);outline-offset:2px}
 .rs-fixes{margin-top:10px;font-size:12px}
 .rs-fixes>summary{cursor:pointer}
 .rs-fixes ol{margin:6px 0 0;padding-left:18px;display:grid;gap:6px}
-.rs-fixes .chip{font-size:10px;padding:0 6px;text-transform:capitalize}
+.rs-fixes .chip{font-size:11px;padding:0 6px;text-transform:capitalize}
 .rs-fixes .fix-q{display:block;margin-top:2px}
 /* Before you send */
 .todo-panel{border:.5px solid var(--line);border-radius:var(--r-row);padding:8px 12px;margin:10px 0;background:var(--surface)}
@@ -842,3 +842,40 @@ button.src:focus-visible{outline:2px solid var(--tint);outline-offset:2px}
 .a-att.quiet h2{margin:0}
 .rates small{font-weight:400;color:var(--muted)}
 .rs-view .rs-sticky>*{flex-shrink:0}
+
+/* ---------- release polish (impeccable audit, Nov 2026) ---------- */
+/* Icons */
+.ic{display:block;flex:none}
+.btn.icon .ic{margin:auto}
+.dlp-l{display:inline-flex;align-items:center;gap:4px}
+/* No side stripes: state reads from the ring, the chip and the text (DESIGN.md: lines over boxes, no decorative color) */
+.verdict,.verdict.v-warn,.verdict.v-bad,.verdict.v-good{border-left:0}
+.lrow.peeking,.tmatch li.peeking,.todo li.peeking{box-shadow:none}
+.gets li{border-left:0;padding-left:0}
+.col{border-top:0}
+/* Contrast: secondary chips and low-importance keywords stay AA */
+.chip.imp1{opacity:1}
+.facts .chip:not(.v-yes):not(.miss),.kw-l .chip:not(.v-yes):not(.miss):not(.kw-can){color:var(--muted)}
+:root[data-theme="dark"] .facts .chip:not(.v-yes):not(.miss){color:#c7c7cc}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .facts .chip:not(.v-yes):not(.miss){color:#c7c7cc}}
+.seg .c,[data-stage] .c{opacity:1}
+/* Readable measure for intro copy */
+.view-sub,.page-sub,.sbody>.panel>p.sub,.panel>p.sub,.panel>.sub{max-width:75ch}
+/* Lines over boxes: the editor and Profile entries are rows inside one panel, not cards inside cards */
+.rs-editw{border:0;padding:0;background:transparent}
+.rs-editw .rs-sec{border:0;border-top:.5px solid var(--line);border-radius:0;background:transparent;box-shadow:none}
+.rs-editw .rs-ent{border:0;border-top:.5px solid var(--line);border-radius:0;background:transparent;box-shadow:none;padding-left:0;padding-right:0}
+.pf-entries .pf-entry{border:0;border-top:.5px solid var(--line);border-radius:0;box-shadow:none;background:transparent}
+.pf-entries .pf-entry:first-child{border-top:0}
+/* Resume toolbar: versions menu at a sensible width, the one action on the right */
+.rs-bar #rsVer{flex:0 1 240px}
+.ready{margin-top:6px}
+/* Dashboard: a quiet "Needs attention" lets By track move up instead of leaving a hole */
+@media (min-width:1081px){.dash:has(.a-att.quiet):has(.a-track){grid-template-areas:"top att" "top track" "pipe track" "week week"}}
+[data-stage] .c{color:inherit;opacity:.85}
+input::placeholder,textarea::placeholder{color:var(--faint);opacity:1}
+/* Flatten nested containers on the resume page: sections separated by hairlines */
+.rs-work .rscore{margin:0}
+.rs-work .revise{border:0;box-shadow:none;background:transparent;border-radius:0;padding:0}
+.todo-panel .notice{border:0;box-shadow:none;background:transparent;padding-left:0;padding-right:0}
+.rs-editw .rs-hd{border:0;box-shadow:none;background:transparent;padding-left:0;padding-right:0}

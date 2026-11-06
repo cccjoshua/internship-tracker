@@ -1161,6 +1161,9 @@ def studio_index():
 
 def doc_hash(model):
     """Content hash of a resume or letter model (key order and ids ignored only where they do not change the text)."""
+    # Values the page derives on its own (bold keyword list, model version) do not change what you reviewed or sent.
+    if isinstance(model, dict):
+        model = {k: v for k, v in model.items() if k not in ("bold", "v")}
     return hashlib.sha1(json.dumps(model, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
 
 
