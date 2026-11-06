@@ -34,7 +34,7 @@ Opened many times a day for a few minutes at a time; long sessions only when tai
 Feel like a native macOS app (Apple Mail, Reminders, System Settings): quiet, precise, information over decoration. Logo: "Waypoint" (see DESIGN.md §9).
 
 ## Evidence on Hand
-Live app at http://127.0.0.1:8765; `docs/screenshots/`; `docs/REVIEW.md` (2026-10-31 review and axe-core results).
+Live app at http://127.0.0.1:8765; `docs/screenshots/`; `docs/dev/REVIEW.md` (2026-10-31 review and axe-core results).
 
 ## Product Principles
 - Today first: the next action is always visible without scrolling.

@@ -1,27 +1,57 @@
-# Internship Application Tracker
+# Internship Tracker
 
-A local-first web app for an internship search: it pulls new postings, ranks them, checks whether you are actually eligible, helps you build a truthful tailored resume and cover letter, and tracks every application from saved to offer. It runs on your own computer as one page plus a small Python server. There are no runtime dependencies, no account and no cloud database. Claude is optional and is only called when you press a button.
+**A local-first internship search assistant: it finds postings, ranks them by rules you can read, checks whether you are actually eligible, and helps you write a truthful, tailored one-page resume, all from one Profile on your own computer.**
 
-![Job page: eligibility and fit](docs/screenshots/job-eligibility.png)
+[![tests](https://github.com/cccjoshua/internship-tracker/actions/workflows/tests.yml/badge.svg)](https://github.com/cccjoshua/internship-tracker/actions/workflows/tests.yml)
+Python standard library · vanilla JavaScript · Chrome extension (Manifest V3) · optional Claude API · no build step, no account, no cloud database
 
-> **This is a local app, not a website.** The Python server reads and writes files on your computer, so it cannot run on GitHub Pages or any static host. Clone it and run it locally (below).
+![Resume editor: edit on the left, the exact export on the right](docs/screenshots/resume-editor.png)
+
+## Why I built it
+
+As an international MS student applying for Summer 2027 internships, every application took the same four detours: find postings that fit my degree and dates, check whether the employer would ever sponsor a visa, look up what the role actually asks for, and rewrite my resume for it. Job boards rank by recency and my Notion tracker got messy. I wanted one place that answers "what should I apply to today, and what do I send?" without guessing about me.
+
+## How it evolved
+
+| Version | What it was | Why it changed |
+|---|---|---|
+| v1 · Sep 2026 | A Python scraper of the SimplifyJobs feed writing into a Notion database | I still had to filter every posting by hand |
+| v2 · Sep–Oct 2026 | A scheduled AI agent with MCP connectors filtering listings by my criteria into Notion | The Notion layout became too cluttered to decide quickly, and every run cost tokens |
+| v3 · Oct 27, 2026 → | This app: a local web page with a rule-based ranking, plus a Chrome extension for jobs found anywhere | A web page shows the data better; ranking runs on rules at no cost, and Claude is used only where it adds something (reading a posting, drafting a resume) |
+
+The full history is in [CHANGELOG.md](CHANGELOG.md), and the design decisions and trade-offs are in [docs/CASE_STUDY.md](docs/CASE_STUDY.md).
+
+## Highlights
+
+- **Find:** a scheduled refresh of 17,000+ public SimplifyJobs listings, filtered by your Profile (term, U.S. region, degree level, target fields, no citizenship-only roles). **[Tracker Clipper](extension/README.md)**, a Chrome extension, adds a posting from LinkedIn, Workday, Greenhouse, Lever, Ashby or any career site in one click.
+- **Rank without AI:** a 0–100 listing priority from weights you set (role fit 30, skill overlap 25, sponsorship evidence 20, recency 15, degree 5, location 5), with a per-component breakdown. The same formula runs in the browser and the terminal and is parity-tested.
+- **Sponsorship evidence from public data:** USCIS H-1B approvals and Department of Labor LCA filings in software and data occupations, matched to employer legal names. A posting's own "no sponsorship" wording always wins.
+- **Decide:** Claude reads the current posting once and returns structured requirements with quotes; the app then checks **eligibility** (degree, graduation window, CPT/OPT, sponsorship, citizenship) separately from **fit**, so "not eligible" is never hidden behind a good score.
+- **Prepare:** resume tailoring that writes only from confirmed Profile facts, cites the fact behind every bullet, flags numbers or tools the facts do not support, keeps versions, fits one page and exports `.docx`/`.pdf` from one layout engine. Cover letters are checked sentence by sentence.
+- **Track:** board and list, deadlines, interviews, follow-ups, a calendar feed, a Data check for missing or contradictory records, and the exact resume you sent frozen as "Submitted".
+- **Cheap and private:** every Claude call is a button you press, with a cost estimate and a monthly budget. In the author's own use, 41 calls (23 analyses, 17 tailorings, 1 letter) cost about $0.12 in API fees. Data stays in `data/` on your machine.
+
+| | |
+|---|---|
+| ![Dashboard](docs/screenshots/dashboard.png) | ![New listings with the priority breakdown](docs/screenshots/listings.png) |
+| ![Eligibility and fit for one job](docs/screenshots/job-fit.png) | ![Not eligible, dark mode](docs/screenshots/job-not-eligible-dark.png) |
+| ![Resume review: score, checks and Claude's notes](docs/screenshots/resume-review.png) | ![Tracker Clipper](docs/screenshots/clipper.png) |
+
+*Screenshots use the synthetic demo data in `scripts/make_demo_data.py`. Every person, company and link in them is fictional.*
+
+## How it was built
+
+I designed the product, wrote the requirements, chose the filtering rules and scoring weights, and review and test every change in daily use (40 applications tracked so far). The code was written with **Claude Code** as an AI pair programmer. Design notes: [PRODUCT.md](PRODUCT.md) (goals and constraints) and [DESIGN.md](DESIGN.md) (the macOS-style design system).
 
 ## What it does
 
 | Step | What you get |
 |---|---|
-| **Find** | A scheduled refresh of the public [SimplifyJobs](https://github.com/SimplifyJobs) listings feed, filtered by your Profile (term, regions, degree level) and ranked by a transparent **listing priority**. A Chrome extension adds jobs from any other site. |
+| **Find** | A scheduled refresh of the public [SimplifyJobs](https://github.com/SimplifyJobs) listings feed, filtered by your Profile (term, regions, degree level) and ranked by a transparent **listing priority**. The Chrome extension adds jobs from any other site. |
 | **Decide** | Per job: **eligibility** (meets / does not meet / to confirm / not applicable, each with a quote from the posting) kept separate from **candidate fit** (your Profile against the posting). A failed requirement shows "Not eligible", whatever the other scores are. |
-| **Prepare** | A resume editor with the exact export layout, the Profile fact behind every bullet, automatic fact checks, before/after versions, and a one-page fit you can undo. Cover letters are checked sentence by sentence against their sources. |
-| **Send** | `.docx` and `.pdf` export. Each document records whether *this exact content* was reviewed and exported. |
-| **Track** | Board and list views, deadlines, interview rounds, follow-ups, a calendar feed (`/calendar.ics`), a dashboard of what needs you next, backups and undo. |
-
-| | |
-|---|---|
-| ![Dashboard](docs/screenshots/dashboard.png) | ![New listings](docs/screenshots/listings.png) |
-| ![Not eligible, dark mode](docs/screenshots/job-not-eligible-dark.png) | ![Resume editor](docs/screenshots/resume-editor.png) |
-
-*Screenshots use the synthetic demo data in `scripts/make_demo_data.py`. Every person, company and link in them is fictional.*
+| **Prepare** | A resume editor next to the exact export layout, the Profile fact behind every bullet, automatic fact checks, before/after versions, and a one-page fit you can undo. Cover letters are checked sentence by sentence against their sources. |
+| **Send** | `.docx` and `.pdf` export. Each document records whether *this exact content* was reviewed and exported, and the version you sent is kept. |
+| **Track** | Board and list views, deadlines, interview rounds, follow-ups, a calendar feed (`/calendar.ics`), a dashboard of what needs you next, a Data check, backups and undo. |
 
 ## Four scores, kept apart
 
@@ -63,6 +93,10 @@ IAT_AI_STUB=1 python3 server.py --data demo-data --no-fetch --port 8766
 ```
 
 `IAT_AI_STUB=1` replaces every Claude call with a deterministic local answer and shows a banner on the page. The demo can't reach the paid API, and your real `data/` folder is never touched.
+
+### Add the Chrome extension (optional)
+
+Open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select the `extension/` folder. Details, supported sites and permissions: [extension/README.md](extension/README.md).
 
 ### Start automatically on macOS (optional)
 
@@ -152,4 +186,4 @@ scripts/make_demo_data.py synthetic demo data       tests/   unit, regression, f
 
 - `fonts/`: Instrument Sans and IBM Plex Mono, SIL Open Font License (license files included). These fonts are no longer used by the page and can be removed.
 - Dev only: Playwright (Apache-2.0).
-- The project itself: **license not chosen yet** (see `docs/REVIEW.md`).
+- The project itself: **license not chosen yet**.
